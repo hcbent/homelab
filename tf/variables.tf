@@ -5,16 +5,6 @@ variable "pm_api_url" {
     default = "https://192.168.1.20:8006/api2/json"
 }
 
-variable "pm_user" {
-    description = "The username to use for the Proxmox API"
-    type = string
-}
-
-variable "pm_password" {
-    description = "The password to use for the Proxmox API"
-    type = string
-}
-
 variable "pm_tls_insecure" {
     description = "Whether to ignore TLS certificate errors"
     type = bool

@@ -71,3 +71,9 @@ variable "ipconfig0" {
     type = string
     default = "ip=dhcp"
 }
+
+variable "os_type" {
+    description = "The type of operating system to install on the VM"
+    type = string
+    default = "linux"
+}

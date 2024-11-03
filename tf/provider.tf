@@ -1,7 +1,7 @@
 provider "proxmox" {
     pm_api_url = var.pm_api_url
-    pm_user = var.pm_user
-    pm_password = var.pm_password
+    pm_user = data.vault_generic_secret.pm_user.data["PM_USER"]
+    pm_password = data.vault_generic_secret.pm_user.data["PM_PASS"]
     pm_tls_insecure = var.pm_tls_insecure
 }
 
