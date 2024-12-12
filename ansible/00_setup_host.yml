@@ -1,0 +1,89 @@
+---
+- name: Deploy a basic Linux server
+  hosts: k8s_cp k8s_worker
+  gather_facts: false
+  tasks:
+    - name: Update and upgrade apt packages
+      become: true
+      apt:
+        update_cache: true
+        upgrade: dist
+
+    - name: Install basic packages
+      become: true
+      apt:
+        name:
+          - git
+          - curl
+          - vim
+          - unzip 
+          - python3-pip
+          - zsh 
+          - autoconf 
+          - htop 
+          - eslint 
+          - gettext 
+          - luajit 
+          - neovim 
+          - npm
+          - stow 
+          - tmux
+          - openssl 
+          - ripgrep 
+          - fzf 
+          - kitty-terminfo
+        state: present
+
+    - name: Clone dotfiles repository
+      block:
+      - name: Ensure .ssh directory exists
+        file:
+          path: ~/.ssh
+          state: directory
+          mode: '0700'
+
+      - name: Copy GitHub SSH keys
+        copy:
+          src:  /Users/bret/.ssh/github_rsa
+          dest: ~/.ssh/
+          mode: '0600'
+
+      - name: Copy GitHub SSH keys
+        copy:
+          src:  /Users/bret/.ssh/github_rsa.pub
+          dest: ~/.ssh/
+          mode: '0600'
+
+      - name: Copy SSH config
+        copy:
+          src: /Users/bret/.ssh/config
+          dest: ~/.ssh/config
+          mode: '0600'
+
+      - name: Copy known_hosts
+        copy:
+          src: /Users/bret/.ssh/known_hosts
+          dest: ~/.ssh/known_hosts
+          mode: '0600'
+
+      - name: Ensure git/dotfiles exists
+        file:
+          dest: ~/git/dotfiles
+          state: directory
+
+      - name: Clone dotfiles repository
+        git:
+          repo: 'git@github.com:wortmanb/dotfiles.git'
+          dest: '~/git/dotfiles/'
+          clone: true
+          update: true
+        environment:
+          GIT_TERMINAL_PROMPT: 0 
+
+      - name: Setup dotfiles
+        shell: >
+          './git/dotfiles/__setup/linux.sh'
+
+      - name: Install dotfiles
+        shell: >
+          './git/dotfiles/setup.sh'
