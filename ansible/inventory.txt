@@ -1,4 +1,5 @@
 [elasticsearch]
+
 es01.lab.thewortmans.org
 es02.lab.thewortmans.org
 es03.lab.thewortmans.org
@@ -19,3 +20,7 @@ kube04.lab.thewortmans.org
 kube05.lab.thewortmans.org
 kube06.lab.thewortmans.org
 
+[elasticsearch_all:children]
+elasticsearch
+kibana
+fleet

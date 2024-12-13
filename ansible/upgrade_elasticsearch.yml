@@ -1,0 +1,39 @@
+---
+- name: Upgrade Elasticsearch Cluster
+  hosts: elasticsearch_all
+  become: yes
+  serial: 1
+
+  tasks:
+    - name: Add Elasticsearch repository
+      apt_repository:
+        repo: "deb https://artifacts.elastic.co/packages/8.x/apt stable main"
+        state: present
+        filename: 'elastic-8.x'
+        update_cache: yes
+
+    - name: Install the latest version of Elasticsearch
+      apt:
+        name: elasticsearch
+        state: latest
+      when: "'elasticsearch' in group_names"
+
+    - name: Ensure Elasticsearch is enabled and started
+      service:
+        name: elasticsearch
+        enabled: yes
+        state: started
+      when: "'elasticsearch' in group_names"
+
+    - name: Install the latest version of Kibana
+      apt:
+        name: kibana
+        state: latest
+      when: "'kibana' in group_names"
+
+    - name: Ensure Kibana is enabled and started
+      service:
+        name: kibana
+        enabled: yes
+        state: started
+      when: "'kibana' in group_names"
