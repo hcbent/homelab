@@ -12,6 +12,11 @@ terraform init
 ### Configuration
 Edit the homelab.tfvars file and add whatever VMs you want to create.
 
+Then, use `terraform plan -var-file homelab.tfvars` to ensure your vars are syntactically correct. If you're happy with the plan results, then:
+
+```bash
+terraform apply -var-file homelab.tfvars
+```
 
 ## Roadmap
 Expansion ideas:
