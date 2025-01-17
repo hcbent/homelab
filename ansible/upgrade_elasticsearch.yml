@@ -3,14 +3,17 @@
   hosts: elasticsearch_all
   become: yes
   serial: 1
+  user: bret
+  gather_facts: no
+
+  vars:
+    ansible_ssh_common_args: '-o IdentityFile=~/.ssh/github_rsa'
 
   tasks:
     - name: Add Elasticsearch repository
-      apt_repository:
-        repo: "deb https://artifacts.elastic.co/packages/8.x/apt stable main"
-        state: present
-        filename: 'elastic-8.x'
-        update_cache: yes
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
+        sudo apt -y update
 
     - name: Install the latest version of Elasticsearch
       apt:
@@ -22,7 +25,7 @@
       service:
         name: elasticsearch
         enabled: yes
-        state: started
+        state: restarted
       when: "'elasticsearch' in group_names"
 
     - name: Install the latest version of Kibana
@@ -35,5 +38,5 @@
       service:
         name: kibana
         enabled: yes
-        state: started
+        state: restarted
       when: "'kibana' in group_names"

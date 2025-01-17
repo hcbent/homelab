@@ -1,35 +1,36 @@
 ---
 - name: Deploy additional Kubernetes control plane nodes
-    hosts: new_control_plane_nodes
-    become: true
-    vars:
-        # Variables containing essential information from the first control plane node
-        first_cp_node_ip: "192.168.1.100"
-        first_cp_node_token: "abcdef.0123456789abcdef"
-        first_cp_node_ca_cert_hash: "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        kubeadm_version: "1.22.0"
+  hosts: new_control_plane_nodes
+  become: true
+  gather_facts: false
+  vars:
+    # Variables containing essential information from the first control plane node
+    first_cp_node_ip: "192.168.1.100"
+    first_cp_node_token: "abcdef.0123456789abcdef"
+    first_cp_node_ca_cert_hash: "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    kubeadm_version: "1.22.0"
 
-    tasks:
-        - name: Join the new control plane node to the cluster
-            shell: |
-                kubeadm join {{ first_cp_node_ip }}:6443 --token {{ first_cp_node_token }} \
-                --discovery-token-ca-cert-hash {{ first_cp_node_ca_cert_hash }} \
-                --control-plane --certificate-key {{ first_cp_node_ca_cert_hash }} \
-                --kubernetes-version {{ kubeadm_version }}
-            args:
-                creates: /etc/kubernetes/kubelet.conf
+  tasks:
+    - name: Join the new control plane node to the cluster
+      shell: |
+        kubeadm join {{ first_cp_node_ip }}:6443 --token {{ first_cp_node_token }} \
+        --discovery-token-ca-cert-hash {{ first_cp_node_ca_cert_hash }} \
+        --control-plane --certificate-key {{ first_cp_node_ca_cert_hash }} \
+        --kubernetes-version {{ kubeadm_version }}
+      args:
+        creates: /etc/kubernetes/kubelet.conf
 
-        - name: Restart kubelet service
-            systemd:
-                name: kubelet
-                state: restarted
-                enabled: true
+    - name: Restart kubelet service
+      systemd:
+        name: kubelet
+        state: restarted
+        enabled: true
 
-        - name: Ensure kubectl configuration is set up
-            shell: |
-                mkdir -p $HOME/.kube
-                cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-                chown $(id -u):$(id -g) $HOME/.kube/config
-            args:
-                creates: $HOME/.kube/config
+    - name: Ensure kubectl configuration is set up
+      shell: |
+        mkdir -p $HOME/.kube
+        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        chown $(id -u):$(id -g) $HOME/.kube/config
+      args:
+        creates: $HOME/.kube/config
                 
