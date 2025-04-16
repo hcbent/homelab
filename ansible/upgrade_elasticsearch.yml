@@ -94,6 +94,25 @@
         timeout: 300
       when: es_start.changed or es_upgrade.changed
 
+    - name: Re-enable shard allocation (via master)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "all"
+            }
+          }
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+      run_once: true
+
     - name: Wait for cluster to stabilize (via master)
       uri:
         url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
