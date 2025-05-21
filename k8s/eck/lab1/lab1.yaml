@@ -1,0 +1,50 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: quickstart
+spec:
+  version: 9.0.1
+  nodeSets:
+  - name: hot
+    count: 3
+    config:
+      node.roles: ["data_hot","data_content","ingest","ml","transform","remote_cluster_client"]
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Ti
+        storageClassName: standard
+  - name: frozen
+    count: 3
+    config:
+      node.roles: ["data_frozen","remote_cluster_client"]
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Ti
+        storageClassName: standard
+  - name: master
+    count: 3
+    config:
+      node.roles: ["master","remote_cluster_client"]
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: standard
+
