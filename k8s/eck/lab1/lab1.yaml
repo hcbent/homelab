@@ -1,7 +1,13 @@
 apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
-  name: quickstart
+  name: lab1
+  namespace: es-lab1
+  labels:
+    app: lab1
+    env: lab1
+    version: 9.0.1
+    type: elasticsearch
 spec:
   version: 9.0.1
   nodeSets:
@@ -47,4 +53,3 @@ spec:
           requests:
             storage: 10Gi
         storageClassName: standard
-
