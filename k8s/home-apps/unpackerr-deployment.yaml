@@ -38,6 +38,13 @@ spec:
               value: https://sonarr.bwortman.us
           image: golift/unpackerr
           name: unpackerr
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           volumeMounts:
             - mountPath: /downloads
               name: unpackerr-claim0

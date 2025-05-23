@@ -26,6 +26,13 @@ spec:
               value: http://0.0.0.0:9000
           image: lmenezes/cerebro:latest
           name: cerebro
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           ports:
             - containerPort: 9000
               protocol: TCP
