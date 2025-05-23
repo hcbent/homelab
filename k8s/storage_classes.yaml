@@ -1,0 +1,32 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-iscsi
+provisioner: iscsi.csi.openebs.io
+parameters:
+  targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
+  iqn: "iqn.2023-01.com.truenas:target0" # Replace with your TrueNAS Scale iSCSI target IQN
+  lun: "0" # Replace with the specific LUN number
+  fsType: "ext4" # Filesystem type (e.g., ext4, xfs)
+  initiatorName: "" # Optional: Specify if a specific initiator name is required
+  chapAuth: "false" # Set to "true" if CHAP authentication is enabled
+    #  secretRef: "iscsi-chap-secret" # Reference to the Secret for CHAP credentials
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-iscsi-elasticsearch
+provisioner: iscsi.csi.openebs.io
+parameters:
+  targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
+  iqn: "iqn.2023-01.com.truenas:es-target0" # Replace with your TrueNAS Scale iSCSI target IQN
+  lun: "0" # Replace with the specific LUN number
+  fsType: "ext4" # Filesystem type (ext4 is common for Elasticsearch)
+  chapAuth: "false" # Set to "true" if CHAP authentication is enabled
+    #  secretRef: "iscsi-chap-secret-es" # Reference to the Secret for CHAP credentials
+reclaimPolicy: Retain # Ensures PVs are not deleted when PVCs are released
+allowVolumeExpansion: true # Allows expanding storage if needed
+volumeBindingMode: WaitForFirstConsumer # Ensures volume is bound when pod is scheduled
