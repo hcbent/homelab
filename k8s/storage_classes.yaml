@@ -14,6 +14,7 @@ parameters:
 reclaimPolicy: Delete
 allowVolumeExpansion: true
 volumeBindingMode: Immediate
+default: true # Set this StorageClass as the default for dynamic provisioning
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
