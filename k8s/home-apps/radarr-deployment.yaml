@@ -35,6 +35,13 @@ spec:
           ports:
             - containerPort: 7878
               protocol: TCP
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           volumeMounts:
             - mountPath: /config
               name: radarr-claim0
