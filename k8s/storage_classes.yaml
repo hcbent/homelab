@@ -2,11 +2,11 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: truenas-iscsi
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true" # Set this storage class as default
+    openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
+    openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
 provisioner: iscsi.csi.openebs.io
-annotations:
-  storageclass.kubernetes.io/is-default-class: "true" # Set this storage class as default
-  openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
-  openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
 parameters:
   targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
   iqn: "iqn.2023-01.com.truenas:target0" # Replace with your TrueNAS Scale iSCSI target IQN
@@ -23,11 +23,11 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: truenas-iscsi-elasticsearch
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false" # Not the default storage class
+    openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
+    openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
 provisioner: iscsi.csi.openebs.io
-annotations:
-  storageclass.kubernetes.io/is-default-class: "false" # Not the default storage class
-  openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
-  openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
 parameters:
   targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
   iqn: "iqn.2023-01.com.truenas:es-target0" # Replace with your TrueNAS Scale iSCSI target IQN
