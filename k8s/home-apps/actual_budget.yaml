@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: actual-budget-secrets
+  namespace: default
+stringData:
+  encryption-key: "***REMOVED***"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actual-budget-config
+  namespace: default
+data:
+  APP_URL: "http://actual-budget.default.svc.cluster.local"
+  APP_ENV: "production"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actual-budget-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual-budget
+  namespace: default
+  labels:
+    app: actual-budget
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: actual-budget
+  template:
+    metadata:
+      labels:
+        app: actual-budget
+    spec:
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+      containers:
+      - name: actual-budget
+        image: docker.io/actualbudget/actual-server:latest
+        ports:
+        - containerPort: 5006
+          protocol: TCP
+        env:
+        - name: ACTUAL_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: actual-budget-secrets
+              key: encryption-key
+        - name: APP_URL
+          valueFrom:
+            configMapKeyRef:
+              name: actual-budget-config
+              key: APP_URL
+        - name: APP_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: actual-budget-config
+              key: APP_ENV
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5006
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5006
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: actual-budget-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actual-budget
+  namespace: default
+  labels:
+    app: actual-budget
+spec:
+  selector:
+    app: actual-budget
+  ports:
+  - protocol: TCP
+    port: 80       # The port the LoadBalancer (MetalLB) will listen on externally
+    targetPort: 5006 # The port your application container listens on
+  type: LoadBalancer # This tells Kubernetes to request an IP from MetalLB
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actual-budget-pdb
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: actual-budget
