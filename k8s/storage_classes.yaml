@@ -38,3 +38,31 @@ parameters:
 reclaimPolicy: Retain # Ensures PVs are not deleted when PVCs are released
 allowVolumeExpansion: true # Allows expanding storage if needed
 volumeBindingMode: WaitForFirstConsumer # Ensures volume is bound when pod is scheduled
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: vault-sc
+provisioner: csi.synology.com
+parameters:
+  fsType: ext4
+  nfsMountOptions: "nolock,hard,intr"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: synology-nfs
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: 192.168.1.230
+  share: /volume1/k8s
+  mountPermissions: "0755"
+reclaimPolicy: Delete
+mountOptions:
+  - hard
+  - nfsvers=3
