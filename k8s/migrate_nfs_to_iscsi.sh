@@ -3,10 +3,12 @@
 # Script to migrate Kubernetes PVCs from NFS to TrueNAS iSCSI
 
 # Configuration variables
-NAMESPACE="default"
+NAMESPACE="default" 
+# NAMESPACE="vault"
+# NAMESPACE="elastic-stack"
 STORAGE_CLASS_NAME="truenas-iscsi"
-TRUE_NAS_DATASET="hdd/k8s/iscsi"
-NFS_PVC_LABEL="app=my-app"
+TRUE_NAS_DATASET="tank/k8s/iscsi"
+NFS_PVC_LABEL="storage=nfs"
 TEMP_POD_PREFIX="data-migration-pod"
 NEW_PVC_PREFIX="iscsi-pvc"
 KUBECTL="kubectl"
