@@ -17,13 +17,13 @@ dnsConfig: {}
 
 ingress:
   # -- Specify if an ingress resource for the pms server should be created or not
-  enabled: true
+  enabled: false
 
   # -- The ingress class that should be used
-  ingressClassName: "nginx"
+  ingressClassName: "ingress-nginx"
 
   # -- The url to use for the ingress reverse proxy to point at this pms instance
-  url: "plex.thewortmans.org"
+  url: ""
 
   # -- Optional TLS configuration to provide valid https connections
   # using an existing SSL certificate
