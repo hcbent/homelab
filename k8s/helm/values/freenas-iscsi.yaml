@@ -26,11 +26,12 @@ driver:
     driver: freenas-iscsi
     instance_id:
     httpConnection:
-      protocol: http
-      host: 192.168.2.24
-      port: 80
+      protocol: https
+      host: truenas.lab.thewortmans.org
+      port: 443
       username: root
       password: Benm1les
+        #apiKey: Zgk0fdc16wvWtXJZToq5UHspsBoOXBIEmTRvT5lVjJFKsOYdteqdzkx1OlgBhkUw
       allowInsecure: true
       apiVersion: 2
     sshConnection:
@@ -38,18 +39,24 @@ driver:
       port: 22
       username: root
       # use either password or key
-      password: Benm1les
-        #      privateKey: |
-        #        -----BEGIN RSA PRIVATE KEY-----
-        #        ...
-        #        -----END RSA PRIVATE KEY-----
+      # password: Benm1les
+      privateKey: |
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+        1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTRHp7jPMuJBsA0B8Fsr2w4nR/0IqVM
+        pfoyI/fmytCFoJzM4zx/7cHWrr8IyIN++40orFrUb5lySKNsc/WXJAjuAAAAqEeTfvtHk3
+        77AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNEenuM8y4kGwDQH
+        wWyvbDidH/QipUyl+jIj9+bK0IWgnMzjPH/twdauvwjIg377jSisWtRvmXJIo2xz9ZckCO
+        4AAAAhANWyBGPRITvbgPDLDFwde2gV5sYTRKfUd1wvEkAzb/PhAAAADmJyZXRAaW5mcmEu
+        bGFiAQ==
+        -----END OPENSSH PRIVATE KEY-----
     zfs:
       # the example below is useful for TrueNAS 12
       cli:
         paths:
-          zfs: /usr/local/sbin/zfs
-          zpool: /usr/local/sbin/zpool
-          sudo: /usr/local/bin/sudo
+          zfs: /usr/sbin/zfs
+          zpool: /usr/sbin/zpool
+          sudo: /usr/bin/sudo
           chroot: /usr/sbin/chroot
       # total volume name (zvol/<datasetParentName>/<pvc name>) length cannot exceed 63 chars
       # https://www.ixsystems.com/documentation/freenas/11.2-U5/storage.html#zfs-zvol-config-opts-tab
@@ -63,7 +70,7 @@ driver:
       zvolDedup:
       zvolEnableReservation: false
       # 512, 1K, 2K, 4K, 8K, 16K, 64K, 128K default is 16K
-      zvolBlocksize:
+      zvolBlocksize: "16K"
     iscsi:
       targetPortal: "192.168.2.24:3260"
       targetPortals: []
@@ -74,7 +81,7 @@ driver:
       # add as many as needed
       targetGroups:
         # get the correct ID from the "portal" section in the UI
-        - targetGroupPortalGroup: 1
+        - targetGroupPortalGroup: 2
           # get the correct ID from the "initiators" section in the UI
           targetGroupInitiatorGroup: 1
           # None, CHAP, or CHAP Mutual
