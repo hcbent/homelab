@@ -21,7 +21,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: skooner
-  namespace: kube-system
+  namespace: default
 spec:
   ingressClassName: nginx
   rules:
