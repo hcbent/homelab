@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: video-pv
+spec:
+  capacity:
+    storage: 20Ti  # Arbitrary size; adjust based on your needs
+  accessModes:
+    - ReadWriteMany  # NFS supports multi-node read/write access
+  persistentVolumeReclaimPolicy: Retain  # Keeps PV after PVC deletion
+  storageClassName: manual  # Avoids dynamic provisioning
+  nfs:
+    path: /volume1/video  # The exported path on the NFS server
+    server: 192.168.1.230

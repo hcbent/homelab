@@ -1,3 +1,6 @@
+kibana
+fleeet
+
 [elasticsearch_nodes]
 es01
 es02
@@ -10,13 +13,6 @@ es06
 es07
 es08
 es09
-
-[kibana]
-kibana
-kibana2
-
-[fleet]
-fleet
 
 [k8s_cp]
 kube01
@@ -42,6 +38,6 @@ kibana
 fleet
 elasticsearch_masters
 
-[k8s:children]
-k8s_cp
-k8s_worker
+#[k8s:children]
+#k8s_cp
+#k8s_worker

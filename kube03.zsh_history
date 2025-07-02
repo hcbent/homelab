@@ -1,0 +1,80 @@
+sudo apt-get update && sudo apt-get install -y nfs-common
+# see what changes would be made, returns nonzero returncode if different\
+kubectl get configmap kube-proxy -n kube-system -o yaml | \\
+sed -e "s/strictARP: false/strictARP: true/" | \\
+kubectl diff -f - -n kube-system\
+\
+# actually apply the changes, returns nonzero returncode on errors only\
+kubectl get configmap kube-proxy -n kube-system -o yaml | \\
+sed -e "s/strictARP: false/strictARP: true/" | \\
+kubectl apply -f - -n kube-system
+exit
+sudo apt -y upgrade
+mkdir test
+telnet 192.168.1.230 2049
+mount -t nfs 192.168.1.230:/volume1/k8s test
+systemctl status firewalld
+apt list | grep nfs
+apt list --installed | grep nfs
+apt -y install nfs-tools
+sudo apt -y install nfs-tools
+sudo apt install nfs-kernel-server
+kubectl get pods --all-namespaces -o wide
+kubectl get pods --all-namespaces -o wide | grep kube01 | wc -l
+kubectl get pods --all-namespaces -o wide | grep kube02 | wc -l
+kubectl get pods --all-namespaces -o wide | grep kube03 | wc -l
+kubectl get pods --all-namespaces -o wide | grep km01 | wc -l
+kubectl get pods --all-namespaces -o wide | grep km02 | wc -l
+sudo mount -t nfs 192.168.1.230:/volume1/k8s test
+ls test
+umount test
+sudo umount test
+sudo tee /etc/multipath.conf <<-'EOF'\
+defaults {\
+    user_friendly_names yes\
+    find_multipaths yes\
+}\
+EOF\
+\
+sudo systemctl enable multipath-tools.service\
+sudo service multipath-tools restart\
+sudo systemctl enable open-iscsi.service\
+sudo service open-iscsi start
+sudo vim /etc/netplan/50-cloud-init.yaml
+sudo netplan try
+sudo reboot
+sudo kubeadm join cp.lab.thewortmans.org:6443 --token v7xft0.28ustrlkuag59svs \\
+        --discovery-token-ca-cert-hash sha256:9a1489b7af5f2f795f215c7022990b4d7369a67201afb5f8421f71fb83f78f19 \\
+        --certificate-key 3e82b8e06d31edbdd07ecdf3478a5cfce566f9f2684c8af022a4929a87a4f265
+apt -y update
+sudo apt update
+apt install -y open-iscsi
+sudo apt install -y open-iscsi
+systemctl enable --now iscsid
+sudo -i
+k get pods --all-namespaces | grep csi
+k get nodes
+iscsiadm -m discovery -t sendtargets - p 192.168.2.24:3260
+ssh 192.168.2.24
+cd
+iscsiadm -m discovery -t sendtargets -p 192.168.2.24:3260
+sudo iscsiadm -m discovery -t sendtargets -p 192.168.2.24:3260
+chmod 0600 .ssh/*
+curl https://truenas.lab.thewortmans.org/api/v2.0/system/version/
+curl -H "Authorization: Bearer ***REMOVED***" https://truenas.lab.thewortmans.org/api/v2.0/system/version/
+ls .ssh
+ssh root@192.168.2.24 -vvvvv
+ssh root@192.168.2.24 zfs list
+ssh-copy-id -i ~/.ssh/id_ecdsa.pub root@192.168.2.24
+ssh root@192.168.2.24
+cat id_ecdsa.pub
+cat .ssh/id_ecdsa.pub
+cat .ssh/id_ecdsa
+which zfs
+whereis zfs
+ls /usr/bin/zfs
+ls /bin/zfs
+ls /usr/local/sbin/zfs
+zfs help
+host k8s.lab.thewortman.sorg
+host k8s.lab.thewortmans.org
