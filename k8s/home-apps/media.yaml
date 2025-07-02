@@ -1,0 +1,476 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+---
+# Radarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radarr
+  namespace: media
+  labels:
+    app: radarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      containers:
+      - name: radarr
+        image: linuxserver/radarr:latest
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 7878
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: radarr-config
+          mountPath: /config
+        - name: media-storage
+          mountPath: /movies
+      volumes:
+      - name: radarr-config
+        persistentVolumeClaim:
+          claimName: radarr-config-pvc
+      - name: media-storage
+        persistentVolumeClaim:
+          claimName: media-pvc
+---
+# Radarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: radarr
+  namespace: media
+spec:
+  selector:
+    app: radarr
+  ports:
+  - port: 80
+    targetPort: 7878
+    protocol: TCP
+---
+# Radarr Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: radarr-ingress
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: radarr.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: radarr
+            port:
+              number: 80
+---
+# Sonarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  namespace: media
+  labels:
+    app: sonarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      containers:
+      - name: sonarr
+        image: linuxserver/sonarr:latest
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 8989
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: sonarr-config
+          mountPath: /config
+        - name: media-storage
+          mountPath: /tv
+      volumes:
+      - name: sonarr-config
+        persistentVolumeClaim:
+          claimName: sonarr-config-pvc
+      - name: media-storage
+        persistentVolumeClaim:
+          claimName: media-pvc
+---
+# Sonarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  selector:
+    app: sonarr
+  ports:
+  - port: 80
+    targetPort: 8989
+    protocol: TCP
+---
+# Sonarr Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonarr-ingress
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: sonarr.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sonarr
+            port:
+              number: 80
+---
+# Plex Media Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  namespace: media
+  labels:
+    app: plex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      containers:
+      - name: plex
+        image: linuxserver/plex:latest
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        - name: PLEX_CLAIM
+          value: "your-plex-claim-token"
+        ports:
+        - containerPort: 32400
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1024Mi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: plex-config
+          mountPath: /config
+        - name: media-storage
+          mountPath: /data
+      volumes:
+      - name: plex-config
+        persistentVolumeClaim:
+          claimName: plex-config-pvc
+      - name: media-storage
+        persistentVolumeClaim:
+          claimName: media-pvc
+---
+# Plex Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex
+  namespace: media
+spec:
+  selector:
+    app: plex
+  ports:
+  - port: 80
+    targetPort: 32400
+    protocol: TCP
+---
+# Plex Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plex-ingress
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: plex.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plex
+            port:
+              number: 80
+---
+# Jackett Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jackett
+  namespace: media
+  labels:
+    app: jackett
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jackett
+  template:
+    metadata:
+      labels:
+        app: jackett
+    spec:
+      containers:
+      - name: jackett
+        image: linuxserver/jackett:latest
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 9117
+        resources:
+          limits:
+            cpu: "300m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: jackett-config
+          mountPath: /config
+      volumes:
+      - name: jackett-config
+        persistentVolumeClaim:
+          claimName: jackett-config-pvc
+---
+# Jackett Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jackett
+  namespace: media
+spec:
+  selector:
+    app: jackett
+  ports:
+  - port: 80
+    targetPort: 9117
+    protocol: TCP
+---
+# Jackett Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jackett-ingress
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: jackett.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jackett
+            port:
+              number: 80
+---
+# Unpackerr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unpackerr
+  namespace: media
+  labels:
+    app: unpackerr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unpackerr
+  template:
+    metadata:
+      labels:
+        app: unpackerr
+    spec:
+      containers:
+      - name: unpackerr
+        image: golift/unpackerr:latest
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: UN_SONARR_0_URL
+          value: "http://sonarr.media.svc.cluster.local"
+        - name: UN_SONARR_0_API_KEY
+          value: "your-sonarr-api-key"
+        - name: UN_RADARR_0_URL
+          value: "http://radarr.media.svc.cluster.local"
+        - name: UN_RADARR_0_API_KEY
+          value: "your-radarr-api-key"
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: unpackerr-config
+          mountPath: /config
+        - name: media-storage
+          mountPath: /downloads
+      volumes:
+      - name: unpackerr-config
+        persistentVolumeClaim:
+          claimName: unpackerr-config-pvc
+      - name: media-storage
+        persistentVolumeClaim:
+          claimName: media-pvc
+---
+# PVCs (Example, adjust storage class and size as needed)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-config-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jackett-config-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unpackerr-config-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: synology-nfs

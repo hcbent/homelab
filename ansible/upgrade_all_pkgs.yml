@@ -1,0 +1,43 @@
+---
+- name: Upgrade All Packages
+  hosts: all
+  become: yes
+  serial: 1
+  user: bret
+  gather_facts: no
+
+  vars:
+    ansible_ssh_common_args: '-o IdentityFile=~/.ssh/github_rsa'
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Get current kernel version
+      command: uname -r
+      register: current_kernel
+      changed_when: false
+
+    - name: Perform full system upgrade
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      register: apt_upgrade
+
+    - name: Check installed kernel packages
+      shell: dpkg -l | grep '^ii.*linux-image' | awk '{print $2}'
+      register: kernel_packages
+      changed_when: false
+      when: apt_upgrade.changed
+
+    - name: Reboot system if kernel was updated
+      reboot:
+        reboot_timeout: 300
+        post_reboot_delay: 60
+      when:
+        - apt_upgrade.changed
+        - kernel_packages.stdout is defined
+        - current_kernel.stdout not in kernel_packages.stdout_lines

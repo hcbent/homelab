@@ -1,0 +1,62 @@
+csiDriver:
+  # should be globally unique for a given cluster
+  name: "org.democratic-csi.nfs"
+
+storageClasses:
+- name: freenas-nfs-csi
+  defaultClass: false
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: true
+  parameters:
+    fsType: nfs
+
+  mountOptions:
+  - noatime
+  - nfsvers=4
+  secrets:
+    provisioner-secret:
+    controller-publish-secret:
+    node-stage-secret:
+    node-publish-secret:
+    controller-expand-secret:
+
+driver:
+  config:
+    driver: freenas-nfs
+    instance_id:
+    httpConnection:
+      protocol: https
+      host: 192.168.2.24
+      port: 443
+      username: root
+        #password: ***REMOVED***
+      allowInsecure: false
+      apiKey: ***REMOVED***
+    sshConnection:
+      host: 192.168.2.24
+      port: 22
+      username: root
+      # use either password or key
+      password: "***REMOVED***"
+        #      privateKey: |
+        #        -----BEGIN RSA PRIVATE KEY-----
+        #        ...
+        #        -----END RSA PRIVATE KEY-----
+    zfs:
+      datasetParentName: tank/k8s/nfs/vols
+      detachedSnapshotsDatasetParentName: tank/k8s/nfs/snaps
+      datasetEnableQuotas: true
+      datasetEnableReservation: false
+      datasetPermissionsMode: "0777"
+      datasetPermissionsUser: root
+      datasetPermissionsGroup: wheel
+    nfs:
+      shareHost: 192.168.2.24
+      shareAlldirs: false
+      shareAllowedHosts: []
+      shareAllowedNetworks: []
+      shareMaprootUser: root
+      shareMaprootGroup: wheel
+      shareMapallUser: ""
+      shareMapallGroup: ""

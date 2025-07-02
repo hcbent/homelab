@@ -1,0 +1,4 @@
+# need these paths to grant permissions:
+path "secret/*" {
+  capabilities = ["create", "update"]
+}

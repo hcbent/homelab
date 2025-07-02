@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-config
+  namespace: default
+data:
+  TZ: "America/New_York" # Set your timezone
+  WEBPASSWORD: "***REMOVED***"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  namespace: default
+  labels:
+    app: pihole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pihole
+  template:
+    metadata:
+      labels:
+        app: pihole
+    spec:
+      containers:
+      - name: pihole
+        image: pihole/pihole:latest
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN","CAP_SYS_TIME"]
+        ports:
+        - containerPort: 53
+          name: dns-tcp
+          protocol: TCP
+        - containerPort: 53
+          name: dns-udp
+          protocol: UDP
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: pihole-config
+        env:
+        - name: DNSMASQ_LISTENING
+          value: "all"
+        - name: SERVER_IP
+          value: "YOUR_CLUSTER_IP" # Replace with your cluster IP or external IP
+        volumeMounts:
+        - name: pihole-config-volume
+          mountPath: "/etc/pihole"
+        - name: dnsmasq-config-volume
+          mountPath: "/etc/dnsmasq.d"
+        resources:
+          limits:
+            cpu: "8"
+            memory: "512Mi"
+          requests:
+            cpu: "1"
+            memory: "256Mi"
+      volumes:
+      - name: pihole-config-volume
+        persistentVolumeClaim:
+          claimName: pihole-config-pvc # Create this PVC separately
+      - name: dnsmasq-config-volume
+        persistentVolumeClaim:
+          claimName: pihole-dnsmasq-pvc # Create this PVC separately
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-service
+  namespace: default
+spec:
+  selector:
+    app: pihole
+  ports:
+  - name: dns-tcp
+    port: 53
+    targetPort: 53
+    protocol: TCP
+  - name: dns-udp
+    port: 53
+    targetPort: 53
+    protocol: UDP
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+  type: LoadBalancer # Use ClusterIP or NodePort if LoadBalancer is not suitable
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-config-pvc
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-dnsmasq-pvc
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: synology-nfs

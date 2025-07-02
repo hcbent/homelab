@@ -1,0 +1,68 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-iscsi
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true" # Set this storage class as default
+    openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
+    openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
+provisioner: iscsi.csi.openebs.io
+parameters:
+  targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
+  iqn: "iqn.2023-01.com.truenas:target0" # Replace with your TrueNAS Scale iSCSI target IQN
+  lun: "0" # Replace with the specific LUN number
+  fsType: "ext4" # Filesystem type (e.g., ext4, xfs)
+  initiatorName: "" # Optional: Specify if a specific initiator name is required
+  chapAuth: "false" # Set to "true" if CHAP authentication is enabled
+    #  secretRef: "iscsi-chap-secret" # Reference to the Secret for CHAP credentials
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-iscsi-elasticsearch
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false" # Not the default storage class
+    openebs.io/cas-type: "iscsi" # Specify the CAS type for OpenEBS
+    openebs.io/provisioner-requirement: "true" # Indicates that this is a provisioner requirement
+provisioner: iscsi.csi.openebs.io
+parameters:
+  targetPortal: "192.168.2.24:3260" # Replace with your TrueNAS Scale iSCSI portal IP and port
+  iqn: "iqn.2023-01.com.truenas:es-target0" # Replace with your TrueNAS Scale iSCSI target IQN
+  lun: "0" # Replace with the specific LUN number
+  fsType: "ext4" # Filesystem type (ext4 is common for Elasticsearch)
+  chapAuth: "false" # Set to "true" if CHAP authentication is enabled
+    #  secretRef: "iscsi-chap-secret-es" # Reference to the Secret for CHAP credentials
+reclaimPolicy: Retain # Ensures PVs are not deleted when PVCs are released
+allowVolumeExpansion: true # Allows expanding storage if needed
+volumeBindingMode: WaitForFirstConsumer # Ensures volume is bound when pod is scheduled
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: vault-sc
+provisioner: csi.synology.com
+parameters:
+  fsType: ext4
+  nfsMountOptions: "nolock,hard,intr"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: synology-nfs
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: 192.168.1.230
+  share: /volume1/k8s
+  mountPermissions: "0755"
+reclaimPolicy: Delete
+mountOptions:
+  - hard
+  - nfsvers=3

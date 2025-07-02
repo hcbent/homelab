@@ -1,0 +1,24 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: actual-budget-pool # Or a more general name like 'default-pool'
+  namespace: metallb-system # Or wherever MetalLB is installed
+spec:
+  addresses:
+  - 192.168.10.50-192.168.10.99 # IMPORTANT: Replace with a free IP range on your network
+                                # This range must be on the same L2 network as your K8s nodes
+                                # and NOT managed by your DHCP server.
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: actual-budget-l2 # Or a more general name
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - actual-budget-pool # Reference the IPAddressPool defined above
+  # Optional: You can specify network interfaces if needed
+  # nodeSelectors: ...
+  # interfaces:
+  # - eth0
+

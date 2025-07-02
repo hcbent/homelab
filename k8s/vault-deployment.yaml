@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: vault
+data:
+  vault.hcl: |
+    storage "raft" {
+      path = "/vault/data"
+      retry_join {
+        leader_api_addr = "http://vault-0.vault-internal:8200"
+      }
+    }
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      cluster_address = "0.0.0.0:8201"
+      tls_disable = 1
+    }
+    ui = true
+    disable_mlock = true
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+spec:
+  serviceName: vault-internal
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      app.kubernetes.io/instance: vault
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault
+        app.kubernetes.io/instance: vault
+    spec:
+      serviceAccountName: vault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.18.0
+        args:
+        - "server"
+        env:
+        - name: VAULT_ADDR
+          value: "http://127.0.0.1:8200"
+        - name: VAULT_API_ADDR
+          value: "http://$(POD_NAME).vault-internal:8200"
+        - name: VAULT_RAFT_NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SKIP_SETCAP
+          value: "true"
+        ports:
+        - containerPort: 8200
+          name: http
+        - containerPort: 8201
+          name: https-internal
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add: ["IPC_LOCK"]
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "2Gi"
+          requests:
+            cpu: "200m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: vault-data
+          mountPath: /vault/data
+        - name: vault-config
+          mountPath: /vault/config/vault.hcl
+          subPath: vault.hcl
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+          items:
+          - key: vault.hcl
+            path: vault.hcl
+  volumeClaimTemplates:
+  - metadata:
+      name: vault-data
+    spec:
+      accessModes:
+      - ReadWriteMany
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: vault-sc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-internal
+  namespace: vault
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+  ports:
+  - port: 8200
+    targetPort: 8200
+    name: http
+  - port: 8201
+    targetPort: 8201
+    name: https-internal
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-ui
+  namespace: vault
+spec:
+  selector:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+  ports:
+  - port: 80
+    targetPort: 8200
+    protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vault-ingress
+  namespace: vault
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: vault.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vault-ui
+            port:
+              number: 80
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-role-binding
+subjects:
+- kind: ServiceAccount
+  name: vault
+  namespace: vault
+roleRef:
+  kind: ClusterRole
+  name: vault-role
+  apiGroup: rbac.authorization.k8s.io
