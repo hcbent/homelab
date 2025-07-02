@@ -1,9 +1,15 @@
-[elasticsearch]
-
+[elasticsearch_nodes]
 es01
 es02
 es03
-cluster2
+es04
+es05
+es06
+
+[elasticsearch_masters]
+es07
+es08
+es09
 
 [kibana]
 kibana
@@ -27,13 +33,14 @@ infra
 proxy
 plex
 torrent
-homeassistant
+#homeassistant
 pihole
 
 [elasticsearch_all:children]
-elasticsearch
+elasticsearch_nodes
 kibana
 fleet
+elasticsearch_masters
 
 [k8s:children]
 k8s_cp

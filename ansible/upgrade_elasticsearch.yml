@@ -1,6 +1,6 @@
 ---
 - name: Upgrade Elasticsearch Cluster
-  hosts: elasticsearch_all
+  hosts: elasticsearch_nodes:!elasticsearch_masters
   become: yes
   serial: 1
   user: bret
@@ -8,35 +8,162 @@
 
   vars:
     ansible_ssh_common_args: '-o IdentityFile=~/.ssh/github_rsa'
+    elasticsearch_service: elasticsearch
+    elasticsearch_port: 9200
+    elasticsearch_version: "8.12.2"
+    master_node: "{{ groups['elasticsearch_masters'][0] }}"  # First master node
+    es_username: bret
+    es_password: ***REMOVED***
+
+  pre_tasks:
+    - name: Check cluster health before starting (via master)
+      uri:
+        url: "http://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+      register: cluster_health
+      failed_when: cluster_health.json.status == 'red'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Disable shard allocation (via master)
+      uri:
+        url: "http://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "primaries"
+            }
+          }
+      delegate_to: localhost
+      run_once: true
 
   tasks:
-    - name: Add Elasticsearch repository
-      shell: |
-        echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
-        sudo apt -y update
-
-    - name: Install the latest version of Elasticsearch
-      apt:
-        name: elasticsearch
-        state: latest
-      when: "'elasticsearch' in group_names"
-
-    - name: Ensure Elasticsearch is enabled and started
+    - name: Stop Elasticsearch service
       service:
-        name: elasticsearch
-        enabled: yes
-        state: restarted
-      when: "'elasticsearch' in group_names"
+        name: "{{ elasticsearch_service }}"
+        state: stopped
 
-    - name: Install the latest version of Kibana
+    - name: Update apt cache
       apt:
-        name: kibana
-        state: latest
-      when: "'kibana' in group_names"
+        update_cache: yes
+        cache_valid_time: 3600
 
-    - name: Ensure Kibana is enabled and started
+    - name: Upgrade Elasticsearch to specified version
+      apt:
+        name: "elasticsearch={{ elasticsearch_version }}"
+        state: present
+      register: es_upgrade
+
+    - name: Start Elasticsearch service
       service:
-        name: kibana
-        enabled: yes
-        state: restarted
-      when: "'kibana' in group_names"
+        name: "{{ elasticsearch_service }}"
+        state: started
+      register: es_start
+
+    - name: Wait for node to join cluster
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ elasticsearch_port }}"
+        timeout: 300
+      when: es_start.changed or es_upgrade.changed
+
+    - name: Wait for cluster to stabilize (via master)
+      uri:
+        url: "http://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+      register: cluster_status
+      retries: 5
+      delay: 10
+      until: cluster_status.json.status in ['yellow', 'green']
+      delegate_to: localhost
+
+- name: Rolling upgrade of Elasticsearch cluster - Master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  serial: 1
+  user: bret
+  gather_facts: no
+
+  vars:
+    elasticsearch_service: elasticsearch
+    elasticsearch_port: 9200
+    elasticsearch_version: "8.12.2"
+    non_master_node: "{{ groups['elasticsearch_nodes'] | difference(groups['elasticsearch_masters']) | first }}"  # First non-master
+
+  tasks:
+    - name: Stop Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: stopped
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade Elasticsearch to specified version
+      apt:
+        name: "elasticsearch={{ elasticsearch_version }}"
+        state: present
+      register: es_upgrade
+
+    - name: Start Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: started
+      register: es_start
+
+    - name: Wait for node to join cluster
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ elasticsearch_port }}"
+        timeout: 300
+      when: es_start.changed or es_upgrade.changed
+
+    - name: Wait for cluster to stabilize (via non-master)
+      uri:
+        url: "http://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+      register: cluster_status
+      retries: 5
+      delay: 10
+      until: cluster_status.json.status in ['yellow', 'green']
+      delegate_to: localhost
+
+  post_tasks:
+    - name: Re-enable shard allocation (via non-master)
+      uri:
+        url: "http://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "all"
+            }
+          }
+      delegate_to: localhost
+      when: inventory_hostname == groups['elasticsearch_masters'][-1]
+
+    - name: Verify final cluster health (via non-master)
+      uri:
+        url: "http://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+      register: final_health
+      failed_when: final_health.json.status == 'red'
+      delegate_to: localhost
+      when: inventory_hostname == groups['elasticsearch_masters'][-1]
