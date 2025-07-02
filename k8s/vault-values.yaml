@@ -1,0 +1,65 @@
+# my-vault-values.yaml
+
+# Global settings apply to all components of the chart
+global:
+  # Enable TLS for all communication within the cluster.
+  # The chart will automatically generate certificates for you.
+  tlsDisable: false
+
+# Configure the main Vault server component
+server:
+  # Run in High Availability (HA) mode
+  ha:
+    enabled: true
+    # Use the Raft integrated storage backend. This is the recommended
+    # approach for most Kubernetes deployments.
+    raft:
+      enabled: true
+      # Configuration for the Raft backend
+      config: |
+        ui = true
+        
+        # Use Raft for storage
+        storage "raft" {
+          path = "/vault/data"
+          # The following will be populated by the Helm chart automatically:
+          # node_id = "vault-0"
+          # cluster_addr = "https://vault-0.vault-internal:8201"
+          # api_addr = "https://vault-0.vault-internal:8200"
+        }
+        
+        # Listen for requests on all interfaces
+        listener "tcp" {
+          address = "0.0.0.0:8200"
+          cluster_address = "0.0.0.0:8201"
+          tls_cert_file = "/vault/userconfig/vault-server-tls/vault.crt"
+          tls_key_file  = "/vault/userconfig/vault-server-tls/vault.key"
+        }
+
+  # Set the number of Vault replicas. For HA with Raft, 3 or 5 is recommended.
+  replicas: 3
+
+  # Configure persistent storage for the Raft backend.
+  # This section will create a PersistentVolumeClaim for each replica.
+  dataStorage:
+    enabled: true
+    size: 10Gi
+    # storageClass: "your-storage-class-name" # Optional: specify if needed
+
+# Expose the Vault service outside the cluster
+# See the official chart values for Ingress options.
+service:
+  type: "LoadBalancer" # Use a LoadBalancer to get an external IP
+  # Optional: Add annotations for your cloud provider's load balancer
+  # annotations:
+  #   service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+
+# Enable and configure the Vault UI
+ui:
+  enabled: true
+  # Expose the UI service via the same LoadBalancer as the API
+  serviceType: "LoadBalancer"
+  service:
+    # Use the same annotations as the API service if needed
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-internal: "true"

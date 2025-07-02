@@ -1,0 +1,126 @@
+# -- Provide a name in place of `skooner`
+nameOverride: ""
+# -- String to fully override `"skooner.fullname"`
+fullnameOverride: ""
+
+image:
+  # -- image registory
+  registry: ghcr.io
+  # -- image repository
+  repository: skooner-k8s/skooner
+  # -- image pull policy
+  pullPolicy: Always
+  # -- Overrides the image tag
+  tag: "stable"
+
+# -- If defined, uses a Secret to pull an image from a private Docker registry or repository.
+imagePullSecrets: []
+
+# -- Number of replicas
+replicaCount: 1
+
+# -- The number of old ReplicaSets to retain
+revisionHistoryLimit: 10
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- Annotations to be added to exporter pods
+podAnnotations: {}
+
+# -- pod-level security context
+podSecurityContext:
+  fsGroup: 1000
+
+# -- container-level security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+
+service:
+  # -- Kubernetes service type
+  type: ClusterIP
+  # -- Kubernetes port where service is exposed
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+# -- Resource limits and requests for the headwind pods.
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# -- Node labels for pod assignment
+nodeSelector:
+  kubernetes.io/os: linux
+
+# -- Toleration labels for pod assignment
+tolerations: []
+
+# -- Affinity settings for pod assignment
+affinity: {}
+
+oidc:
+  enabled: false
+  provider:
+    # The URL of the OIDC endpoint.
+    oidcUrl: ""
+    oidcScopes: "openid email"
+    oidcMetadata: ""
+  secret:
+    clientId: ""
+    clientSecret: ""
+    # The name of the secret that contains the client credentials. Uses fullname if none given.
+    name: ""
+    # Secret must provide the following variables: OIDC_CLIENT_ID and OIDC_SECRET.
+    useExistingSecret: false
+
+clusterRoleBinding:
+  # -- Define which ClusterRole to bind to: cluster-admin, edit, view
+  clusterRole: edit
+
+# -- Container's volume mounts
+volumeMounts: []
+
+# -- Pod's volumes
+volumes: []
+

@@ -1,0 +1,51 @@
+#kind: Ingress
+#apiVersion: networking.k8s.io/v1
+#metadata:
+#  name: skooner
+#  namespace: kube-system
+#spec:
+#  ingressClassName: nginx
+#  rules:
+#  - host: skooner.lab.thewortmans.org
+#    http:
+#      paths:
+#      - path: /
+#        pathType: Prefix
+#        backend:
+#          service:
+#            name: skooner
+#            port:
+#              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: skooner
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: skooner.lab.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: skooner
+            port:
+              number: 80
+  - host: skooner.bwortman.us
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: skooner
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - skooner.example.com
+    secretName: skooner-tls # Ensure a valid TLS certificate

@@ -1,0 +1,1446 @@
+cd 
+chmod 600 github github_rsa
+chmod 744 *.pub
+git push
+cd .ssh
+cd git/dotfiles
+ssh km02
+vim ~/.ssh/config
+kubectl logs webserver
+kubectl logs webserver-55f5bfd47b-rqvsc
+kubectl logs webserver-55f5bfd47b-rqvsc -n paperless
+kubectl describe pod webserver-55f5bfd47b-rqvsc 
+kubectl describe pod webserver-55f5bfd47b-rqvsc -n paperless
+cd dotfiles
+alias k
+kubectl create -f https://download.elastic.co/downloads/eck/3.0.0/crds.yaml
+kubectl apply -f https://download.elastic.co/downloads/eck/3.0.0/operator.yaml
+kubectl -n elastic-system logs -f statefulset.apps/elastic-operator
+kubectl get -n elastic-system pods
+git clone git@github.com:wortmanb/homelab
+mkdir k8s
+mkdir elasticsearch
+sysctl -w vm.max_map_count=262144
+sudo sysctl -w vm.max_map_count=262144
+sudo vim /etc/sysctl.conf
+kubectl set context --current --namepsace=elastic-system
+kubectl config set context --current --namepsace=elastic-system
+kubectl config set-context --current --namepsace=elastic-system
+kubectl config set-context --current -n elastic-system
+kubectl config set-context --help
+kubectl config set-context --current --namespace=elastic-system
+cd elasticsearch
+vim homelab-cluster.yaml
+cd k8s/eck/lab1
+kubectl delete statefulset quickstart-es-frozen
+kubectl delete statefulset quickstart-es-hot
+kubectl delete statefulset quickstart-es-master
+kubectl delete service quickstart-es-*
+kubectl delete service quickstart-es-frozen
+kubectl delete service quickstart-es-hot
+kubectl delete service quickstart-es-http
+kubectl delete service quickstart-es-internal-http
+kubectl delete service quickstart-es-master
+kubectl delete service quickstart-es-transport
+kubectl get all --all-namespaces | grep -i quickstart
+kubectl get services --all-namespaces
+kubectl apply -f lab1.yaml
+kubectl get all -n es-lab1
+kubectl delete -f lab1.yaml
+kubectl get all --all-namespaces | grep -i lab1
+kubectl get pods -o wide
+mkdir home-apps
+ls ~
+ls ~/manifests
+mv ~/manifests/* .
+kubectl create --help
+vim truenas.yaml
+mv truenas.yaml storage_classes.yaml
+kubectl get storage
+kubectl get all
+apt-get install helm
+curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null\
+sudo apt-get install apt-transport-https --yes\
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list\
+sudo apt-get update\
+sudo apt-get install helm
+helm repo add openebs https://openebs.github.io/charts\
+helm install openebs openebs/openebs --namespace openebs --create-namespace
+kubectl get pods -n openebs
+watch kubectl get pods -n openebs
+kubect describe pod openebs-ndm-operator-575ddbf794-j5gw4  
+kubectl describe pod openebs-ndm-operator-575ddbf794-j5gw4  
+kubectl logs -f openebs-ndm-operator-575ddbf794-j5gw4  -n openebs
+kubectl describe pod openebs-ndm-operator-575ddbf794-j5gw4  -n openebs
+kubectl logs openebs-ndm-operator-575ddbf794-j5gw4 openebs-ndm-operator  -n openebs
+lg
+kubectl delete -f storage_classes.yaml
+git pull
+kubectl get storageclass --all-namespaces
+curl -skSL https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/v4.11.0/deploy/install-driver.sh | bash -s v4.11.0 --
+kubectl get deploy --all-namespaces
+kubectl get replicasets --all-namespaces
+kubectl describe pvc elasticsearch-data-quickstart-es-hot-0
+kubectl delete elasticsearch quickstart
+kubectl get elasticsearch
+kubectl delete pvc elasticsearch-data-quickstart-es-hot-0
+kubectl delete pvc elasticsearch-data-quickstart-es-hot-1
+kubectl delete pvc elasticsearch-data-quickstart-es-hot-2
+kubectl delete pvc elasticsearch-data-quickstart-es-frozen-2
+kubectl delete pvc elasticsearch-data-quickstart-es-frozen-1
+kubectl delete pvc elasticsearch-data-quickstart-es-frozen-0
+kubectl delete pvc elasticsearch-data-quickstart-es-master-0
+kubectl delete pvc elasticsearch-data-quickstart-es-master-1
+kubectl delete pvc elasticsearch-data-quickstart-es-master-2
+kubectl get all --all-namespaces | grep quick
+kubectl get all --all-namespaces
+kubectl edit configmap -n kube-system kube-proxy
+# see what changes would be made, returns nonzero returncode if different\
+kubectl get configmap kube-proxy -n kube-system -o yaml | \\
+sed -e "s/strictARP: false/strictARP: true/" | \\
+kubectl diff -f - -n kube-system\
+\
+# actually apply the changes, returns nonzero returncode on errors only\
+kubectl get configmap kube-proxy -n kube-system -o yaml | \\
+sed -e "s/strictARP: false/strictARP: true/" | \\
+kubectl apply -f - -n kube-system
+sudo apt install plocate
+locate kubeadm-config
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+> kubectl version --client\
+Client Version: v1.31.0\
+Kustomize Version: v5.4.2
+> kubectl version --client
+kubectl get pods -n default
+kubectl config set-context --current --namespace=default
+kubectl get pods 
+kubectl log cerebro-6599f4d8fd-vqb7w  
+vim cerebro-deployment.yaml
+vim cerebro-service.yaml
+kubectl edit pod cerebro-6599f4d8fd-vqb7w  
+kubectl describe pod cerebro-6599f4d8fd-vqb7w  
+kubectl logs cerebro-6599f4d8fd-vqb7w  
+kubectl delete -f cerebro-deploy.yaml
+kubectl delete -f cerebro-deployment.yaml
+kubectl delete -f cerebro-service.yaml
+kubectl create -f cerebro.yaml
+kubect get pod jackett-84cd74cf6d-vvrj8   
+kubectl get pod jackett-84cd74cf6d-vvrj8   
+kubectl describe pod jackett-84cd74cf6d-vvrj8   
+kubectl describe pod cerebro-5df4dc689f-cc8fk 
+kubectl logs cerebro-5df4dc689f-cc8fk 
+kubectl logs -f cerebro-5df4dc689f-cc8fk 
+kubectl logs cerebro-5df4dc689f-7cdvz  
+kubectl logs cerebro-5df4dc689f-xpms5 
+kubectl get pods --all-namespaces
+kubectl describe pod actual
+kubectl logs actual
+grep -rIi actual *.yaml
+kubectl get storageclass
+kubectl delete pod actual
+kubectl get logs actual-budget-6d8fbc4b58-mfqsg
+kubectl logs actual-budget-6d8fbc4b58-mfqsg
+kubectl logs actual-budget-6d8fbc4b58-q9524
+kubectl logs actual-budget-6d8fbc4b58-q9524 -f
+kubectl describe pod -f
+kubectl describe pod actual-budget-6d8fbc4b58-mfqsg
+kubectl delete storageClass synology-nfs
+mv actual_budget.yaml home-apps
+kubectl describe actual-budget-data
+sudo apt-get update && sudo apt-get install -y nfs-common
+watch kubectl get pvc
+kubectl describe pvc actual-budget-data
+kubectl describe pvc actual-budget-data --watch
+watch kubectl describe pvc actual-budget-data
+kubectl get pvc actual-budget-data
+kubectl delete storageclass synology-nfs
+ip
+mkdir tmp
+vim /etc/fstab
+kubectl delete -f actual_budget.yaml
+watch kubectl get pvc actual-budget-data
+mount -t nfs 192.168.1.230:/volume1/k8s ./tmp
+mount -t nfs 192.168.1.230:/volume1/k8s tmp
+showmount -e 192.168.1.230
+which mount.nfs
+sudo mkdir -p /mount/tmp\
+sudo mount -t nfs -o vers=3,hard 192.168.1.230:/volume1/k8s /mount/tmp
+touch /mount/tmp/f.f
+kubectl get podactual-budget-6d8fbc4b58-l9tqr
+kubectl desc pod actual-budget-6d8fbc4b58-gpf8b
+kubectl describe pod actual-budget-6d8fbc4b58-gpf8b
+kubectl get pod actual-budget-6d8fbc4b58-gpf8b
+kubectl logs actual-budget-6d8fbc4b58-gpf8b
+kubectl get pod actual-budget-6d8fbc4b58-l9tqr
+kubectl get csidrivers
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts\
+helm repo update\
+helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \\
+  --namespace kube-system \\
+  --set kubeletDir=/var/lib/kubelet
+kubectl get pods -n kube-system -l app.kubernetes.io/name=csi-driver-nfs
+kubectl get serviceaccount -n kube-system csi-nfs-controller-sa -o yaml
+kubectl delete serviceaccount csi-nfs-controller-sa -n kube-system
+helm version
+helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \\
+  --namespace kube-system \\
+  --set kubeletDir=/var/lib/kubelet
+helm status csi-driver-nfs -n kube-system
+helm uninstall csi-driver-nfs -n kube-system
+helm uninstall csi-driver-nfs -n kube-system --force
+kubectl delete deployment,daemonset,serviceaccount,clusterrole,clusterrolebinding -n kube-system -l app.kubernetes.io/name=csi-driver-nfs\
+kubectl delete csidriver nfs.csi.k8s.io
+kubectl get csidrivers | grep nfs.csi.k8s.io\
+kubectl get pods -n kube-system -l app.kubernetes.io/name=csi-driver-nfs
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts\
+helm repo update
+kubectl get serviceaccount -n kube-system csi-nfs-node-sa -o yaml
+kubectl delete serviceaccount csi-nfs-node-sa -n kube-system
+kubectl get serviceaccount -n kube-system | grep csi-nfs\
+kubectl get csidrivers | grep nfs.csi.k8s.io\
+kubectl get pods -n kube-system -l app.kubernetes.io/name=csi-driver-nfs
+kubectl edit serviceaccount csi-nfs-node-sa -n kube-system
+kubectl get clusterrole nfs-external-provisioner-role -o yaml
+helm uninstall csi-driver-nfs -n kube-system --force\
+kubectl delete deployment,daemonset,serviceaccount,clusterrole,clusterrolebinding -n kube-system -l app.kubernetes.io/name=csi-driver-nfs\
+kubectl delete csidriver nfs.csi.k8s.io
+kubectl delete clusterrole nfs-external-resizer-role
+kubectl get clusterrole | grep nfs\
+kubectl get serviceaccount -n kube-system | grep csi-nfs\
+kubectl get csidrivers | grep nfs.csi.k8s.io\
+kubectl get pods -n kube-system -l app.kubernetes.io/name=csi-driver-nfs
+kubectl delete clusterrolebinding nfs-csi-resizer-role
+kubectl delete clusterrolebinding nfs-csi-provisioner-binding
+kubectl delete clusterrole nfs-external-provisioner-role
+kubectl get clusterrole,clusterrolebinding | grep nfs\
+kubectl get serviceaccount -n kube-system | grep csi-nfs\
+kubectl get csidrivers | grep nfs.csi.k8s.io\
+kubectl get pods -n kube-system -l app.kubernetes.io/name=csi-driver-nfs
+kubectl delete daemonset csi-nfs-node -n  kube-system
+kubectl delete deployment csi-nfs-controller
+kubectl delete deployment csi-nfs-controller -n kube-system
+helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \\
+  --namespace kube-system \\
+  --set kubeletDir=/var/lib/kubelet \\
+  --set controller.replicas=2 \\
+  --set nodeSelector.kubernetes.io/os=linux
+kubectl --namespace=kube-system get pods --selector="app.kubernetes.io/instance=csi-driver-nfs" --watch
+kubectl describe pod actual-budget-6d8fbc4b58-qpf8b
+kubectl logs actual-budget-6d8fbc4b58-l9tqr -f
+man kubectl logs
+kubectl logs --help
+kubectl logs -f actual-budget-6d8fbc4b58-l9tqr --tail
+kubectl logs -f actual-budget-6d8fbc4b58-l9tqr
+kubectl logs -f actual-budget-6d8fbc4b58-l9tqr --follow=true
+kubectl get service -o wide
+kubectl describe pod actual-budget-6d8fbc4b58-l9tqr
+watch kubectl get pods
+kubectl logs actual-budget-6d8fbc4b58-l9tqr
+kubectl logs actual-budget-6d8fbc4b58-gpf8b 
+kubectl delete deployment actual-budget
+kubectl delete pod actual-budget-6d8fbc4b58-gpf8b 
+watch kubectl get deploy,pods
+kubectl delete pod actual-budget-6d8fbc4b58-gpf8b  --grace-period=0 --force 
+kubectl logs actual-budget-6d8fbc4b58-tg9r5 
+kubectl describe pod actual-budget-6d8fbc4b58-tg9r5 
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.3.0/deploy/static/provider/cloud/deploy.yaml
+kubectl describe service ingress-nginx-controller -n ingress-nginx
+kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.3.0/deploy/static/provider/cloud/deploy.yaml
+kubectl get service ingress-nginx-controller -n ingress-nginx
+kubectl get pods --namespace ingress-nginx
+kubectl describe pod speaker-66hj4        
+kubectl logs speaker-66hj4
+kubectl logs speaker-66hj4 -n metallb-system
+kubectl logs speaker-66hj4 -n metallb-system | grep error
+kubectl delete pod speaker-66hj4
+kubectl delete pod speaker-66hj4 -n metallb-system
+kubectl logs speaker-btrb9 -n metallb-system
+kubectl logs speaker-btrb9 -n metallb-system -f
+vim skooner-ingress.yaml
+mv skooner-ingress.yaml ingress-routes.yaml
+kubectl delete pod speaker-msg7j -n metallb-system
+kubectl delete pod speaker-brtb9 -n metallb-system
+kubectl delete pod speaker-btrb9 -n metallb-system
+vim metallb.yaml
+kubectl describe pod speaker-tq9v4 -n metallb-system
+kubectl describe pod speaker-tq9v4 -n metallb-system | grep -i node
+kubectl describe pod speaker-tq9v4 -n metallb-system | grep Node
+kubectl describe pod speaker-tq9v4 -n metallb-system | grep Node:
+kubectl describe pod speaker-6d72d -n metallb-system | grep Node:
+ssh kube01
+ssh kube02 'apt list --installed | wc -l'
+ssh kube03 'apt list --installed | wc -l'
+vim kube01.list
+grep liburing kube*.list
+ssh kube02 'sudo apt -y install liburing'
+ssh kube02 'sudo apt -y install liburing2'
+ssh kube03 'sudo apt -y install liburing2'
+ssh kube03 'sudo apt -y install qemu-guest-agent'
+ssh kube02 'sudo apt -y install qemu-guest-agent'
+kubectl drain kube03
+kubectl drain kube03 --ignore-daemonsets
+kubectl drain kube02 --ignore-daemonsets
+kubectl drain kube02 --ignore-daemonsets --force
+ping kube02
+ssh kube02
+kubectl uncordon kube02
+kubectl drain kube03 --ignore-daemonsets --force
+kubectl drain kube03 --ignore-daemonsets --delete-emptydir-data
+ssh kube03
+kubectl uncordon kube03
+ssh kube02 'apt list --installed | sort' > kube02.list
+ssh kube01 'apt list --installed | sort' > kube01.list
+diff kube01.list kube02.list
+wc -l kube*.list
+kubectl drain kube01 --ignore-daemonsets
+kubectl drain kube01 --ignore-daemonsets --delete-emptydir-data
+kubectl get nodes
+kubectl uncordon kube01
+kubectl get pods --namespace metallb-system
+watch kubectl get pods --namespace metallb-system
+git clone git@github.com:kubernetes/kube-state-metrics.git
+cd kube-state-metrics
+kubectl apply -f examples/standard
+kubectl apply -f examples/standard/ -n kube-system
+kubectl version --client
+cd kube-state-metrics/examples/standard\
+kubectl apply -k . -n kube-system
+kubectl get pods -n kube-system -l app=kube-state-metrics
+cd git/homelab/k8s/home-apps/
+kubectl get pods -n kube-system 
+kubectl get pods -n elastic-stack
+kubectl get pods --all-namespaces | grep -i agent
+vim elastic-agent-deploy.txt
+cat elastic-agent-deploy.txt
+ssh es07
+ssh torrent
+ssh plex
+ssh es09
+ssh es08
+SSH ES01
+tmux
+ssh es05
+ssh es06
+ping es01.lab.thewortmans.org
+ssh es01
+ping es02.lab.thewortmans.org
+ping es03.lab.thewortmans.org
+ssh es02
+ssh es03
+ping es04.lab.thewortmans.org
+ssh es04
+kubectl get pods -n kube-system
+kubectl logs elastic-agent-25zng
+kubectl logs elastic-agent-25zng -n kube-system
+vim elastic-agents.yaml
+kubectl apply -f elastic-agents.yaml
+watch 'kubectl get pods -n kube-system | grep agent'
+kubectl get pods -n kube-system | grep agent
+kubectl logs elastic-agent-6nxxz
+kubectl logs elastic-agent-6nxxz -n kube-system
+kubectl get pvs
+kubectl get pv --all-namespaces
+kubectl get pvc --all-namespaces
+vim home-apps/actual_budget.yaml
+kubectl describe pod pihole-555f9558fd-h244r     
+kubectl get pv
+kubectl get storageclass synology-nfs -o yaml
+kubectl get pods -n kube-system | grep nfs-csi
+kubectl get pods -n kube-system | grep nfs
+kubectl logs csi-nfs-controller-8fdc6755d-lcpkk
+kubectl logs csi-nfs-controller-8fdc6755d-lcpkk -n kube-system
+kubectl logs -n kube-system csi-nfs-controller-8fdc6755d-vpwfx
+grep tmp *
+sudo kubectl describe pvc pihole-config-pvc
+kubectl describe pvc pihole-config-pvc
+kubectl delete -f pihole.yaml
+kubectl apply -f storage_classes.yaml
+mkdir -p /mnt/test
+sudo mkdir -p /mnt/test
+mount -t nfs 192.168.1.230:/volume1/k8s /mnt/test
+ls /mnt/test
+ls /mount/tmp
+cd /mount/tmp
+touch f.f
+rm -f f.f
+df -h
+cat /etc/fstab
+kubectl run -i --tty --rm debug --image=busybox --restart=Never -- sh
+\df -h
+ls temp
+uname -a
+mkdir test
+telnet 192.168.1.230 2049
+mount -t nfs 192.168.1.230:/volume1/k8s test
+systemctl status firewalld
+apt list | grep nfs
+apt list --installed | grep nfs
+apt -y install nfs-tools
+sudo apt -y install nfs-tools
+sudo apt install nfs-kernel-server
+kubectl get pods --all-namespaces -o wide
+kubectl get pods --all-namespaces -o wide | grep kube01 | wc -l
+kubectl get pods --all-namespaces -o wide | grep kube02 | wc -l
+kubectl get pods --all-namespaces -o wide | grep kube03 | wc -l
+kubectl get pods --all-namespaces -o wide | grep km01 | wc -l
+kubectl get pods --all-namespaces -o wide | grep km02 | wc -l
+sudo mount -t nfs 192.168.1.230:/volume1/k8s test
+ls test
+umount test
+sudo umount test
+kubectl delete pod debug
+cd git/homelab/
+kubectl describe pihole-service
+kubectl logs pihole-555f9558fd-lsx8h
+kubectl logs pihole-555f9558fd-lsx8h | grep password
+kubectl get service actual-budget
+kubectl describe service actual-budget
+kubectl describe service cerebro
+kubectl describe service pihole-service
+cd ../../home-apps
+kubectl delete service cerebro
+kubectl get all --all-namespaces | grep cerebro
+kubectl get ns
+kubect get pods
+kubectl get service
+kubectl get service -n es-lab1
+kubectl get pods -n es-lab1
+kubectl get ingress
+kubectl describe pod cerebro-5df4dc689f-q2gp4   
+kubectl logs cerebro-5df4dc689f-q2gp4   
+kubectl logs -f cerebro-5df4dc689f-q2gp4   
+kubectl describe ingress -n es-lab1
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+kubectl delete -f cerebro.yaml
+kubectl describe ingress cerebro-ingress -n es-lab1
+kubectl get ingress -n es-lab1
+kubectl get pods -n ingress-nginx
+kubectl get svc -n ingress-nginx
+cd .kube
+cat config
+cd git/homelab
+dig wrapbuddies.co
+kubectl exec -it  pihole-555f9558fd-lsx8h -- sh
+kubectl exec -it  pihole-c458c7c87-9jx9p -- sh
+cat git/homelab/k8s/pihole.yaml
+kubectl delete pod pihole-c458c7c87-9jx9p   
+kubectl exec -it pihole-c458c7c87-t9zpc  -- sh
+kubectl delete pod pihole-c458c7c87-t9zpc  
+kubectl get pods -w
+kubectl logs -f pihole-c458c7c87-55m9b  
+kubectl exec -it pihole-c458c7c87-55m9b  -- sh
+kubectl delete pod pihole-c458c7c87-55m9b
+kubectl logs -f pihole-5c9d9b775f-f2s52 
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')\
+kubectl exec -it $POD_NAME -n default -- id pihole\
+# Note UID (e.g., 999) and GID (e.g., 999)
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')\
+\
+# 1. Try to create a file as pihole user\
+kubectl exec -it $POD_NAME -n default -- su -s /bin/bash -c "touch /etc/pihole/test_by_pihole.txt" pihole\
+# Check if it errored. If not:\
+\
+# 2. Check its ownership and permissions\
+kubectl exec -it $POD_NAME -n default -- ls -l /etc/pihole/test_by_pihole.txt
+kubectl exec -it $POD_NAME -n default -- su -s /bin/bash -c "touch /etc/pihole/test_by_pihole.txt" pihole\
+
+kubectl exec -it $POD_NAME -n default -- ls -l /etc/pihole/test_by_pihole.txt\
+
+kubectl exec -it $POD_NAME -n default -- ls -ln /etc/pihole/test_by_pihole.txt\
+
+kubectl delete pod -n default -l app=pihole
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')\
+# Check /etc/pihole directory permissions itself\
+kubectl exec -it $POD_NAME -n default -- ls -ld /etc/pihole\
+# Expect to see group as 'pihole' or '999', and group 'w' and 's' (setgid) bits\
+# Example: drwxrwsr-x ... root pihole ... /etc/pihole\
+\
+# Try creating a file as the pihole user\
+kubectl exec -it $POD_NAME -n default -- su -s /bin/bash -c "touch /etc/pihole/test_by_pihole_fsgroup.txt && echo 'Created'" pihole\
+kubectl exec -it $POD_NAME -n default -- ls -l /etc/pihole/test_by_pihole_fsgroup.txt\
+# Expect owner 'root' (or Synology admin UID), group 'pihole' (or 999), and group write perm
+kubectl logs pihole-578c4764cf-r5mcm  
+kubectl delete pihole-578c4764cf-r5mcm    
+kubectl delete pod pihole-578c4764cf-r5mcm    
+kubectl logs pihole-578c4764cf-bdqt8    
+kubectl logs pihole-578c4764cf-bdqt8    -f
+kubectl delete pod pihole-578c4764cf-bdqt8 
+kubectl delete pod pihole-779b6679bf-wcskn     
+kubectl logs -f pihole-779b6679bf-z2cdz    
+kubect logs -f pihole-c458c7c87-qk6w8   
+kubectl logs -f pihole-c458c7c87-qk6w8   
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')\
+kubectl exec -it $POD_NAME -n default -- ls -ld /etc/pihole
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')\
+kubectl exec -it $POD_NAME -n default -- bash
+POD_NAME=$(kubectl get pods -n default -l app=pihole -o jsonpath='{.items[0].metadata.name}')
+kubectl delete $POD_NAME
+kubectl describe pihole-779b6679bf-67z6w  
+kubectl delete pod pihole-779b6679bf-67z6w   
+kubectl logs -f pihole-779b6679bf-mwb68  
+k delete pod pihole-779b6679bf-mwb68  
+k logs -f pihole-86974b4c87-w227x
+k delete pod pihole-779b6679bf-9bwdq 
+k delete pod pihole-86974b4c87-w227x 
+k logs -f pihole-779b6679bf-8kj8x 
+k delete pod pihole-779b6679bf-8kj8x
+k logs -f pihole-779b6679bf-jg5wz  
+k delete pod pihole-779b6679bf-jg5wz
+k delete pod pihole-c458c7c87-tzk4t   
+k logs -f pihole-c458c7c87-rd6sw   
+k exec -it pihole-c458c7c87-rd6sw -- /bin/bash
+k rollout restart actual-budget
+k delete pod actual-budget-6d8fbc4b58-5jlr5
+k logs -f actual-budget-6d8fbc4b58-958k5 
+k logs -f actual-budget-6d8fbc4b58-knq79
+k logs -f actual-budget-6d8fbc4b58-dtkzf
+k lgos -f actual-budget-6578b87df6-dtkzf 
+k logs -f actual-budget-6578b87df6-dtkzf 
+k delete -f actual_budget.yaml
+k logs -f actual-budget-6d8fbc4b58-mhrmt
+bg
+fg
+jobs
+k logs -f actual-budget-6d8fbc4b58-xb4lc
+k logs -f actual-budget-6d8fbc4b58-xb5lc
+k drain kube01
+ping kube01
+k drain kube02
+k drain kube02 --ignore-daemonsets
+k drain kube02 --ignore-daemonsets --delete-enptydir-data
+k get pods -o wide
+k delete -f jackett*
+k delete -f jackett-service.yaml
+k delete -f jackett-deployment.yaml
+k delete -f jackett-claim0-persistentvolumeclaim.yaml
+k delete -f jackett-claim1-persistentvolumeclaim.yaml
+k get all --all-namespaces | grep jackett
+for f in unpackerr*; do k delete -f $f; done
+for f in *arr**; do k delete -f $f; done
+for f in qbittorrent*; do k delete -f $f; done
+vim metallb-ippool.yaml
+k get all --all-namespaces
+k get all --all-namespaces | grep metallb
+pip install elasticsearch
+pip install PyYAML
+curl -fsSL https://pyenv.run | bash
+source ~?.zshrc
+source .zshrc
+pyenv versions
+pyenv list --all
+pyenv install --list
+sudo apt update; sudo apt install make build-essential libssl-dev zlib1g-dev \\
+libbz2-dev libreadline-dev libsqlite3-dev curl git \\
+libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+pyenv install 3.12.7
+pyenv local 3.12.7
+pyenv version
+python --version
+chmod +x create_roles.py
+pip install PyYAML elasticsearch
+which pip3
+pip3 install PyYAML elasticsearch
+python -m pip install pyyaml elasticsearch
+python -m pip install --upgrade pip
+echo $PATH
+cd ~/.pyenv/shims
+which pip
+ls -l pip
+which python3
+which python
+cd git/homelab/k8s/eck
+./create_roles.py --help
+sudo mkdir -p /etc/elastic
+vim /etc/elastic/cluster.yaml
+sudo cp f.f /etc/elastic/cluster.yaml
+ls -l /etc/elastic/cluster.yaml
+curl --sku bret:2xqT2IO1OQ%tfMHP  https://elasticsearch.bwortman.us/
+curl -sku bret:2xqT2IO1OQ%tfMHP  https://elasticsearch.bwortman.us/
+curl -sku bret:2xqT2IO1OQ%tfMHP  https://elasticsearch.bwortman.us
+sudo vim /etc/elastic/cluster.yaml
+curl -su bret:2xqT2IO1OQ%tfMHP  https://elasticsearch.bwortman.us
+python -m pip remove elasticsearch
+python -m pip delete elasticsearch
+python -m pip install elasticsearch8
+ls /etc/elastic
+wc -l create_roles.py
+vim create_roles.py
+./create_roles.py --prefixes aa bb --subsystems sys1 sys2
+cat create_roles.py
+cat /etc/elastic/cluster.yaml
+sudo apt -y update && sudo apt -y upgrade
+sudo poweroff
+k drain km02 --ignore-daemonsets
+c
+k uncordon km02
+cd home-apps/apps
+kubectl apply -f actual_budget.yaml
+kubectl get services
+ping 192.168.10.51
+kubectl get pods
+kubectl logs pihole-564b94d956-tfhs2  -c pihole
+k drain kube01 --ignore-daemonsets
+k drain kube01 --ignore-daemonsets --delete-emptydir-data
+k uncordon kube01
+k drain kube02 --ignore-daemonsets --delete-emptydir-data
+k uncordon kube02
+k drain kube03 --ignore-daemonsets --delete-emptydir-data
+k uncordon kube03
+k get p
+k get ps
+kubectl exec -it pihole-564b94d956-lchkd -- rm /etc/pihole/pihole-FTL.db\
+kubectl exec -it pihole-564b94d956-lchkd -- pihole restartdns
+kubectl exec -it pihole-564b94d956-lchkd -- rm /etc/pihole/pihole-FTL.db
+kubectl exec -it pihole-564b94d956-lchkd -- bash
+k delete pihole-564b94d956-lchkd
+k delete pod pihole-564b94d956-lchkd 
+k delete pod pihole-564b94d956-dzq2m
+kubectl exec -it pihole-564b94d956-dzq2m   -- bash
+kubectl exec -it pihole-564b94d956-4nmrm    -- bash
+kubectl delete pod  pihole-564b94d956-dzq2m
+k delete pod pihole-564b94d956-4nmrm   
+kubectl exec -it pihole-564b94d956-97rsn   -- bash
+kubectl exec -it pihole-599d5db94c-6lmpx    -- bash
+k delete pod pihole-599d5db94c-6lmpx   
+k describe pod pihole-d46b9444d-t7w5x
+kubectl exec -it pihole-599d5db94c-mkpmt    -- bash
+kubectl apply -f pihole.yaml
+k delete pod pihole-599d5db94c-mkpmt
+k exec -it pihole-76bf8dc59d-b68mb -- bash
+kubectl rollout restart deployment/pihole
+k exec -it pihole-6fd55cf9c9-bxr5k -- bash
+k delete -f pihole.yaml
+vim pihole.yaml
+k apply -f pihole.yaml
+k exec -it pihole-7b65d57c4-km5f9 -- bash
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm install vault hashicorp/vault
+vault help
+k get pods --all-namespaces | grep vault
+cd git/homelab/k8s/
+cd paperless
+k delete -f *.yaml
+for f in *.yaml; do k delete -f $f; done
+k delete pod broker-b65689f4-xn8f2 
+k get pods --all-namespaces | grep paperless
+for f in *.yaml; do k delete -f $f -n paperless; done
+helm repo update
+helm show values hashicorp/vault > ../../vault-values.yaml
+cd ../..
+mv vault-values.yaml vault-sample.yaml
+vim vault-vaules.yml
+helm delete vault
+k create ns vault
+helm install vault hashicorp/vault -f vault-values.yaml -n vault
+helm status vault
+helm get manifest vault
+k describe pod vault-0
+k get pod vault-0 -o yaml
+k get nodes -o wide
+k describe kube01
+k describe node kube01
+k describe node kube03
+k describe node kube02
+k get all -n vault
+k describe statefulset -n vault vault
+k get pods -n vault -o wide
+k describe deploy -n vault vault
+k get serviceaccount
+k get serviceaccount -n vault
+k get serviceaccount -n elastic-stack
+k get serviceaccount -n es-lab1
+k get all -n es-lab1
+k get deploy -all-namespaces
+k get deploy --all-namespaces | less
+grep -rIi nginx-ingress *
+grep -rIi ingress-nginx *
+grep -rIi ingress *
+cat /etc/resolv.conf
+host plex
+host pve1
+host pve1.lab
+host pve1.lab.thewortmans.org
+vim /etc/resolv.conf
+grep -rIi ingress-nginx-controller *
+k delete deploy ingress-nginx-controller -n ingress-nginx
+k delete pod nginx-ingress-controller-557d858cf4-4psd7 
+k get pod nginx-ingress-controller-557d858cf4-shfbq 
+k describe pod nginx-ingress-controller-557d858cf4-shfbq 
+k get services --all-namespaces
+curl https://skooner.svc
+curl https://skooner.svc.cluster.local
+curl https://localhost:80/
+k describe service skooner -n kube-system
+curl https://localhost:4654
+curl http://localhost:4654
+curl https://10.244.1.48:4654
+curl http://10.244.1.48:4654
+k get all --all-namespaces | grep ingress
+k get pods 
+k create -f nginx-ingress.yaml
+k describe pod nginx-ingress-controller-557d858cf4-gr79l -f
+k describe pod nginx-ingress-controller-557d858cf4-gr79l -2
+k describe pod nginx-ingress-controller-557d858cf4-gr79l -w
+k describe pod nginx-ingress-controller-557d858cf4-gr79l
+k logs nginx-ingress-controller-557d858cf4-gr79l -f
+kubectl delete -f nginx-ingress.yaml
+k get pods --all-namespaces | grep -i ingress
+k delete deploy ingress-nginx-controller
+k delete deploy nginx-ingress-controller
+kubectl apply -f nginx-ingress.yaml
+k describe deploy nginx-ingress-controller
+cat nginx-ingress.yaml
+k get deploy
+k logs nginx-ingress-controller-6cf589774b-fk4rr 
+kubectl get deploy
+k get all -n kube-system
+grep -rI Ingress *
+vim home-apps/cerebro.yaml
+k get service skooner -n kube-system -o wide
+cp nginx-ingress.yaml nginx-ingress.yaml.original
+k delete -f ingress-routes.yaml
+kubectl get serviceaccount -n default nginx-ingress\
+kubectl get clusterrole nginx-ingress-clusterrole\
+kubectl get clusterrolebinding nginx-ingress-clusterrolebinding
+kubectl get pods -n default -l app=nginx-ingress
+kubectl logs -n default nginx-ingress-controller-66c596dc55-h76vd
+kubectl logs -n default nginx-ingress-controller-66c596dc55-h76vd -f
+kubectl get deploy -n default nginx-ingress-controller
+k get services
+kubectl get svc -n ingress-nginx\
+kubectl get pods -n ingress-nginx
+k get svc -n ingress-nginx
+kubectl get svc -n ingress-nginx\
+kubectl get deploy -n ingress-nginx\
+kubectl get pods -n ingress-nginx\
+kubectl get validatingwebhookconfiguration
+k delete -f nginx-ingress.yaml
+kubectl delete validatingwebhookconfiguration ingress-nginx-admission
+kubectl get pods -n ingress-nginx\
+kubectl get svc -n ingress-nginx
+kubectl get pods,svc -n ingress-nginx
+kubectl get pods,svc -n default
+kubectl get validatingwebhookconfiguration
+kubectl apply -f test.yaml
+kubectl delete namespace ingress-nginx\
+kubectl delete validatingwebhookconfiguration ingress-nginx-admission
+k create namespace media
+kubectl get pods -n ingress-nginx\
+kubectl get jobs -n ingress-nginx
+kubectl get pods,jobs -n ingress-nginx -w
+kubectl get pods,jobs -n ingress-nginx
+kubectl get validatingwebhookconfiguration ingress-nginx-admission -o yaml
+kubectl describe ingress -n default test-ingress
+kubectl get svc -n default
+kubectl get svc -n ingress-nginx ingress-nginx-controller
+kubectl delete deployment nginx-ingress-controller -n default\
+kubectl delete svc nginx-ingress -n default\
+kubectl delete configmap nginx-configuration -n default\
+kubectl delete serviceaccount nginx-ingress -n default\
+kubectl delete clusterrole nginx-ingress-clusterrole\
+kubectl delete clusterrolebinding nginx-ingress-clusterrolebinding\
+kubectl delete ingressclass nginx -n default
+kubectl get pods -n ingress-nginx -o wide
+vim test.yaml
+kubectl apply -f test.yaml\
+kubectl get ingress -n default
+kubectl get ingress --all-namespaces
+k delete -f teset.yaml
+k delete -f test.yaml
+k apply -f test.yaml
+host budget.thewortmans.org
+cat test.yaml
+mv test.ingress budget-ingress.yaml
+mv test.yaml budget-ingress.yaml
+kubectl delete -f test.yaml
+k delete ingress -n default test-ingress
+kubectl get svc -n ingress-nginx ingress-nginx-controller -o wide
+kubectl get ingress -n default
+cat budget-ingress.yaml
+kubectl get ingressclass nginx -o yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
+kubectl get svc -n default actual-budget -o wide\
+kubectl get endpoints -n default actual-budget
+kubectl describe ingress -n default budget-ingress
+curl -H "Host: example.local" http://192.168.10.50
+k delete -f budget-ingress.yaml
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx -f
+curl -H "Host: budget.thewortmans.org" http://192.168.10.50
+curl http://budget.thewortmans.org/
+k logs actual-budget-6d8fbc4b58-dvpc6
+k logs actual-budget-6d8fbc4b58-gp7kt  
+k describe actual-budget-6d8fbc4b58-gp7kt 
+k describe pod actual-budget-6d8fbc4b58-gp7kt 
+k describe pod actual-budget-6d8fbc4b58-dvpc6
+k describe pod actual-budget-6d8fbc4b58-gp7kt --previous
+k logs actual-budget-6d8fbc4b58-gp7kt --previous
+kubectl get svc -n <namespace>\
+kubectl describe svc <service-name> -n <namespace>
+k describe svc actual-budget
+kubectl get networkpolicy
+kubectl get networkpolicy --all-namespaces
+kubectl get pvc
+k describe actual-budget-data pvc-bd096c66-886f-45ba-80bc-bcb286332ad8
+k describe pvc actual-budget-data pvc-bd096c66-886f-45ba-80bc-bcb286332ad8
+k describe pv pvc-bd096c66-886f-45ba-80bc-bcb286332ad8
+kubectl get pod actual-budget-6d8fbc4b58-dvpc6 -o yaml | grep -A 10 volumeMounts
+kubectl get pod actual-budget-6d8fbc4b58-dvpc6 -o yaml | grep -A 10 volumes
+kubectl exec -it actual-budget-6d8fbc4b58-dvpc6 -- ls -la /path/to/mount
+kubectl exec -it actual-budget-6d8fbc4b58-dvpc6 -- df -h
+kubectl exec -it actual-budget-6d8fbc4b58-dvpc6 -- ls -la /data
+kubectl exec -it actual-budget-6d8fbc4b58-dvpc6 -- cat /etc/passwd
+k apply -f actual_budget.yaml
+k logs actual-budget-5fff7846bd-5qsg6 
+watch -n 2k get pods
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- sqlite3 /data/db.sqlite '.dbinfo'
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- ls -ltr /data
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- ls -ltr /data/*
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- ls -ltr /data/user-files
+id
+chown -R actual:actual /data
+cat /etc/passwd
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- ls -ltr /data/server-files
+kubectl exec -it actual-budget-5fff7846bd-h8n62  -- bash
+#kubectl exec -it debug  -- curl -X POST http://budget.thewortmans.org/sync -H "Content-Type: application/json" -d '{"data": "test"}'
+k get pvd
+k describe pod debug-storage
+vim debug.yaml
+k delete pod debug-storage
+k apply -f debug.yaml
+kubectl exec -it debug-storage  -- curl -X POST http://budget.thewortmans.org/sync -H "Content-Type: application/json" -d '{"data": "test"}'
+kubectl exec -it debug  -- curl -X POST http://budget.thewortmans.org/sync -H "Content-Type: application/json" -d '{"data": "test"}'
+curl -X POST http://budget.thewortmans.org/sync -H "Content-Type: application/json" -d '{"data": "test"}'
+vim actual_budget.yaml
+k rollout restart deployment actual-budget
+watch -n 2 k get pods
+k describe pod actual-budget-595c884d6d-rjd6w 
+k describe pod actual-budget-595c884d6d-rjd6w | grep -i image
+vim nginx-ingress.yaml
+vim budget-ingress.yaml
+k apply -f budget-ingress.yaml
+kubectl logs -l app.kubernetes.io/name=ingress-nginx
+kubectl logs -l app.kubernetes.io/name=nginx-ingress
+k get pods -n ingress-nginx
+kubectl logs -l app.kubernetes.io/name=nginx-ingress -n nginx-ingress
+kubectl logs -l app.kubernetes.io/name=nginx-ingress -n ingress-nginx
+kubectl logs -l app.kubernetes.io/name=nginx-ingress --all-namespaces
+cat actual_budget.yaml
+mv budget-ingress.yaml home-apps/actual_budget-ingress.yaml
+cp home-apps/actual_budget-ingress.yaml sample-ingress.yaml
+k get pod -n es-lab1
+k get ingress -n kube-system
+k get ingress --all-namespaces -w
+k get ingress skooner
+k describe ingress -n kube-system
+k logs -n ingress-nginx ingress-nginx-controller-7685dbc8fb-dj8v2
+k logs -n ingress-nginx ingress-nginx-controller-7685dbc8fb-dj8v2 -f
+k get all -n ingress-nginx
+kubectl create serviceaccount skooner-sa
+kubectl create clusterrolebinding skooner-sa --clusterrole=cluster-admin --serviceaccount=default:skooner-sa\
+
+kubectl get secrets\
+
+kubectl describe secret skooner-sa-token-xxxxx
+kubectl describe secret actual-budget-secrets
+kubectl apply -f \
+https://raw.githubusercontent.com/skooner-k8s/skooner/master/kubernetes-skooner.yaml
+kubectl create token skooner-sa -n default
+kubectl get secrets -n default
+vim get-skooner-token.sh
+cd eck
+cd lab1
+cd ../../
+grep -rIi cerebro *
+ls -ltr cerebro*
+mv cerebro.yaml ../eck/
+cd ../eck
+watch -n 5 k get ingress --all-namespaces
+watch -n 5 kubectl get ingress --all-namespaces
+k delete svc -n es-lab1 cerebro
+k get all --all-namespaces | grep cerebro
+k get svc
+k delete ingress -n es-lab1 cerebro-ingress
+kubectl apply -f cerebro.yaml
+k get ingress --all-namespaces
+watch kubectl get ingress --all-namespaces
+vim cerebro.yaml
+host cerebro.lab.thewortmans.org
+curl -H "Host: cerebro.lab.thewortmans.org" http://192.168.10.50
+k rollout restart deployment cerebro
+k get pods -w
+k delete -f cerebro.yaml
+k apply -f cerebro.yaml
+watch -n 2 kubectl get pods
+host es012
+host es01
+k logs cerebro-5df4dc689f-6dwfn 
+k logs cerebro-5df4dc689f-6dwfn --previous
+host es01.lab.thewortmans.org
+curl http://192.168.10.31:9200/
+curl https://192.168.10.31:9200/
+k logs cerebro-5df4dc689f-6dwfn -f
+cat ../sample-ingress.yaml
+k get storage
+k get storageclass
+k edit storageclass synology-nfs
+cd ../home-apps
+chmod +x get-skooner-token.sh
+ls -ltr vault*
+vim vault-sample.yaml
+vim vault-values.yaml
+history | grep vault
+history vault
+history 10000 | grep vault
+history -n 1000
+history -n 1000 | grep vault
+cd ../
+k get deploy --all-namespaces
+k delete ns vault
+k get storageclasses
+helm --version
+k get pvs -n vault
+k get pv -n vault
+k delete pvc data-vault-0
+k get pv 
+k get all --all-namespaces | grep vault
+k get pv
+k get pvc
+k delete pod -n vault vault-0
+k edit statefulset vault -n vault
+date
+kubectl get statefulset vault -n vault -o yaml | grep -A 3 capabilities
+k delete pods -n vault vault
+kubectl exec -it vault-0 -n vault -- cat /proc/1/status | grep Cap
+kubectl debug node/<node-name> -it --image=busybox\
+chroot /host\
+ulimit -l
+kubectl debug node/kube01 -it --image=busybox\
+chroot /host\
+ulimit -l
+kubectl describe nodes | grep -i memory
+kubectl apply -f vault-deployment.yaml
+k delete pods -n vault vault-0
+kubectl exec -it vault-0 -n vault -- vault status
+kubectl exec -it vault-0 -n vault -- vault operator unseal pR+uBe5kSvVzpjOVEtlXJZ9eHUh6jHBBMrgua63rYRXD
+kubectl exec -it vault-0 -n vault -- vault operator unseal pMYJp6i8t+uCKpmOnUrEwL9m95o4GNAm2iuEcYk19qpM
+kubectl exec -it vault-0 -n vault -- vault operator unseal bK9qigNValGGvBT7yc0WkcXVkNqEQwItKHxZdfFhO6eh
+kubectl exec -it vault-1 -n vault -- vault operator unseal bK9qigNValGGvBT7yc0WkcXVkNqEQwItKHxZdfFhO6eh\
+kubectl exec -it vault-1 -n vault -- vault operator unseal pMYJp6i8t+uCKpmOnUrEwL9m95o4GNAm2iuEcYk19qpM\
+kubectl exec -it vault-1 -n vault -- vault operator unseal pR+uBe5kSvVzpjOVEtlXJZ9eHUh6jHBBMrgua63rYRXD\
+\
+
+kubectl exec -it vault-1 -n vault -- vault operator init
+k exec -it vault-1 -n vault -- vault operator unseal Hw+S+m32lOTu2xQuBSIqxRfuRBjKiee6dlckSQKRp9Jm
+k exec -it vault-1 -n vault -- vault operator unseal r8tsf4Utl5gqXw2AxcTqG53Jw9OPGn0R15QDn/a9TO0Q
+k exec -it vault-1 -n vault -- vault operator unseal Hc/UXxAw/JV9ZqZKc0DHGHMEqQivKBL5+v50CbnpFg4o
+k logs -f -n vault vault-0 
+kubectl exec -it vault-2 -n vault -- vault operator init
+k exec -it vault-1 -n vault -- vault operator unseal rv7FzYYogAMOn1w5xq8fQxNUL7uCYQ3u6+aOcz/HXzmG
+k exec -it vault-1 -n vault -- vault operator unseal 8RcoOay2DK7+zW0WrTmbpN+9w80yxMD3Ow9bQ5HjUId6
+k exec -it vault-1 -n vault -- vault operator unseal WBvK8BAVG09SJz2cZwF9IQoAyILnlYSZ668Olb1FwtM0
+k logs -f -n vault vault-2 
+k logs -f -n vault vault-1
+k exec -it vault-1 -n vault -- vault operator unseal 8TaAGSnd7OjMUdcERpy6kMTcBz4sZAmgGY7SXOTOMmdK
+k logs -f -n vault vault-2
+k exec -it vault-1 -n vault -- vault operator unseal CKY7pJv2RMgfB/KedcOCgnkpZn4a5sg/XWsDgPZs5Z7/
+k exec -it vault-0 -n vault -- vault opereator raft list-peers
+kubectl exec -it vault-2 -n vault -- vault status
+kubectl exec -it vault-2 -n vault -- ping vault-0.vault-internal\
+kubectl exec -it vault-2 -n vault -- ping vault-1.vault-internal
+kubectl exec -it vault-1 -n vault -- ping vault-0.vault-internal\
+kubectl exec -it vault-1 -n vault -- ping vault-2.vault-internal
+kubectl exec -it vault-2 -n vault -- vault operator unseal 8TaAGSnd7OjMUdcERpy6kMTcBz4sZAmgGY7SXOTOMmdK\
+kubectl exec -it vault-2 -n vault -- vault operator unseal CKY7pJv2RMgfB/KedcOCgnkpZn4a5sg/XWsDgPZs5Z7/\
+kubectl exec -it vault-2 -n vault -- vault operator unseal WBvK8BAVG09SJz2cZwF9IQoAyILnlYSZ668Olb1FwtM0
+kubectl exec -it vault-0 -n vault -- vault status\
+kubectl exec -it vault-1 -n vault -- vault status\
+kubectl exec -it vault-2 -n vault -- vault status
+k exec -it vault-0 -n vault -- vault operator raft list-peers
+./get-skooner-token.sh
+cd home-apps/m
+cd home-apps/
+vim media.yaml
+kubectl exec -it vault-0 -n vault -- vault login hvs.BJC8xoPvvb9pFyst2FtNmOxq
+kubectl exec -it vault-1 -n vault -- vault login hvs.cqI6ElycpvdGmGhl2oSK9mVP
+kubectl exec -it vault-2 -n vault -- vault login hvs.KmEMIfN0bezEVkj8kE8c55Yk
+kubectl exec -it vault-0 -n vault -- vault operator raft list-peers
+kubectl exec -it vault-1 -n vault -- vault operator raft list-peers
+k describe pods -n vault
+k get configmap -n vault vault-config
+k get configmap -n vault vault-config -o yaml
+k get pods -n vault
+k logs -f -n vault vault-0
+kubectl exec -it vault-0 -n vault -- printenv POD_NAME
+kubectl get psp -o wide
+oc get scc
+k get pods -n vault -w
+kubectl exec -it vault-0 -n vault -- cat /vault/config/vault.hcl
+kubectl delete pvc vault-data-vault-0 vault-data-vault-1 vault-data-vault-2 -n vault\
+kubectl delete pod -l app.kubernetes.io/name=vault -n vault
+kubectl delete pvc vault-data-vault-1 -n vault
+kubectl logs vault-0 -n vault
+km logs -n vault vault-0
+kubectl exec -it vault-0 -n vault -- vault operator unseal yfj1Ax1OMwrnWa5CE2bVNcke8j5o7yOfwyRJ2LYImzKQ\
+kubectl exec -it vault-0 -n vault -- vault operator unseal  izhmRXZlsnpF66P8nOwXw5p69TZRizYStKQlCJshRP22\
+kubectl exec -it vault-0 -n vault -- vault operator unseal kvAQi3uuISNWBB2Q/ZDWfQ9cNLm7TRl9+V8W4ULbJA3T\
+\
+
+kubectl exec -it vault-1 -n vault -- vault operator unseal yfj1Ax1OMwrnWa5CE2bVNcke8j5o7yOfwyRJ2LYImzKQ\
+kubectl exec -it vault-1 -n vault -- vault operator unseal  izhmRXZlsnpF66P8nOwXw5p69TZRizYStKQlCJshRP22\
+kubectl exec -it vault-1 -n vault -- vault operator unseal kvAQi3uuISNWBB2Q/ZDWfQ9cNLm7TRl9+V8W4ULbJA3T\
+\
+
+kubectl apply -f vault-deployment.yaml\
+kubectl delete pod -l app.kubernetes.io/name=vault -n vault
+kubectl delete pod -l app.kubernetes.io/name=vault -n vault
+kubectl delete pvc vault-data-vault-0 vault-data-vault-1 vault-data-vault-2 -n vault
+k get pvc -n vault
+kubectl exec -it vault-0 -n vault -- vault operator unseal VYkExGeEprXcVwh5y6FmpsJmvxZK6Y9Ev38d8noxc68s\
+kubectl exec -it vault-0 -n vault -- vault operator unseal 9+3AroErcAlGO5SocgH8pL2ruhbWi2jb16gxBPnFz7L+\
+kubectl exec -it vault-0 -n vault -- vault operator unseal ojIbQMM3/Z9/UAFRAcwa+tg/bbQ40s/xXY5cIcgdnd/j\
+\
+
+kubectl exec -it vault-1 -n vault -- vault operator unseal VYkExGeEprXcVwh5y6FmpsJmvxZK6Y9Ev38d8noxc68s\
+kubectl exec -it vault-1 -n vault -- vault operator unseal 9+3AroErcAlGO5SocgH8pL2ruhbWi2jb16gxBPnFz7L+\
+kubectl exec -it vault-1 -n vault -- vault operator unseal ojIbQMM3/Z9/UAFRAcwa+tg/bbQ40s/xXY5cIcgdnd/j\
+
+kubectl exec -it vault-0 -n vault -- vault login hvs.NozsNYmGjrfl0HmkFfU503MZ\
+kubectl exec -it vault-0 -n vault -- vault operator raft list-peers
+k delete pods -n vault
+kubectl apply -f vault-deployment.yaml\
+kubectl scale statefulset vault -n vault --replicas=0\
+kubectl delete pvc vault-data-vault-0 vault-data-vault-1 vault-data-vault-2 -n vault\
+kubectl scale statefulset vault -n vault --replicas=3
+kubectl logs vault-0 -n vault\
+kubectl logs vault-1 -n vault\
+kubectl logs vault-2 -n vault
+k logs -n vault vault-0
+k logs -n vault vault-1
+k logs -n vault vault-2
+kubectl exec -it vault-0 -n vault -- vault operator init
+kubectl exec -it vault-0 -n vault -- vault operator unseal GOdMBBgKBFEHPiupgwJtkcuuE4tKYy0ghRKJTVPZ4P3H\
+kubectl exec -it vault-0 -n vault -- vault operator unseal kfjB3By1aPmYzzFy0ia19+ccXOFltTtC58Fh9ZdPoz2j\
+kubectl exec -it vault-0 -n vault -- vault operator unseal GjJjiASKLaa8IH3DleanygtSUEWhdA92hGSiQvdMQGrh\
+\
+
+kubectl exec -it vault-1 -n vault -- vault operator unseal GOdMBBgKBFEHPiupgwJtkcuuE4tKYy0ghRKJTVPZ4P3H\
+kubectl exec -it vault-1 -n vault -- vault operator unseal kfjB3By1aPmYzzFy0ia19+ccXOFltTtC58Fh9ZdPoz2j\
+kubectl exec -it vault-1 -n vault -- vault operator unseal GjJjiASKLaa8IH3DleanygtSUEWhdA92hGSiQvdMQGrh\
+\
+
+k logs -n vault vault-1 -f
+kubectl describe storageclass synology-nfs
+vim storage_classes.yaml
+k apply -f storage_classes.yaml
+k delete -f vault-deployment.yaml
+k logs -n vault vault-0 -f
+vim vault-deployment.yaml
+k get ns -w
+watch -n 10 k get ns
+watch -n 10 kubectl get ns
+curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --auth-key=tskey-auth-kydCotK3rC11CNTRL-eqjbfUrRhWA3gvpa5mmFWAFfHVvXuDsWd
+k apply -f vault-deployment.yaml
+watch -n 2 kubectl get pods -n vault
+kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=v1.6.2" | kubectl apply -f -\
+\
+kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/experimental?ref=v1.6.2" | kubectl apply -f -\
+\
+helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --create-namespace -n nginx-gateway
+grep -rIi skooner *
+k get operator --all-namespaces
+k get elasticsearch
+k get elasticsearch --all-namespaces
+kubectl get pods -n elastic-system
+kubectl get crds | grep elastic
+kubectl get deployment -n elastic-system
+kubectl logs -n elastic-system -l control-plane=elastic-operator
+k delete pod node-debugger-kube01-sw978
+cd /etc/kubernetes/manifests
+vim kube-apiserver.yaml
+sudo vim kube-apiserver.yaml
+kubectl get pods -n kube-system -l component=kube-apiserver
+OIDC_URL="https://accounts.google.com"\
+OIDC_ID="784449410519-pgau0aripfpugvk3cqsaqoda05js0buu.apps.googleusercontent.com" # e.g., xxxx.apps.googleusercontent.com\
+OIDC_SECRET="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"\
+kubectl create secret -n kube-system generic skooner \\
+  --from-literal=url="$OIDC_URL" \\
+  --from-literal=id="$OIDC_ID" \\
+  --from-literal=secret="$OIDC_SECRET"
+kubectl apply -f https://raw.githubusercontent.com/skooner-k8s/skooner/master/kubernetes-skooner-oidc.yaml
+kubectl get pods -n all-namespaces -l app=skooner
+kubectl get pods -n all-namespaces
+kubectl get pods --all-namespaces -l app=skooner
+k get deploy -n kube-system
+kubectl get pods -n kube-system -l app=skooner
+k describe deploy -n kube-system skooner
+k get replicaset -n kube-system
+k describe replicaset -n kube-system skooner-c49fbd958 
+k get pods -n kube-system -l app=skooner
+grep skooner *
+curl https://skooner.lab.thewortmans.org/
+k apply -f ingress-routes.yaml
+k get secrets --all-namespaces
+k get secrets
+vim ingress-routes.yaml
+k get secret skooner
+k describe secret skooner -n kube-system
+curl -s https://skooner.lab.thewortmans.org/
+curl -sk https://skooner.lab.thewortmans.org/
+cd eck/lab1
+vim lab1.yaml
+kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster' -n elastic-stack
+kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster' --all-namespaces
+kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster'
+watch -n 10 kubectl get pods --selector='
+k describe pod lab-cluster-es-master-0
+k get statefulset -n elastic-system
+k get deploy -n elastic-stack
+k get statefulset -n elastic-stack
+k get all -n elastic-stack
+k get statefulset
+k scale statefulset lab-cluster-ex-frozen --replicas=0
+k scale statefulset lab-cluster-es-frozen --replicas=0
+k scale statefulset lab-cluster-es-frozen --replicas=3
+k logs lab-cluster-es-frozen-1
+k describe pod lab-cluster-es-frozen-1
+k logs lab-cluster-es-frozen-1 -f
+watch -n 10 kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster'
+k logs lab-cluster-es-frozen-0 -f
+k delete -f lab1-cluster.yaml
+vim lab1-cluster.yaml
+k apply -f lab1-cluster.yaml
+watch -n 5 kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster'
+k logs lab-cluster-es-frozen-2 -f
+k logs lab-cluster-es-frozen-2 -f -n elastic-stack
+k scale statefulset lab-cluster-es-frozen --replicas=3 -n elastic-stack
+k describe statefulset lab-cluster-es-frozen -n elastic-stack
+k scale statefulset lab-cluster-es-frozen --replicas=0 -n elastic-stack
+watch -n 5 kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=lab-cluster' -n elastic-stack
+kubectl get elasticsearch lab-cluster -n elastic-stack
+kubectl port-forward service/elastic-cluster-es-http 9200\
+curl -k -u "elastic:<password>" https://localhost:9200/_cluster/health?pretty
+k logs lab-cluster-es-master-0
+k logs lab-cluster-es-master-0 -n elastic-stack
+k logs lab-cluster-es-master-0 -n elastic-stack | grep -i password
+k logs lab-cluster-es-master-1 -n elastic-stack | grep -i password
+k logs lab-cluster-es-master-2 -n elastic-stack | grep -i password
+k exec -it lab-cluster-es-master-0 -n elastic-stack -- bin/elasticsearch-update-password -u elastic
+k exec -it lab-cluster-es-master-0 -n elastic-stack -- elasticsearch-update-password -u elastic
+k exec -it lab-cluster-es-master-0 -n elastic-stack -- bash
+k exec -it lab-cluster-es-http.elastic-stack.es.local -n elastic-stack -- bash
+udo tailscale up
+sudo tailscale up
+etcdctl --version
+etcdctl version
+cd .kube/
+cd git
+rsync -av homelab infra:git/
+cd homelab
+git status | less
+git add -A 
+git status
+lazygit
+ssh-keygen -f '/home/bret/.ssh/known_hosts' -R 'km03.lab.thewortmans.org'
+rsync -avl .ssh km03:
+man rsync
+rsync -avL .ssh km03:
+rsync -av .ssh km03:
+sudo apt -y upgrade
+kubeadm --help
+history 1000
+apt list --installed | grep -i docker
+apt list --installed | grep -i containerd
+sudo systemctl status docker
+kubeadm version
+n
+sudo apt-mark unhold kubeadm kubelet kubectl
+sudo apt upgrade -y
+sudo apt-mark hold kubeadm kubelet kubectl
+scp -r /etc/kubernetes/pki root@km03:/etc/kubernetes/
+scp -r /etc/kubernetes/pki root@km03.lab.thewortmans.org:/etc/kubernetes/
+chmod 0600 ~/.ssh/*
+scp -r /etc/kubernetes/pki root@192.168.10.202:/etc/kubernetes/
+rsync -av  /etc/kubernetes/pki root@192.168.10.202:/etc/kubernetes/
+ssh km03
+rsync -av  /etc/kubernetes/pki km03:
+sudo scp -r  /etc/kubernetes/pki km03:
+scp -r  /etc/kubernetes/pki km03:
+sudo tar cvzf /etc/kubernetes/pki pki.tgz
+sudo tar cvzf /etc/kubernetes/pki/* pki.tgz
+sudo tar cvzf /etc/kubernetes/pki/* /tmp/pki.tgz
+sudo chown bret:bret pki.tgz
+sudo ls -l /etc/kubernetes/pki
+kubeadm init phase upload-certs --upload-certs
+kubeadm token create --print-join-command
+sudo -i
+cat /etc/hosts
+sudo cp -r /etc/kubernetes/pki /etc/kubernetes/pki.bak
+sudo kubeadm init phase certs apiserver --config apiserver-cert.yaml
+sudo kubeadm config migrate --old-config apiserver-cert.yaml --new-config new-apiserver-cert.yaml
+ls /etc/kubernetes
+sudo rm /etc/kubernetes/pki/apiserver.crt /etc/kubernetes/pki/apiserver.key
+ls /etc/kubernetes/pki/apiserver*
+sudo scp /etc/kubernetes/pki/apiserver.crt /etc/kubernetes/pki/apiserver.key root@192.168.10.108:/etc/kubernetes/pki/
+scp /etc/kubernetes/pki/apiserver.crt /etc/kubernetes/pki/apiserver.key root@192.168.10.108:
+rsync -av  /etc/kubernetes/pki/apiserver.crt /etc/kubernetes/pki/apiserver.key root@192.168.10.108:
+cat /etc/kubernetes/pki/apiserver.crt
+cat /etc/kubernetes/pki/apiserver.key
+sudo cat /etc/kubernetes/pki/apiserver.key
+kubectl get secret -n kube-system kubeadm-certs
+sudo tar cvzf pki.tgz /etc/kubernetes/pki/*
+tar tf pki.tgz
+watch -n 5 kubectl get nodes
+cat new-apiserver-cert.yaml
+history | grep new
+history 200 | grep new
+history 200
+sudo kubeadm init phase upload-certs --upload-certs
+k get secret -n kube-systme kubeadm-certs
+k get secret -n kube-system kubeadm-certs
+sudo rm /etc/kubernetes/pki/apiserver.*
+k get pods -n kube-system | grep apiserver
+sudo grep -rIi '192.168.10.138' *
+sudo grep -rIi '192.168.10.138' /etc/
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key member list
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key member listETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key member list
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key member remove 4f4e92a38ab695d5
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key cluster-health
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key cluster health
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key member list
+watch -n 10 k get nodes
+watch -n 10 kubectl get nodes
+sudo openssl x509 -in /etc/kubernetes/pki/apiserver.crt -text -noout | grep -A1 "Subject Alternative Name"
+sudo kubeadm init phase certs apiserver --config kubeadm-config.yaml
+sudo openssl x509 -in /etc/kubernetes/pki/apiserver.crt -text -noout | grep -A2 "Subject Alternative Name"
+vim new-apiserver-cert.yaml
+rm -f /etc/kubernetes/pki/apiserver.*
+sudo rm -f /etc/kubernetes/pki/apiserver.*
+sudo kubeadm init phase certs apiserver --config new-apiserver-cert.yaml
+sudo tar cvzf pki.tgz /etc/kubernetes/pki/apiserver.*
+scp pki.tgz km02:
+scp pki.tgz km023:
+scp pki.tgz km03:
+vim .kube/config
+rsync -av .kube/config km02:
+curl -sku http://k8s.lab.thewortmans.org/
+curl -sku http://192.168.10.50:9000/
+history 1000 | grep curl
+k describe ingress cerebro
+host 192.168.10.50
+host km01
+exit
+sudo tee /etc/multipath.conf <<-'EOF'\
+defaults {\
+    user_friendly_names yes\
+    find_multipaths yes\
+}\
+EOF\
+\
+sudo systemctl enable multipath-tools.service\
+sudo service multipath-tools restart\
+sudo systemctl enable open-iscsi.service\
+sudo service open-iscsi start
+kubectl describe node km01
+uptime
+systemctl status kubelet
+journalctl -u kubelet -f
+k get pods
+k logs actual-budget-5545d54556-zvcwx 
+k logs actual-budget-5545d54556-p7ps9 
+k get ingress
+k describe ingress budget-ingress
+ls -l /etc/kubernetes/pki/etcd
+openssl x509 -in /etc/kubernetes/pki/etcd/server.crt -text -noout\
+openssl x509 -in /etc/kubernetes/pki/etcd/ca.crt -text -noout
+cat /etc/kubernetes/manifests/etcd.yaml
+cd /etc/kubernetes/manifests/
+vim etcd.yaml
+sudo cat /etc/kubernetes/manifests/etcd.yaml
+kubectl exec -n kube-system etcd-<healthy-node> -- etcdctl \\
+  --endpoints=https://192.168.10.108:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \\
+  --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \\
+  endpoint health
+kubectl exec -n kube-system etcd-km02 -- etcdctl \\
+  --endpoints=https://192.168.10.108:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \\
+  --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \\
+  endpoint health
+kubectl exec -n kube-system etcd-km02 -- etcdctl \\
+  --endpoints=https://192.168.1.100:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \\
+  --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \\
+  member list
+kubectl exec -n kube-system etcd-km02 -- etcdctl \\
+  --endpoints=https://192.168.1.108:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \\
+  --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \\
+  member list
+ip route
+ping 192.168.1.100
+kubectl exec -n kube-system etcd-km02 -- etcdctl \\
+  --endpoints=https://192.168.10.100:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \\
+  --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \\
+  member list
+ssh <km02-ip> kubeadm token create --print-join-command --certificate-key $(kubeadm init phase upload-certs --upload-certs | tail -n 1)
+kubeadm token create --print-join-command --certificate-key $(kubeadm init phase upload-certs --upload-certs | tail -n 1)
+Error from server (InternalError): Internal error occurred: Authorization error (user=kube-apiserver-kubelet-client, verb=get, resource=nodes, subresource=proxy)\
+zkubectl get pods -n kube-system -l component=kube-apiserver -o wide\
+kubectl logs -n kube-system kube-apiserver-km01
+sudo cat /etc/kubernetes/manifests/kube-apiserver.yaml
+sudo vim /etc/kubernetes/manifests/kube-apiserver.yaml
+k get pods -n kube-system
+openssl x509 -in /etc/kubernetes/pki/etcd/server.crt -text -noout
+ls -l /etc/kubernetes/pki
+ls -l /etc/kubernetes/pki -ltr
+sudo systemctl restart kubelet
+k get pods -n kube-system -l component-kube-apiserver -o wide
+sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd
+host cp.lab.thewortmans.org
+curl -k https://cp.lab.thewortmans.org:6443
+curl -k https://192.168.10.100:6443
+curl -k https://192.168.10.202:6443
+apt list --upgradable
+cd /etc/containerd
+cat config.toml | grep cgroup
+cat config.toml
+find . -type f -name \*config\*.yaml
+cat kubeadm-config.yaml
+grep SAN *
+vim apiserver-cert.yaml
+apt list --installed | grep -i kube
+cd git/homelab/k8s/home-apps
+pwd
+cd
+grep -rIi SAN *.yaml
+mv apiserver-cert.yaml kubeadm-config.yaml
+mv kubeadm-config.yaml git/homelab/k8s
+cd git/homelab/k8s
+history | grep 'kubeadm init'
+history 1000 | grep 'kubeadm init'
+history 2000 | grep 'kubeadm init'
+history --help
+man history
+history 1
+history 1 | grep 'kubeadm init'
+find . -type f | grep flannel
+kubectl get pods -n kube-system -o wide | grep flannel
+k describe pod kube-flannel-ds-nd9d5
+k describe pod kube-flannel-ds-hd9d5 
+kubectl get pods --all-namespaces -o wide | grep flannel
+k get pods --all-namespaces
+k describe pod kube-flannel-ds-hd9d5 -n kube-flannel
+k logs kube-flannel-ds-hd9d5 -n kube-flannel
+kubectl get node km01 -o yaml | grep -A 2 podCIDR
+kubeadm reset
+k logs kube-flannel-ds-z4s6z -n kube-flannel
+vim kubeadm-config.yaml
+sudo kubeadm reset
+sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
+mkdir -p $HOME/.kube\
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config\
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+k get pods -n kube-flannel
+k get nodes -w
+ls -ltr metallb*
+cat metallb-ippool.yaml
+cat metallb.yaml
+k apply -f metallb.yaml
+k get ns
+k get pods -n metallb-system
+k get pods -n metallb-system -w
+k logs controller-bb5f47665-zkhz2 
+k logs controller-bb5f47665-zkhz2  -n metallb-system
+k logs controller-bb5f47665-zkhz2  -n metallb-system -f
+rsync -av .kube/config km02:.kube/
+rsync -av .kube/config km03:.kube/
+rsync -av .kube/config infra:.kube/
+k apply -f metallb-ippool.yaml
+find . -type f | grep ingress
+k apply -f nginx-ingress.yaml
+cat ingress-routes.yaml
+cd home-apps
+cd ..
+cd k8s
+grep -rIi helm
+find . -type f | grep helm
+ssh https://192.168.2.24:6443
+ssh https://192.168.2.24:443
+ssh https://192.168.2.24/
+ip a
+ip a | grep 192.168.2
+ip link
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key \\
+  member list
+sudo ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \\
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \\
+  --cert=/etc/kubernetes/pki/etcd/server.crt \\
+  --key=/etc/kubernetes/pki/etcd/server.key \\
+  member list
+sudo ETCDCTL_API=3 etcdctl member remove e6ce03e057ccc112
+k get pod
+ls s-ltr
+export ETCDCTL_API=3\
+export ETCDCTL_ENDPOINTS="https://127.0.0.1:2379"\
+export ETCDCTL_CACERT="/path/to/ca.crt"\
+export ETCDCTL_CERT="/path/to/client.crt"\
+export ETCDCTL_KEY="/path/to/client.key"
+ls
+export ETCDCTL_API=3\
+export ETCDCTL_ENDPOINTS="https://127.0.0.1:2379"\
+
+etcdctl snapshot save etcd_snapshot.db
+ls -latr
+htop
+k get nodes
+export ETCDCTL_API=3\
+export ETCDCTL_ENDPOINTS="https://192.168.10.108:2379"\
+
+host km01.lab.thewortmans.org
+journalctl -u etcd
+ps aux | grep etcd
+docker ps | grep etcd
+sudo docker ps | grep etcd
+k get pods -n kube-system | grep etcd
+export ETCDCTL_API=3\
+export ETCDCTL_ENDPOINTS="https://192.168.10.100:2379"\
+
+etcdctl endpoint health
+etcdctl endpoint health --insecure-skip-tls-verify
+etcdctl snapshot save etcd_snapshot.db --debug  --insecure-skip-tls-verify
+ls -ltr
+history
+: 1751116020:0;ls -ltr
+: 1751116023:0;ls -ltra

@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-stack
+---
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: lab-cluster
+  namespace: elastic-stack
+spec:
+  version: 9.0.2
+  nodeSets:
+    # 3 Dedicated Master Nodes
+    - name: master
+      count: 3
+      config:
+        node.roles: ["master"]
+      podTemplate:
+        spec:
+          containers:
+          - name: elasticsearch
+            resources:
+              limits:
+                memory: 2Gi
+                cpu: 1
+              requests:
+                memory: 1Gi
+                cpu: 0.5
+      volumeClaimTemplates:
+      - metadata:
+          name: elasticsearch-data
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+          storageClassName: synology-nfs
+
+    # 3 Hot Nodes (for indexing and searching)
+    - name: hot
+      count: 3
+      config:
+        node.roles: ["data_hot","data_content","ingest","ml","transform","remote_cluster_client"]
+        node.attr.data: hot
+      podTemplate:
+        spec:
+          containers:
+          - name: elasticsearch
+            resources:
+              limits:
+                memory: 4Gi
+                cpu: 2
+              requests:
+                memory: 2Gi
+                cpu: 1
+      volumeClaimTemplates:
+      - metadata:
+          name: elasticsearch-data
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 50Gi
+          storageClassName: synology-nfs
+
+    # 3 Frozen Nodes (for searchable snapshots)
+    - name: frozen
+      count: 3
+      config:
+        node.roles: ["data_frozen","remote_cluster_client"]
+        node.attr.data: frozen
+        node.store.allow_mmap: false              # Disable mmap to reduce disk pressure
+        indices.recovery.max_bytes_per_sec: "20mb" # Further limit recovery bandwidth
+        xpack.searchable.snapshot.shared_cache.size.max_headroom: "10gb"
+      podTemplate:
+        spec:
+          containers:
+          - name: elasticsearch
+            env:
+            - name: ES_JAVA_OPTS
+              value: "-Xms1g -Xmx1g"
+            resources:
+              limits:
+                memory: 4Gi
+                cpu: 2
+              requests:
+                memory: 2Gi
+                cpu: 1
+      volumeClaimTemplates:
+      - metadata:
+          name: elasticsearch-data
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 200Gi
+          storageClassName: synology-nfs
+  updateStrategy:
+    changeBudget:
+      maxSurge: 1
+      maxUnavailable: 1
