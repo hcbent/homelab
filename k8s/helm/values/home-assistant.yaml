@@ -116,11 +116,11 @@ ingress:
   enabled: true
   # Enable external ingress (cannot be true when ingress.enabled is true)
   external: false
-  className: "nginx"
+  className: "traefik"
   labels: {}
   annotations:
-    kubernetes.io/ingress.class: nginx
-    kubernetes.io/tls-acme: "true"
+    traefik.ingress.kubernetes.io/router.entrypoints: web, websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
   hosts:
     - host: homeassistant.thewortmans.org
       paths:

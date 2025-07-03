@@ -23,16 +23,21 @@ service:
 # Ingress configuration for exposing the service externally.
 ingress:
   # -- Enable or disable Ingress resource.
-  enabled: false
+  enabled: true
   # -- Hostname for the Ingress.
-  url: "actual.domain.com"
+  # url: "budget.thewortmans.org"
   # -- Specify the ingressClassName (optional).
-  ingressClassName: ""
+  # ingressClassName: ""
   # -- Additional annotations for the Ingress resource.
   # @example
   # annotations:
   #   cert-manager.io/cluster-issuer: letsencrypt-prod
   annotations: {}
+  hosts:
+    - host: budget.thewortmans.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
 
 # Persistent storage settings for data.
 persistence:
