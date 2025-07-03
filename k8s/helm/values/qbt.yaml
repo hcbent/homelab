@@ -38,11 +38,11 @@ ingress:
   # -- Enable and configure ingress settings for the chart under this key.
   # @default -- See [values.yaml](./values.yaml)
   main:
-    enabled: false
-    # hosts:
-    #   - host: chart-example.local
-    #     paths:
-    #       - path: /
+    enabled: true
+    hosts:
+      - host: qbt.thewortmans.org
+        paths:
+          - path: /
     # tls:
     #   - secretName: chart-example.local-tls
     #     hosts:
@@ -54,25 +54,25 @@ ingress:
 persistence:
   # Configuration files
   config:
-    enabled: false
-    # retain: true
-    # storageClass: ""
-    # accessMode: ReadWriteOnce
-    # size: 1Gi
+    enabled: true
+    retain: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 1Gi
 
   # Optional - Download location - Allows dedicated volume for storage of downloaded files.
   downloads:
-    enabled: false
-    # mountPath: /downloads
-    # storageClass: ""
-    # accessMode: ReadWriteOnce
-    # size: 10Gi
+    enabled: true
+    mountPath: /downloads
+    storageClass: ""
+    accessMode: ReadWriteMany
+    size: 10Gi
 
   # Optional - Allows linking to an existing media library scraping location.
   media:
     enabled: false
-    # mountPath: /media
-    # storageClass: ""
-    # accessMode: ReadWriteOnce
-    # size: 10Gi
+    mountPath: /media
+    storageClass: ""
+    accessMode: ReadWriteMany
+    size: 10Gi
 

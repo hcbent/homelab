@@ -1,0 +1,693 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: video-pv
+  namespace: media
+spec:
+  capacity:
+    storage: 24Ti
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain # or Delete, Recycle (depending on your needs)
+  storageClassName: manual  # Use a storage class if you have one, otherwise "manual"
+  nfs:
+    server: 192.168.1.230
+    path: /volume1/video
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: video-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 24Ti
+  storageClassName: manual
+---
+# PVC for Plex configuration (RWO for SQLite compatibility)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi # Adjust size as needed
+  storageClassName: freenas-iscsi-csi # Default StorageClass
+---
+# PVC for Radarr configuration (RWO for SQLite compatibility)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: freenas-iscsi-csi
+---
+# PVC for Sonarr configuration (RWO for SQLite compatibility)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: freenas-iscsi-csi
+---
+# PVC for qBittorrent configuration (RWO for settings)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: freenas-iscsi-csi
+---
+# PVC for Unpackerr configuration (RWO for settings)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unpackerr-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: freenas-iscsi-csi
+---
+# PVC for Jackett configuration (RWO for settings)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jackett-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: freenas-iscsi-csi
+---
+# qBittorrent Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: media
+  labels:
+    app: qbittorrent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      containers:
+      - name: qbittorrent
+        image: lscr.io/linuxserver/qbittorrent:latest
+        ports:
+        - containerPort: 8080 # Web UI
+        - containerPort: 6881 # Torrent port
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: qbittorrent-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Unpackerr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unpackerr
+  namespace: media
+  labels:
+    app: unpackerr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unpackerr
+  template:
+    metadata:
+      labels:
+        app: unpackerr
+    spec:
+      containers:
+      - name: unpackerr
+        image: golift/unpackerr:latest
+        ports:
+        - containerPort: 5656
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        - name: UN_SONARR_0_URL
+          value: "http://sonarr:8989" # Service name for Sonarr
+        - name: UN_SONARR_0_API_KEY
+          value: "your-sonarr-api-key" # Replace with Sonarr API key
+        - name: UN_RADARR_0_URL
+          value: "http://radarr:7878" # Service name for Radarr
+        - name: UN_RADARR_0_API_KEY
+          value: "your-radarr-api-key" # Replace with Radarr API key
+        - name: UN_PATHS_0_PATH
+          value: "/downloads"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 5656
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: unpackerr-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Radarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radarr
+  namespace: media
+  labels:
+    app: radarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      containers:
+      - name: radarr
+        image: lscr.io/linuxserver/radarr:latest
+        ports:
+        - containerPort: 7878
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        - name: video-pvc
+          mountPath: /movies
+          subPath: Movies
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7878
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: radarr-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Sonarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  namespace: media
+  labels:
+    app: sonarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      containers:
+      - name: sonarr
+        image: lscr.io/linuxserver/sonarr:latest
+        ports:
+        - containerPort: 8989
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        - name: video-pvc
+          mountPath: /tv
+          subPath: TV Shows
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8989
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: sonarr-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Jackett Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jackett
+  namespace: media
+  labels:
+    app: jackett
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jackett
+  template:
+    metadata:
+      labels:
+        app: jackett
+    spec:
+      containers:
+      - name: jackett
+        image: lscr.io/linuxserver/jackett:latest
+        ports:
+        - containerPort: 9117
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9117
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: jackett-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Plex Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  namespace: media
+  labels:
+    app: plex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      containers:
+      - name: plex
+        image: lscr.io/linuxserver/plex:latest
+        ports:
+        - containerPort: 32400 # Plex web UI
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        - name: PLEX_CLAIM
+          value: "claim-TP4pisdP6UbvnzFiyA_m"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /movies
+          subPath: Movies
+        - name: video-pvc
+          mountPath: /tv
+          subPath: TV Shows
+        livenessProbe:
+          httpGet:
+            path: /web
+            port: 32400
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: plex-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Plex Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex
+  namespace: media
+spec:
+  selector:
+    app: plex
+  ports:
+  - name: web
+    protocol: TCP
+    port: 32400
+    targetPort: 32400
+  type: ClusterIP
+---
+# qBittorrent Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+  - name: web
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: torrent
+    protocol: TCP
+    port: 6881
+    targetPort: 6881
+  type: ClusterIP
+---
+# Unpackerr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: unpackerr
+  namespace: media
+spec:
+  selector:
+    app: unpackerr
+  ports:
+  - protocol: TCP
+    port: 5656
+    targetPort: 5656
+  type: ClusterIP
+---
+# Radarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: radarr
+  namespace: media
+spec:
+  selector:
+    app: radarr
+  ports:
+  - protocol: TCP
+    port: 7878
+    targetPort: 7878
+  type: ClusterIP
+---
+# Sonarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  selector:
+    app: sonarr
+  ports:
+  - protocol: TCP
+    port: 8989
+    targetPort: 8989
+  type: ClusterIP
+---
+# Jackett Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jackett
+  namespace: media
+spec:
+  selector:
+    app: jackett
+  ports:
+  - protocol: TCP
+    port: 9117
+    targetPort: 9117
+  type: ClusterIP
+---
+# Radarr Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: radarr-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: radarr.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: radarr
+            port:
+              number: 7878
+  tls:
+  - hosts:
+    - radarr.thewortmans.org
+    secretName: radarr-tls
+---
+# Sonarr Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonarr-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: sonarr.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sonarr
+            port:
+              number: 8989
+  tls:
+  - hosts:
+    - sonarr.thewortmans.org
+    secretName: sonarr-tls
+---
+# qBittorrent Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qbittorrent-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: qbittorrent.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: qbittorrent
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - qbittorrent.thewortmans.org
+    secretName: qbittorrent-tls
+---
+# Unpackerr Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: unpackerr-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: unpackerr.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: unpackerr
+            port:
+              number: 5656
+  tls:
+  - hosts:
+    - unpackerr.thewortmans.org
+    secretName: unpackerr-tls
+---
+# Jackett Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jackett-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: jackett.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jackett
+            port:
+              number: 9117
+  tls:
+  - hosts:
+    - jackett.thewortmans.org
+    secretName: jackett-tls
+---
+# Plex Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plex-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: plex.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plex
+            port:
+              number: 32400
+  tls:
+  - hosts:
+    - plex.thewortmans.org
+    secretName: plex-tls
