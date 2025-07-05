@@ -372,11 +372,16 @@ spec:
           mountPath: /downloads
           subPath: downloads
         livenessProbe:
-          httpGet:
-            path: /
+          tcpSocket:
             port: 9117
           initialDelaySeconds: 30
           periodSeconds: 10
+#        livenessProbe:
+#          httpGet:
+#            path: /
+#            port: 9117
+#          initialDelaySeconds: 30
+#          periodSeconds: 10
       volumes:
       - name: config
         persistentVolumeClaim:
@@ -416,13 +421,22 @@ spec:
         - name: TZ
           value: "America/New_York" # Adjust to your timezone
         - name: PLEX_CLAIM
-          value: "claim-TP4pisdP6UbvnzFiyA_m"
+          value: "***REMOVED***"
         volumeMounts:
         - name: config
           mountPath: /config
         - name: video-pvc
           mountPath: /movies
           subPath: Movies
+        - name: video-pvc
+          mountPath: /home-movies
+          subPath: Home Movies
+        - name: video-pvc
+          mountPath: /christmas
+          subPath: Christmas
+        - name: video-pvc
+          mountPath: /educational
+          subPath: Educational
         - name: video-pvc
           mountPath: /tv
           subPath: TV Shows
@@ -557,10 +571,6 @@ spec:
             name: radarr
             port:
               number: 7878
-  tls:
-  - hosts:
-    - radarr.thewortmans.org
-    secretName: radarr-tls
 ---
 # Sonarr Ingress
 apiVersion: networking.k8s.io/v1
@@ -583,10 +593,6 @@ spec:
             name: sonarr
             port:
               number: 8989
-  tls:
-  - hosts:
-    - sonarr.thewortmans.org
-    secretName: sonarr-tls
 ---
 # qBittorrent Ingress
 apiVersion: networking.k8s.io/v1
@@ -609,10 +615,6 @@ spec:
             name: qbittorrent
             port:
               number: 8080
-  tls:
-  - hosts:
-    - qbittorrent.thewortmans.org
-    secretName: qbittorrent-tls
 ---
 # Unpackerr Ingress
 apiVersion: networking.k8s.io/v1
@@ -661,10 +663,6 @@ spec:
             name: jackett
             port:
               number: 9117
-  tls:
-  - hosts:
-    - jackett.thewortmans.org
-    secretName: jackett-tls
 ---
 # Plex Ingress
 apiVersion: networking.k8s.io/v1
@@ -676,6 +674,12 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web
     traefik.ingress.kubernetes.io/router.tls: "false"
 spec:
+#  ingressClassName: trafeik
+#  defaultBackend:
+#    service:
+#      name: plex
+#      port:
+#        number: 32400
   rules:
   - host: plex.thewortmans.org
     http:
@@ -687,7 +691,3 @@ spec:
             name: plex
             port:
               number: 32400
-  tls:
-  - hosts:
-    - plex.thewortmans.org
-    secretName: plex-tls
