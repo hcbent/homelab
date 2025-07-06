@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2025-07-03T14:49:03Z"
+  generateName: unpackerr-7c5f4fcfc9-
+  labels:
+    app: unpackerr
+    pod-template-hash: 7c5f4fcfc9
+  name: unpackerr-7c5f4fcfc9-4fs7r
+  namespace: media
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: unpackerr-7c5f4fcfc9
+    uid: 532dbdec-f1e5-40a1-92d0-c682f825dc04
+  resourceVersion: "206246"
+  uid: 4f930426-157c-4f4a-8b6d-ec87f70d40b0
+spec:
+  containers:
+  - env:
+    - name: PUID
+      value: "1000"
+    - name: PGID
+      value: "1000"
+    - name: TZ
+      value: America/New_York
+    - name: UN_SONARR_0_URL
+      value: http://sonarr:8989
+    - name: UN_SONARR_0_API_KEY
+      value: b9d4634052a44271b6c3d4264b9a1f4a
+    - name: UN_RADARR_0_URL
+      value: http://radarr:7878
+    - name: UN_RADARR_0_API_KEY
+      value: 538b9d7dd47d4d6a8d4d9d1e5131a1a6
+    - name: UN_PATHS_0_PATH
+      value: /downloads
+    image: golift/unpackerr:latest
+    imagePullPolicy: Always
+    livenessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /metrics
+        port: 5656
+        scheme: HTTP
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    name: unpackerr
+    ports:
+    - containerPort: 5656
+      protocol: TCP
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /config
+      name: config
+    - mountPath: /downloads
+      name: video-pvc
+      subPath: downloads
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-st2gr
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: kube01
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: config
+    persistentVolumeClaim:
+      claimName: unpackerr-config
+  - name: video-pvc
+    persistentVolumeClaim:
+      claimName: video-pvc
+  - name: kube-api-access-st2gr
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2025-07-03T14:49:04Z"
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2025-07-03T14:49:03Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2025-07-03T14:49:04Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2025-07-03T14:49:04Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2025-07-03T14:49:03Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://f965a9f55e5c434ccd1f92eff04acddf5807d9e3256884e0ccf3bce01545ae73
+    image: docker.io/golift/unpackerr:latest
+    imageID: docker.io/golift/unpackerr@sha256:a9e7eb0d7b0ca16d2bdcb5af52eb4b544053ad6d915dd9b0f8383bc83f1df5cc
+    lastState:
+      terminated:
+        containerID: containerd://5e5787a66c335a9eaba0a1e77504fada679bfc8d45002da388945f693f9d15e2
+        exitCode: 0
+        finishedAt: "2025-07-03T14:52:03Z"
+        reason: Completed
+        startedAt: "2025-07-03T14:51:04Z"
+    name: unpackerr
+    ready: true
+    restartCount: 3
+    started: true
+    state:
+      running:
+        startedAt: "2025-07-03T14:52:04Z"
+    volumeMounts:
+    - mountPath: /config
+      name: config
+    - mountPath: /downloads
+      name: video-pvc
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-st2gr
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 192.168.10.21
+  hostIPs:
+  - ip: 192.168.10.21
+  phase: Running
+  podIP: 10.42.3.15
+  podIPs:
+  - ip: 10.42.3.15
+  qosClass: BestEffort
+  startTime: "2025-07-03T14:49:03Z"

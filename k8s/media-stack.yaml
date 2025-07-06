@@ -193,6 +193,8 @@ spec:
         ports:
         - containerPort: 5656
         env:
+        - name: UNPACKERR_WEB_ENABLED
+          value: "true"
         - name: PUID
           value: "1000"
         - name: PGID
@@ -202,11 +204,11 @@ spec:
         - name: UN_SONARR_0_URL
           value: "http://sonarr:8989" # Service name for Sonarr
         - name: UN_SONARR_0_API_KEY
-          value: "your-sonarr-api-key" # Replace with Sonarr API key
+          value: "b9d4634052a44271b6c3d4264b9a1f4a"
         - name: UN_RADARR_0_URL
           value: "http://radarr:7878" # Service name for Radarr
         - name: UN_RADARR_0_API_KEY
-          value: "your-radarr-api-key" # Replace with Radarr API key
+          value: "538b9d7dd47d4d6a8d4d9d1e5131a1a6"
         - name: UN_PATHS_0_PATH
           value: "/downloads"
         volumeMounts:
@@ -215,12 +217,12 @@ spec:
         - name: video-pvc
           mountPath: /downloads
           subPath: downloads
-        livenessProbe:
-          httpGet:
-            path: /metrics
-            port: 5656
-          initialDelaySeconds: 30
-          periodSeconds: 10
+#        livenessProbe:
+#          httpGet:
+#            path: /metrics
+#            port: 5656
+#          initialDelaySeconds: 30
+#          periodSeconds: 10
       volumes:
       - name: config
         persistentVolumeClaim:
@@ -637,10 +639,10 @@ spec:
             name: unpackerr
             port:
               number: 5656
-  tls:
-  - hosts:
-    - unpackerr.thewortmans.org
-    secretName: unpackerr-tls
+#  tls:
+#  - hosts:
+#    - unpackerr.thewortmans.org
+#    secretName: unpackerr-tls
 ---
 # Jackett Ingress
 apiVersion: networking.k8s.io/v1

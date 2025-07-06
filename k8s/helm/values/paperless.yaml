@@ -141,10 +141,10 @@ paperless:
     autoLoginUsername: ""
     ## @param paperless.auth.adminUser [string] If this environment variable is specified, Paperless automatically creates a superuser with the provided username at start
     ##
-    adminUser: ""
+    adminUser: "admin"
     ## @param paperless.auth.adminPassword [string] Only used when PAPERLESS_ADMIN_USER is set. This will be the password of the automatically created superuser
     ##
-    adminPassword: ""
+    adminPassword: "Benm1les"
     ## @param paperless.auth.existingSecret [string] Specify an existing secret with a `username` and `password` key
     ##
     existingSecret: ""
@@ -885,13 +885,13 @@ podDisruptionBudget:
 ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
 ## @param resources The resource limits/requests for the Paperless pod
 ##
-resources: {}
-# limits:
-#   cpu: 100m
-#   memory: 128Mi
-# requests:
-#   cpu: 100m
-#   memory: 128Mi
+resources:
+  limits:
+    cpu: 2
+    memory: 8Gi
+  requests:
+    cpu: 1
+    memory: 4Gi
 
 ## ref: https://kubernetes.io/docs/concepts/storage/volumes/
 ## @param volumes Define volumes for the Paperless pod
