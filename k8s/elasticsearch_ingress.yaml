@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+  name: elasticsearch-ingress
+  namespace: lab
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: elasticsearch.lab.thewortmans.org
+    http:
+      paths:
+      - backend:
+          service:
+            name: lab-es-http
+            port:
+              number: 9200
+        path: /
+        pathType: Prefix
