@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 # -- The number of replicas
-replicaCount: 2
+replicaCount: 1
 
 # -- The `spec.strategyTpye` for updates
 strategyType: RollingUpdate
@@ -298,9 +298,9 @@ extraEnvVarsSecret: {}
   #   key: secret-key
 
 # -- default upstream DNS 1 server to use
-DNS1: "8.8.8.8"
+DNS1: "208.67.222.222"
 # -- default upstream DNS 2 server to use
-DNS2: "8.8.4.4"
+DNS2: "208.67.220.220"
 
 antiaff:
   # -- set to true to enable antiaffinity (example: 2 pihole DNS in the same cluster)
