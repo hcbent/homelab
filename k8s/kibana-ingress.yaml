@@ -4,37 +4,8 @@ metadata:
   name: kibana-ingress
   namespace: elastic-stack
   annotations:
-    # --- Traefik Specific Annotations ---
-
-    # Specify the entrypoint Traefik should use. 'websecure' is for HTTPS.
-    # Ensure your Traefik deployment has a 'websecure' entrypoint configured (usually on port 443).
-    # traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-
-    # Enable TLS for this router. Traefik will automatically handle certificate management
-    # if you're using a certificate resolver (e.g., Let's Encrypt with Cert-Manager),
-    # or it will expect a TLS secret if you're providing one manually.
-    # traefik.ingress.kubernetes.io/router.tls: "true"
     traefik.ingress.kubernetes.io/router.tls: "false"
-
-    # IMPORTANT: If using Cert-Manager for automatic TLS, specify the certificate resolver.
-    # Replace 'myresolver' with the actual name of your Traefik's certificate resolver (e.g., 'le-http', 'le-dns').
-    # This annotation tells Traefik to request a certificate for the host from Cert-Manager.
-    # Remove this if you are not using Cert-Manager with Traefik for automatic certs.
-    # traefik.ingress.kubernetes.io/router.tls.certresolver: myresolver
-
-    # Optional: If you want to redirect HTTP traffic to HTTPS.
-    # This creates an additional router on the 'web' (HTTP) entrypoint that redirects to 'websecure'.
-    # Ensure your Traefik deployment has a 'web' entrypoint configured (usually on port 80).
-    # traefik.ingress.kubernetes.io/router.entrypoints.web.router.middlewares: default-redirect-to-websecure@kubernetescrd
-
-    # Optional: If you have a specific middleware for stripping prefixes, etc.
-    # traefik.ingress.kubernetes.io/router.middlewares: my-stripprefix@kubernetescrd
-
-    # --- Standard Kubernetes Annotations (if applicable) ---
-
-    # If you're using a specific IngressClass (e.g., 'traefik')
-    # ingress.kubernetes.io/ingress.class: traefik
+    ingress.kubernetes.io/ingress.class: traefik
 
 spec:
   ingressClassName: traefik 
@@ -51,11 +22,3 @@ spec:
                 port:
                   number: 5601
 
-  # --- TLS configuration (if not using cert-resolver) ---
-  # If you are providing a pre-existing TLS secret (e.g., created manually or by cert-manager directly)
-  # then you would uncomment this section.
-  # This secret must contain 'tls.crt' and 'tls.key'.
-  # tls:
-  #   - hosts:
-  #       - kibana.lab.thewortmans.org
-  #     secretName: kibana-tls-secret # Replace with the name of your TLS secret
