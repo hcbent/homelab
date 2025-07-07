@@ -6,12 +6,9 @@ metadata:
 spec:
   entryPoints:
     - web
-    - websecure
   routes:
     - match: Host(`kibana.lab.thewortmans.org`) && PathPrefix(`/`)
       kind: Rule
       services:
         - name: lab-eck-kibana-kb-http
           port: 5601
-  tls:
-    secretName:  lab-eck-kibana-kb-http-ca-internal
