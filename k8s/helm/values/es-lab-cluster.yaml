@@ -1,5 +1,11 @@
 ---
 eck-elasticsearch:
+spec:
+  http:
+    tls:
+      selfSignedCertificate:
+        disabled: true
+  version: 9.0.2
   nodeSets:
   - name: masters
     count: 3
