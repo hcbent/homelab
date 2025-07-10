@@ -1,0 +1,112 @@
+USER-SUPPLIED VALUES:
+annotations: {}
+count: 1
+eck-elasticsearch:
+  nodeSets:
+  - config:
+      node.roles:
+      - master
+      node.store.allow_mmap: false
+    count: 3
+    name: masters
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 2
+              memory: 8Gi
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Ti
+  - config:
+      node.roles:
+      - data_hot
+      - data_content
+      - ingest
+      node.store.allow_mmap: false
+    count: 3
+    name: hot
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 4
+              memory: 16Gi
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Ti
+  - config:
+      node.roles:
+      - data_warm
+      node.store.allow_mmap: false
+    count: 0
+    name: warm
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 2
+              memory: 16Gi
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Ti
+  - config:
+      node.roles:
+      - data_frozen
+      node.store.allow_mmap: false
+    count: 3
+    name: frozen
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 2
+              memory: 8Gi
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Ti
+elasticsearchRef:
+  name: eck-elasticsearch
+http:
+  service:
+    spec:
+      type: LoadBalancer
+  tls:
+    selfSignedCertificate:
+      subjectAltNames:
+      - ip: 192.168.10.50
+      - dns: kibana.lab.thewortmans.org
+labels: {}
+version: 9.0.2
