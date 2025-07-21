@@ -49,9 +49,10 @@ securityContext:
 
 service:
   # -- Kubernetes service type
-  type: ClusterIP
+  type: LoadBalancer
   # -- Kubernetes port where service is exposed
   port: 80
+  ip: 192.168.10.61
 
 ingress:
   enabled: false

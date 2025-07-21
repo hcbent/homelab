@@ -442,6 +442,13 @@ spec:
         - name: video-pvc
           mountPath: /tv
           subPath: TV Shows
+        resources:
+          requests:
+            cpu: 1
+            memory: 1Gi
+          limits:
+            cpu: 8
+            memory: 16Gi
         livenessProbe:
           httpGet:
             path: /web
