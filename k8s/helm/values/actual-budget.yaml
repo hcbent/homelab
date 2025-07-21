@@ -19,6 +19,7 @@ service:
   type: ClusterIP
   # -- Port on which the service will be exposed.
   port: 5006
+  
 
 # Ingress configuration for exposing the service externally.
 ingress:
