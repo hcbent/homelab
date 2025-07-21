@@ -48,7 +48,7 @@ annotations: {}
 # This is required for Fleet Server.
 #
 kibanaRef:
-  name: lab
+  name: lab-eck-kibana-kb
   # Optional namespace reference to Kibana instance.
   # If not specified, then the namespace of the Fleet Server resource
   # will be assumed.
