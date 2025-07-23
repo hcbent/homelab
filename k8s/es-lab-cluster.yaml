@@ -69,26 +69,21 @@ spec:
   count: 1
   elasticsearchRef:
     name: lab
-#  http:
-#    service:
-#      spec:
-#        type: LoadBalancer
-#        loadBalancerIP: <your-static-ip>
-#---
-#apiVersion: networking.k8s.io/v1
-#kind: Ingress
-#metadata:
-#  name: kibana-ingress
-#  namespace: lab
-#spec:
-#  rules:
-#  - host: kibana.lab.thewortmans.org
-#    http:
-#      paths:
-#      - path: /
-#        pathType: Prefix
-#        backend:
-#          service:
-#            name: lab-kb-http
-#            port:
-#              number: 5601 # Adjust if your service uses a different port
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kibana-ingress
+  namespace: lab
+spec:
+  rules:
+  - host: kibana.lab.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: lab-kb-http
+            port:
+              number: 5601 # Adjust if your service uses a different port
