@@ -10,7 +10,7 @@ metadata:
   name: lab
   namespace: lab
 spec:
-  version: 9.0.2
+  version: 9.0.3
   volumeClaimDeletePolicy: DeleteOnScaledownOnly
   nodeSets:
   - name: masters
@@ -58,32 +58,3 @@ spec:
     config:
       node.store.allow_mmap: false
       node.roles: ["data_frozen", "remote_cluster_client"]
----
-apiVersion: kibana.k8s.elastic.co/v1
-kind: Kibana
-metadata:
-  name: lab
-  namespace: lab
-spec:
-  version: 9.0.2
-  count: 1
-  elasticsearchRef:
-    name: lab
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: kibana-ingress
-  namespace: lab
-spec:
-  rules:
-  - host: kibana.lab.thewortmans.org
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: lab-kb-http
-            port:
-              number: 5601 # Adjust if your service uses a different port
