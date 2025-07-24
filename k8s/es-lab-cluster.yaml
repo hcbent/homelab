@@ -69,6 +69,16 @@ spec:
   count: 1
   elasticsearchRef:
     name: lab
+    namespace: lab
+  http:
+    service:
+      metadata:
+        annotations:
+          metallb.universe.tf/address-pool: default
+          metallb.universe.tf/allow-shared-ip: "true"
+      spec:
+        type: ClusterIP
+
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

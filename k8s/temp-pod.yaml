@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backup-pod
+  namespace: media
+spec:
+  containers:
+  - name: backup
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - mountPath: /config
+      name: plex-config
+  volumes:
+  - name: plex-config
+    persistentVolumeClaim:
+      claimName: plex-config
