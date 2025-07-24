@@ -1,0 +1,106 @@
+---
+# PVC for Jackett configuration (RWO for settings)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jackett-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: freenas-iscsi-csi
+---
+# Jackett Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jackett
+  namespace: media
+  labels:
+    app: jackett
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jackett
+  template:
+    metadata:
+      labels:
+        app: jackett
+    spec:
+      containers:
+      - name: jackett
+        image: lscr.io/linuxserver/jackett:latest
+        ports:
+        - containerPort: 9117
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        livenessProbe:
+          tcpSocket:
+            port: 9117
+          initialDelaySeconds: 30
+          periodSeconds: 10
+#        livenessProbe:
+#          httpGet:
+#            path: /
+#            port: 9117
+#          initialDelaySeconds: 30
+#          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: jackett-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Jackett Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jackett
+  namespace: media
+spec:
+  selector:
+    app: jackett
+  ports:
+  - protocol: TCP
+    port: 9117
+    targetPort: 9117
+  type: ClusterIP
+---
+# Jackett Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jackett-ingress
+  namespace: media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+spec:
+  rules:
+  - host: jackett.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jackett
+            port:
+              number: 9117
