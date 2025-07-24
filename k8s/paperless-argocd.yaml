@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: paperless
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: home-apps
+  destination:
+    namespace: paperless
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: 'https://fmjstudios.github.io/helm/'
+      targetRevision: '0.2.7'
+      chart: 'paperless-ngx'
+      helm:
+        valueFiles:
+          - $values/k8s/paperless/paperless.yaml # Adjust to exact path in values repo
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/paperless
+      targetRevision: HEAD
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync

@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: home-assistant
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: default
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: http://pajikos.github.io/home-assistant-helm-chart
+      targetRevision: 0.3.12
+      chart: home-assistant
+      helm:
+        valueFiles:
+          - $values/k8s/homeassistant/home-assistant.yaml # Adjust to exact path in values repo
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/homeassistant
+      targetRevision: HEAD
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync
