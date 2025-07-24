@@ -1,0 +1,105 @@
+---
+# PVC for Sonarr configuration (RWO for SQLite compatibility)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: freenas-iscsi-csi
+---
+# Sonarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  namespace: media
+  labels:
+    app: sonarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      containers:
+      - name: sonarr
+        image: lscr.io/linuxserver/sonarr:latest
+        ports:
+        - containerPort: 8989
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        - name: video-pvc
+          mountPath: /tv
+          subPath: TV Shows
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8989
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: sonarr-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Sonarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  selector:
+    app: sonarr
+  ports:
+  - protocol: TCP
+    port: 8989
+    targetPort: 8989
+  type: LoadBalancer
+  loadBalancerIP: 192.168.10.52
+#---
+## Sonarr Ingress
+#apiVersion: networking.k8s.io/v1
+#kind: Ingress
+#metadata:
+#  name: sonarr-ingress
+#  namespace: media
+#  annotations:
+#    traefik.ingress.kubernetes.io/router.entrypoints: web
+#    traefik.ingress.kubernetes.io/router.tls: "false"
+#spec:
+#  rules:
+#  - host: sonarr.thewortmans.org
+#    http:
+#      paths:
+#      - path: /
+#        pathType: Prefix
+#        backend:
+#          service:
+#            name: sonarr
+#            port:
+#              number: 8989
