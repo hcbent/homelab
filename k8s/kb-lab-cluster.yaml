@@ -1,0 +1,15 @@
+---
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: lab
+  namespace: lab
+spec:
+  version: 9.0.3
+  count: 1
+  elasticsearchRef:
+    name: lab
+  http:
+    service:
+      spec:
+        type: LoadBalancer
