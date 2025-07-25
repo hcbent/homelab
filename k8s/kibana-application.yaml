@@ -14,9 +14,9 @@ spec:
       chart: 'eck-kibana''
       helm:
         valueFiles:
-          - $values/k8s/helm/values/kibana.yaml
+          - $values/k8s/lab-cluster/kb/kibana.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
-      path: k8s/helm/values
+      path: k8s/lab-cluster/kb
       targetRevision: HEAD
       ref: values
   syncPolicy:
