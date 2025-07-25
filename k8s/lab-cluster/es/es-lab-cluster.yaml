@@ -1,49 +1,35 @@
 ---
-eck-elasticsearch:
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-stack
+---
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: elastic-stack
+  namespace: elastic-stack
 spec:
-  http:
-    tls:
-      selfSignedCertificate:
-        disabled: true
-  version: 9.0.2
+  version: 9.0.3
+  volumeClaimDeletePolicy: DeleteOnScaledownOnly
   nodeSets:
   - name: masters
     count: 3
-    config:
-      node.roles: ["master"]
-      # Comment out when setting the vm.max_map_count via initContainer, as these are mutually exclusive.
-      # For production workloads, it is strongly recommended to increase the kernel setting vm.max_map_count to 262144
-      # and leave node.store.allow_mmap unset.
-      # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-virtual-memory.html
-      #
-      node.store.allow_mmap: false
-    podTemplate:
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
       spec:
-        containers:
-        - name: elasticsearch
-          resources:
-            limits:
-              memory: 8Gi
-              cpu: 2
-        # Affinity/Anti-affinity settings for controlling the 'spreading' of Elasticsearch
-        # pods across existing hosts.
-        # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-        # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-advanced-node-scheduling.html#k8s-affinity-options
-        #
-        # affinity:
-        #   nodeAffinity:
-        #     requiredDuringSchedulingIgnoredDuringExecution:
-        #       nodeSelectorTerms:
-        #       - matchExpressions:
-        #         - key: beta.kubernetes.io/instance-type
-        #           operator: In
-        #           # This should be adjusted to the instance type according to your setup
-        #           #
-        #           values:
-        #           - highio
-    # Volume Claim settings.
-    # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-volume-claim-templates.html
-    #
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: freenas-iscsi-csi
+    config:
+      node.store.allow_mmap: false
+      node.roles: ["master", "remote_cluster_client"]
+  - name: hot
+    count: 3
     volumeClaimTemplates:
     - metadata:
         name: elasticsearch-data
@@ -53,144 +39,12 @@ spec:
         resources:
           requests:
             storage: 1Ti
-        # Adjust to your storage class name
-        #
-        # storageClassName: local-storage
-  - name: hot
-    count: 3
+        storageClassName: freenas-iscsi-csi
     config:
-      node.roles: ["data_hot", "data_content", "ingest"]
-      # Comment out when setting the vm.max_map_count via initContainer, as these are mutually exclusive.
-      # For production workloads, it is strongly recommended to increase the kernel setting vm.max_map_count to 262144
-      # and leave node.store.allow_mmap unset.
-      # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-virtual-memory.html
-      #
       node.store.allow_mmap: false
-    podTemplate:
-      spec:
-        containers:
-        - name: elasticsearch
-          resources:
-            limits:
-              memory: 16Gi
-              cpu: 4
-        # Affinity/Anti-affinity settings for controlling the 'spreading' of Elasticsearch
-        # pods across existing hosts.
-        # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-        # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-advanced-node-scheduling.html#k8s-affinity-options
-        #
-        # affinity:
-        #   nodeAffinity:
-        #     requiredDuringSchedulingIgnoredDuringExecution:
-        #       nodeSelectorTerms:
-        #       - matchExpressions:
-        #         - key: beta.kubernetes.io/instance-type
-        #           operator: In
-        #           # This should be adjusted to the instance type according to your setup
-        #           #
-        #           values:
-        #           - highio
-    # Volume Claim settings.
-    # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-volume-claim-templates.html
-    #
-    volumeClaimTemplates:
-    - metadata:
-        name: elasticsearch-data
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 5Ti
-        # Adjust to your storage class name
-        #
-        # storageClassName: local-storage
-  - name: warm
-    count: 0
-    config:
-      node.roles: ["data_warm"]
-      # Comment out when setting the vm.max_map_count via initContainer, as these are mutually exclusive.
-      # For production workloads, it is strongly recommended to increase the kernel setting vm.max_map_count to 262144
-      # and leave node.store.allow_mmap unset.
-      # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-virtual-memory.html
-      #
-      node.store.allow_mmap: false
-    podTemplate:
-      spec:
-        containers:
-        - name: elasticsearch
-          resources:
-            limits:
-              memory: 16Gi
-              cpu: 2
-        # Affinity/Anti-affinity settings for controlling the 'spreading' of Elasticsearch
-        # pods across existing hosts.
-        # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-        # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-advanced-node-scheduling.html#k8s-affinity-options
-        #
-        # affinity:
-        #   nodeAffinity:
-        #     requiredDuringSchedulingIgnoredDuringExecution:
-        #       nodeSelectorTerms:
-        #       - matchExpressions:
-        #         - key: beta.kubernetes.io/instance-type
-        #           operator: In
-        #           # This should be adjusted to the instance type according to your setup
-        #           #
-        #           values:
-        #           - highstorage
-    # Volume Claim settings.
-    # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-volume-claim-templates.html
-    #
-    volumeClaimTemplates:
-    - metadata:
-        name: elasticsearch-data
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Ti
-        # Adjust to your storage class name
-        #
-        # storageClassName: local-storage
+      node.roles: ["data_hot", "data_content", "remote_cluster_client"]
   - name: frozen
     count: 3
-    config:
-      node.roles: ["data_frozen"]
-      # Comment out when setting the vm.max_map_count via initContainer, as these are mutually exclusive.
-      # For production workloads, it is strongly recommended to increase the kernel setting vm.max_map_count to 262144
-      # and leave node.store.allow_mmap unset.
-      # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-virtual-memory.html
-      #
-      node.store.allow_mmap: false
-    podTemplate:
-      spec:
-        containers:
-        - name: elasticsearch
-          resources:
-            limits:
-              memory: 8Gi
-              cpu: 2
-        # Affinity/Anti-affinity settings for controlling the 'spreading' of Elasticsearch
-        # pods across existing hosts.
-        # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-        # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-advanced-node-scheduling.html#k8s-affinity-options
-        #
-        # affinity:
-        #   nodeAffinity:
-        #     requiredDuringSchedulingIgnoredDuringExecution:
-        #       nodeSelectorTerms:
-        #       - matchExpressions:
-        #         - key: beta.kubernetes.io/instance-type
-        #           operator: In
-        #           # This should be adjusted to the instance type according to your setup
-        #           #
-        #           values:
-        #           - highstorage
-    # Volume Claim settings.
-    # ref: https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-volume-claim-templates.html
-    #
     volumeClaimTemplates:
     - metadata:
         name: elasticsearch-data
@@ -199,48 +53,8 @@ spec:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 10Ti
-        # Adjust to your storage class name
-        #
-        # storageClassName: local-storage
----
-# Version of Kibana.
-#
-version: 9.0.2
-
-# Labels that will be applied to Kibana.
-#
-labels: {}
-  # key: value
-
-# Annotations that will be applied to Kibana.
-#
-annotations: {}
-  # key: value
-
-# Count of Kibana replicas to create.
-#
-count: 1
-
-# Reference to ECK-managed Elasticsearch resource, ideally from {{ "elasticsearch.fullname" }}
-#
-elasticsearchRef:
-  name: eck-elasticsearch
-  # namespace: default
-http:
-  service:
-    spec:
-      # Type of service to deploy for Kibana.
-      # This deploys a load balancer in a cloud service provider, where supported.
-      #
-      type: LoadBalancer
-  tls:
-    selfSignedCertificate:
-      subjectAltNames:
-      - ip: 192.168.10.50
-      - ip: 192.168.10.56
-      - dns: kibana.lab.thewortmans.org
-      - dns: kibana.bwortman.us
-config:
-  server:
-    publicBaseUrl: "https://kibana.bwortman.us"  
+            storage: 1Ti
+        storageClassName: freenas-iscsi-csi
+    config:
+      node.store.allow_mmap: false
+      node.roles: ["data_frozen", "remote_cluster_client"]
