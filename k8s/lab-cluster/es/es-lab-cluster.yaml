@@ -1,4 +1,4 @@
-elasticsearch:
+eck-elasticsearch:
   spec:
     http:
       tls:
@@ -94,7 +94,7 @@ elasticsearch:
           resources:
             requests:
               storage: 10Ti
-kibana:
+eck-kibana:
   version: 9.0.2
   labels: {}
   annotations: {}
