@@ -16,7 +16,7 @@ spec:
         valueFiles:
           - $values/k8s/helm/values/es-lab-cluster.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
-      path: k8s/elasticsearch
+      path: k8s/helm/values
       targetRevision: HEAD
       ref: values
   syncPolicy:
