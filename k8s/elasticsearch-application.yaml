@@ -14,9 +14,9 @@ spec:
       chart: 'eck-elasticsearch'
       helm:
         valueFiles:
-          - $values/k8s/helm/values/es-lab-cluster.yaml
+          - $values/k8s/lab-cluster/es/es-lab-cluster.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
-      path: k8s/helm/values
+      path: k8s/lab-cluster/es
       targetRevision: HEAD
       ref: values
   syncPolicy:
