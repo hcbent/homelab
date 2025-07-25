@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: lab-kibana
+  name: kb-lab-cluster
   namespace: argocd # Ensure this matches your ArgoCD namespace
 spec:
   project: default
@@ -11,13 +11,13 @@ spec:
   sources:
     - repoURL: 'https://helm.elastic.co'
       targetRevision: '0.15.0'
-      chart: 'eck-kibana''
+      chart: 'eck-kibana'
       helm:
         valueFiles:
-          - $values/k8s/lab-cluster/kb/kibana.yaml
+          - $values/k8s/lab-cluster/kb/kibana.yaml # Adjust to exact path in values repo
     - repoURL: git@github.com/wortmanb/homelab.git
       path: k8s/lab-cluster/kb
-      targetRevision: HEAD
+      targetRevision: main
       ref: values
   syncPolicy:
     syncOptions:
