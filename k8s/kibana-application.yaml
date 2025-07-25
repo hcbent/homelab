@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-kibana
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: default
+  destination:
+    namespace: elastic-stack
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: 'https://helm.elastic.co'
+      targetRevision: '0.15.0'
+      chart: 'eck-kibana''
+      helm:
+        valueFiles:
+          - $values/k8s/helm/values/kibana.yaml
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/elasticsearch
+      targetRevision: HEAD
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync
