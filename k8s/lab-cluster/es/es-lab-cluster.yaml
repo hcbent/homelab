@@ -95,7 +95,7 @@ eck-kibana:
   annotations: {}
   count: 1
   elasticsearchRef:
-    name: eck-elasticsearch
+    name: elasticsearch
     namespace: elastic-stack
   http:
     service:
