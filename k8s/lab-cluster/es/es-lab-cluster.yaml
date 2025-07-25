@@ -1,11 +1,6 @@
 eck-elasticsearch:
-  spec:
-    http:
-      tls:
-        selfSignedCertificate:
-          disabled: true
-    version: 9.0.2
-    nodeSets:
+  version: 9.0.2
+  nodeSets:
     - name: masters
       count: 3
       config:
@@ -14,20 +9,20 @@ eck-elasticsearch:
       podTemplate:
         spec:
           containers:
-          - name: elasticsearch
-            resources:
-              limits:
-                memory: 8Gi
-                cpu: 2
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 8Gi
+                  cpu: 2
       volumeClaimTemplates:
-      - metadata:
-          name: elasticsearch-data
-        spec:
-          accessModes:
-          - ReadWriteOnce
-          resources:
-            requests:
-              storage: 1Ti
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Ti
     - name: hot
       count: 3
       config:
@@ -36,20 +31,20 @@ eck-elasticsearch:
       podTemplate:
         spec:
           containers:
-          - name: elasticsearch
-            resources:
-              limits:
-                memory: 16Gi
-                cpu: 4
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 16Gi
+                  cpu: 4
       volumeClaimTemplates:
-      - metadata:
-          name: elasticsearch-data
-        spec:
-          accessModes:
-          - ReadWriteOnce
-          resources:
-            requests:
-              storage: 5Ti
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 5Ti
     - name: warm
       count: 0
       config:
@@ -58,20 +53,20 @@ eck-elasticsearch:
       podTemplate:
         spec:
           containers:
-          - name: elasticsearch
-            resources:
-              limits:
-                memory: 16Gi
-                cpu: 2
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 16Gi
+                  cpu: 2
       volumeClaimTemplates:
-      - metadata:
-          name: elasticsearch-data
-        spec:
-          accessModes:
-          - ReadWriteOnce
-          resources:
-            requests:
-              storage: 10Ti
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Ti
     - name: frozen
       count: 3
       config:
@@ -80,20 +75,20 @@ eck-elasticsearch:
       podTemplate:
         spec:
           containers:
-          - name: elasticsearch
-            resources:
-              limits:
-                memory: 8Gi
-                cpu: 2
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 8Gi
+                  cpu: 2
       volumeClaimTemplates:
-      - metadata:
-          name: elasticsearch-data
-        spec:
-          accessModes:
-          - ReadWriteOnce
-          resources:
-            requests:
-              storage: 10Ti
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Ti
 eck-kibana:
   version: 9.0.2
   labels: {}
@@ -109,10 +104,10 @@ eck-kibana:
     tls:
       selfSignedCertificate:
         subjectAltNames:
-        - ip: 192.168.10.50
-        - ip: 192.168.10.56
-        - dns: kibana.lab.thewortmans.org
-        - dns: kibana.bwortman.us
+          - ip: 192.168.10.50
+          - ip: 192.168.10.56
+          - dns: kibana.lab.thewortmans.org
+          - dns: kibana.bwortman.us
   config:
     server:
       publicBaseUrl: "https://kibana.bwortman.us"
