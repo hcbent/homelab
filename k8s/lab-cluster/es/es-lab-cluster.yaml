@@ -101,14 +101,14 @@ eck-kibana:
   http:
     service:
       spec:
-        type: LoadBalancer
-#    tls:
-#      selfSignedCertificate:
-#        subjectAltNames:
-#          - ip: 192.168.10.50
-#          - ip: 192.168.10.56
-#          - dns: kibana.lab.thewortmans.org
-#          - dns: kibana.bwortman.us
+        type: ClusterIP
+    tls:
+      selfSignedCertificate:
+        subjectAltNames:
+          - ip: 192.168.10.50
+          - ip: 192.168.10.56
+          - dns: kibana.lab.thewortmans.org
+          - dns: kibana.bwortman.us
 
 #eck-kibana:
 #  version: 9.0.0
