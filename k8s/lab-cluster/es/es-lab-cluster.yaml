@@ -1,5 +1,7 @@
 eck-elasticsearch:
   version: 9.0.2
+  fullnameOverride: lab
+
   nodeSets:
     - name: masters
       count: 3
