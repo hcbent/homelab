@@ -99,6 +99,15 @@ eck-kibana:
   elasticsearchRef:
     name: lab
     namespace: elastic-stack
+  ingress:
+    enabled: true
+    pathType: Prefix
+    hosts:
+    - host: "kibana.lab.thewortmans.org"
+      path: "/"
+    tls:
+      enabled: true
+
   http:
     service:
       spec:
