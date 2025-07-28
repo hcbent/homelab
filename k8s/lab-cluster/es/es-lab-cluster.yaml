@@ -107,7 +107,7 @@ eck-kibana:
     - host: "kibana.lab.thewortmans.org"
       path: "/"
     tls:
-      enabled: true
+      enabled: false
 
   http:
     service:
