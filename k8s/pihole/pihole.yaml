@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pihole-config
-  namespace: default
+  namespace: pihole
 data:
   TZ: "America/New_York" # Set your timezone
   WEBPASSWORD: "***REMOVED***"
@@ -11,7 +11,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pihole
-  namespace: default
+  namespace: pihole
   labels:
     app: pihole
 spec:
@@ -75,7 +75,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: pihole-service
-  namespace: default
+  namespace: pihole
 spec:
   selector:
     app: pihole
@@ -102,7 +102,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pihole-config-pvc
-  namespace: default
+  namespace: pihole
 spec:
   accessModes:
   - ReadWriteOnce
@@ -115,7 +115,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pihole-dnsmasq-pvc
-  namespace: default
+  namespace: pihole
 spec:
   accessModes:
   - ReadWriteOnce
