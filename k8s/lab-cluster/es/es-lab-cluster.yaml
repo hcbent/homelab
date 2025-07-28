@@ -113,13 +113,11 @@ eck-kibana:
     service:
       spec:
         type: ClusterIP
-#    tls:
-#     selfSignedCertificate:
-#        subjectAltNames:
-#          - ip: 192.168.10.50
-#          - ip: 192.168.10.56
-#          - dns: kibana.lab.thewortmans.org
-#          - dns: kibana.bwortman.us
+
   config:
     server:
+      ssl:
+        enabled: false
+      port: 5601
+      host: 0.0.0.0
       publicBaseUrl: "https://kibana.lab.thewortmans.org"
