@@ -90,9 +90,16 @@ spec:
     protocol: UDP
   - name: http
     port: 80
-    targetPort: 80
-    protocol: TCP
-  - name: https
+
+    # -- Optional node port for the web HTTP service
+    nodePort: ""
+
+  # -- Configuration for the HTTPS web interface listener
+  https:
+    # -- Generate a service for HTTPS traffic
+    enabled: true
+
+    # -- The port of the web HTTPS service
     port: 443
     targetPort: 443
     protocol: TCP
