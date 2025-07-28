@@ -92,6 +92,7 @@ eck-elasticsearch:
               requests:
                 storage: 10Ti
 eck-kibana:
+  fullnameOverride: lab
   version: 9.0.2
   labels: {}
   annotations: {}
