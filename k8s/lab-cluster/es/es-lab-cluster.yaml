@@ -120,4 +120,4 @@ eck-kibana:
         enabled: false
       port: 5601
       host: 0.0.0.0
-      publicBaseUrl: "http://kibana.lab.thewortmans.org"
+#      publicBaseUrl: "http://kibana.lab.thewortmans.org"
