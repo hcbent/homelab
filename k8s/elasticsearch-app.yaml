@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: es-lab-cluster
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: default
+  destination:
+    namespace: elastic-stack
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: 'https://helm.elastic.co'
+      targetRevision: '0.15.0'
+      chart: 'eck-stack'
+      helm:
+        valueFiles:
+          - $values/k8s/lab-cluster/es/es-lab-cluster.yaml # Adjust to exact path in values repo
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/lab-cluster/es
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync
