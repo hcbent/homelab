@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pihole
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  destination:
+    namespace: pihole
+    server: https://kubernetes.default.svc
+  source:
+    path: k8s/pihole
+    repoURL: git@github.com:wortmanb/homelab
+    targetRevision: main
+  sources: []
+  project: default
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+
