@@ -97,6 +97,9 @@ eck-kibana:
   labels: {}
   annotations: {}
   count: 1
+  elasticsearch:
+    ssl:
+      certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
   elasticsearchRef:
     name: lab
     namespace: elastic-stack
