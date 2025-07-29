@@ -44,7 +44,7 @@ spec:
         - name: TZ
           value: "America/New_York" # Adjust to your timezone
         - name: PLEX_CLAIM
-          value: "claim-NQszzL38vMT7qNwzkaJy"
+          value: "claim-N-fsxzW9hfdc5L-jXyA9"
         volumeMounts:
         - name: config
           mountPath: /config
