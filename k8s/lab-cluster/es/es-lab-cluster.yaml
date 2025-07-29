@@ -107,7 +107,7 @@ eck-kibana:
     - host: "kibana.lab.thewortmans.org"
       path: "/"
     tls:
-      enabled: false
+      enabled: true
 
   http:
     service:
@@ -120,7 +120,7 @@ eck-kibana:
 #        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
     server:
       ssl:
-        enabled: false
+        enabled: true
       port: 5601
       host: 0.0.0.0
 #      publicBaseUrl: "http://kibana.lab.thewortmans.org"
