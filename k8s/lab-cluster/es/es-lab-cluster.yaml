@@ -92,6 +92,7 @@ eck-elasticsearch:
               requests:
                 storage: 10Ti
 eck-kibana:
+  fullnameOverride: lab
   version: 9.0.2
   labels: {}
   annotations: {}
@@ -112,13 +113,14 @@ eck-kibana:
     service:
       spec:
         type: ClusterIP
-    tls:
-     selfSignedCertificate:
-        subjectAltNames:
-          - ip: 192.168.10.50
-          - ip: 192.168.10.56
-          - dns: kibana.lab.thewortmans.org
-          - dns: kibana.bwortman.us
+
   config:
+#    elasticsearch:
+#      ssl:
+#        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
     server:
-      publicBaseUrl: "https://kibana.bwortman.us"
+      ssl:
+        enabled: true
+      port: 5601
+      host: 0.0.0.0
+#      publicBaseUrl: "http://kibana.lab.thewortmans.org"
