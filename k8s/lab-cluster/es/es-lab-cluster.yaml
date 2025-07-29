@@ -115,9 +115,9 @@ eck-kibana:
         type: ClusterIP
 
   config:
-    elasticsearch:
-      ssl:
-        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
+#    elasticsearch:
+#      ssl:
+#        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
     server:
       ssl:
         enabled: false
