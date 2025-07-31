@@ -49,12 +49,12 @@ spec:
 #          value: "https://sonarr:8989"
           value: "https://sonarr.bwortman.us"
         - name: UN_SONARR_0_API_KEY
-          value: "b9d4634052a44271b6c3d4264b9a1f4a"
+          value: "87f4cefa7ca14d66a3e7b0de27a17b34"
         - name: UN_RADARR_0_URL
 #          value: "https://radarr:7878"
           value: "https://radarr.bwortman.us"
         - name: UN_RADARR_0_API_KEY
-          value: "538b9d7dd47d4d6a8d4d9d1e5131a1a6"
+          value: "3fde26fae26142c0952c7e2b65d9e6da"
         - name: UN_PATHS_0_PATH
           value: "/downloads"
         volumeMounts:
