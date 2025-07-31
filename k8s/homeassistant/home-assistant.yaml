@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 # Number of replicas for the deployment
-replicaCount: 2
+replicaCount: 1
 
 # Image settings
 image:
@@ -291,7 +291,7 @@ persistence:
   # Enable or disable persistence
   enabled: true
   # Access mode for the persistent volume claim
-  accessMode: ReadWriteMany
+  accessMode: ReadWriteOnce
   # Size of the persistent volume claim
   size: 5Gi
   # Storage class for the persistent volume claim
