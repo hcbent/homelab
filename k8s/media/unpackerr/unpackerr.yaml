@@ -46,13 +46,11 @@ spec:
         - name: TZ
           value: "America/New_York" # Adjust to your timezone
         - name: UN_SONARR_0_URL
-#          value: "https://sonarr:8989"
-          value: "https://sonarr.bwortman.us"
+          value: "http://sonarr:8989" # Service name for Sonarr
         - name: UN_SONARR_0_API_KEY
           value: "87f4cefa7ca14d66a3e7b0de27a17b34"
         - name: UN_RADARR_0_URL
-#          value: "https://radarr:7878"
-          value: "https://radarr.bwortman.us"
+          value: "http://radarr:7878" # Service name for Radarr
         - name: UN_RADARR_0_API_KEY
           value: "3fde26fae26142c0952c7e2b65d9e6da"
         - name: UN_PATHS_0_PATH
