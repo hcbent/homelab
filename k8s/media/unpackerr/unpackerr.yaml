@@ -50,7 +50,7 @@ spec:
         - name: UN_SONARR_0_API_KEY
           value: "b9d4634052a44271b6c3d4264b9a1f4a"
         - name: UN_RADARR_0_URL
-          value: "httasp://radarr.bwortman.us"
+          value: "httsp://radarr.bwortman.us"
         - name: UN_RADARR_0_API_KEY
           value: "538b9d7dd47d4d6a8d4d9d1e5131a1a6"
         - name: UN_PATHS_0_PATH
