@@ -92,7 +92,7 @@ spec:
     port: 80
 
     # -- Optional node port for the web HTTP service
-    nodePort: ""
+    # nodePort: ""
 
   # -- Configuration for the HTTPS web interface listener
   https:
