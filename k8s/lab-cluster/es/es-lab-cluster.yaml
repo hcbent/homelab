@@ -118,9 +118,9 @@ eck-kibana:
 #    elasticsearch:
 #      ssl:
 #        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
-    server:
-      ssl:
-        enabled: true
-      port: 5601
-      host: 0.0.0.0
+#    server:
+#      ssl:
+#        enabled: true
+#      port: 5601
+#      host: 0.0.0.0
 #      publicBaseUrl: "http://kibana.lab.thewortmans.org"
