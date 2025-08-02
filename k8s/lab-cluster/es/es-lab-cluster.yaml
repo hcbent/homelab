@@ -107,11 +107,10 @@ eck-kibana:
     - host: "kibana.lab.thewortmans.org"
       path: "/"
     tls:
-      enabled: true
-      - hosts:
-          - kibana.lab.thewortmans.org
-          - 10.42.0.0/16
-          - kibana.bwortman.us
+    - hosts:
+        - kibana.lab.thewortmans.org
+        - 10.42.0.0/16
+        - kibana.bwortman.us
 
   http:
     service:
