@@ -101,7 +101,7 @@ eck-kibana:
     name: lab
     namespace: elastic-stack
   ingress:
-    enabled: true
+    enabled: false
     pathType: Prefix
     hosts:
     - host: "kibana.lab.thewortmans.org"
@@ -112,7 +112,8 @@ eck-kibana:
   http:
     service:
       spec:
-        type: ClusterIP
+        type: LoadBalancer
+        loadBalancerIP: 192.168.10.57
 
   config:
 #    elasticsearch:
