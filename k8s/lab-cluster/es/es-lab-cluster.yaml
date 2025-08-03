@@ -102,19 +102,19 @@ eck-kibana:
     namespace: elastic-stack
   ingress:
     enabled: false
-    pathType: Prefix
-    hosts:
-    - host: "kibana.lab.thewortmans.org"
-      path: "/"
-    tls:
-      enabled: true
+#    pathType: Prefix
+#    hosts:
+#    - host: "kibana.lab.thewortmans.org"
+#      path: "/"
+#    tls:
+#      enabled: true
 
   http:
     service:
       spec:
-        type: ClusterIP
+        type: LoadBalancer
 
-  config:
+#  config:
 #    elasticsearch:
 #      ssl:
 #        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
