@@ -112,7 +112,7 @@ eck-kibana:
   http:
     service:
       spec:
-        type: LoadBalancer
+        type: NodePort
 
 #  config:
 #    elasticsearch:
