@@ -112,7 +112,7 @@ eck-kibana:
   http:
     service:
       spec:
-        type: ClusterIP
+        type: LoadBalancer
 
 #  config:
 #    elasticsearch:
