@@ -691,7 +691,7 @@ service:
   ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport
   ## NOTE: choose port between <30000-32767>
   ##
-  nodePort: 30080
+  nodePort: 32185
   ## @param service.extraPorts Extra ports to add to the service
   ## https://kubernetes.io/docs/concepts/services-networking/service/#multi-port-services
   ## e.g.
