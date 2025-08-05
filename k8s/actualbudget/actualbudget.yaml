@@ -16,7 +16,7 @@ replicaCount: 1
 # Kubernetes Service settings.
 service:
   # -- Service type (ClusterIP, NodePort, LoadBalancer).
-  type: LoadBalancer
+  type: NodePort
   # -- Port on which the service will be exposed.
   port: 5006
   
