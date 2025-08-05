@@ -93,6 +93,11 @@ eck-elasticsearch:
                 storage: 10Ti
   secureSettings:
     - secretName: s3-creds
+  http:
+    service:
+      spec:
+        type: NodePort
+
 eck-kibana:
   fullnameOverride: lab
   version: 9.0.2
@@ -104,12 +109,6 @@ eck-kibana:
     namespace: elastic-stack
   ingress:
     enabled: false
-#    pathType: Prefix
-#    hosts:
-#    - host: "kibana.lab.thewortmans.org"
-#      path: "/"
-#    tls:
-#      enabled: true
 
   http:
     service:
