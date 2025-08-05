@@ -683,7 +683,7 @@ ingress:
 service:
   ## @param service.type [default: ClusterIP] The type of service to create
   ##
-  type: ClusterIP
+  type: NodePort
   ## @param service.port [default: 8000] The port to use on the service
   ##
   port: 8000
