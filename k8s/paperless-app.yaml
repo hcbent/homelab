@@ -4,7 +4,7 @@ metadata:
   name: paperless
   namespace: argocd # Ensure this matches your ArgoCD namespace
 spec:
-  project: home-apps
+  project: default
   destination:
     namespace: paperless
     server: https://kubernetes.default.svc
