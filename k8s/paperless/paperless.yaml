@@ -54,7 +54,7 @@ fullnameOverride: ""
 paperless:
   ## @param paperless.domain [string] Define the domain name for Paperless - will be re-used in Ingress
   ##
-  domain: "paperless.thewortmans.org"
+  domain: "paperless.bwortman.us"
   ## @param paperless.appTitle [string] If set, overrides the default name "Paperless-ngx"
   ##
   appTitle: ""
