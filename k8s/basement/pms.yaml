@@ -1,0 +1,71 @@
+---
+# Plex Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  namespace: media
+  labels:
+    app: plex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      containers:
+      - name: plex
+        image: lscr.io/linuxserver/plex:latest
+        ports:
+        - containerPort: 32400 # Plex web UI
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        - name: PLEX_CLAIM
+          value: "***REMOVED***"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /movies
+          subPath: Movies
+        - name: video-pvc
+          mountPath: /home-movies
+          subPath: Home Movies
+        - name: video-pvc
+          mountPath: /christmas
+          subPath: Christmas
+        - name: video-pvc
+          mountPath: /educational
+          subPath: Educational
+        - name: video-pvc
+          mountPath: /tv
+          subPath: TV Shows
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1Gi
+          limits:
+            cpu: 16000m
+            memory: 16Gi
+        livenessProbe:
+          httpGet:
+            path: /web
+            port: 32400
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: plex-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc

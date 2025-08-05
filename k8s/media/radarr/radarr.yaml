@@ -1,0 +1,105 @@
+---
+# PVC for Radarr configuration (RWO for SQLite compatibility)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: freenas-iscsi-csi
+---
+# Radarr Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radarr
+  namespace: media
+  labels:
+    app: radarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      containers:
+      - name: radarr
+        image: lscr.io/linuxserver/radarr:latest
+        ports:
+        - containerPort: 7878
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "America/New_York" # Adjust to your timezone
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: video-pvc
+          mountPath: /downloads
+          subPath: downloads
+        - name: video-pvc
+          mountPath: /movies
+          subPath: Movies
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7878
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: radarr-config
+      - name: video-pvc
+        persistentVolumeClaim:
+          claimName: video-pvc
+---
+# Radarr Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: radarr
+  namespace: media
+spec:
+  selector:
+    app: radarr
+  ports:
+  - protocol: TCP
+    port: 7878
+    targetPort: 7878
+  type: LoadBalancer
+  loadBalancerIP: 192.168.10.51
+---
+## Radarr Ingress
+#apiVersion: networking.k8s.io/v1
+#kind: Ingress
+#metadata:
+#  name: radarr-ingress
+#  namespace: media
+#  annotations:
+#    traefik.ingress.kubernetes.io/router.entrypoints: web
+#    traefik.ingress.kubernetes.io/router.tls: "false"
+#spec:
+#  rules:
+#  - host: radarr.thewortmans.org
+#    http:
+#      paths:
+#      - path: /
+#        pathType: Prefix
+#        backend:
+#          service:
+#            name: radarr
+#            port:
+#              number: 7878
