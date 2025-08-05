@@ -22,14 +22,23 @@ replicaCount: 1
 # -- The number of old ReplicaSets to retain
 revisionHistoryLimit: 10
 
+# Environment variables
+envVars:
+  SKIP_LOGIN: "true"
+  INSECURE: "true"
+  TOKEN_PATH: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  CA_PATH: "/var/run/secrets/kubernetes.io//serviceaccount/ca.crt"
+
+# Service account configuration (if the chart supports it)
 serviceAccount:
-  # -- Specifies whether a service account should be created
   create: true
-  # -- Annotations to add to the service account
+  name: skooner-sa
   annotations: {}
-  # -- The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+
+# RBAC configuration
+rbac:
+  create: true
+  clusterRole: cluster-admin  # or a more restrictive role0
 
 # -- Annotations to be added to exporter pods
 podAnnotations: {}
@@ -49,7 +58,7 @@ securityContext:
 
 service:
   # -- Kubernetes service type
-  type: ClusterIP
+  type: LoadBalancer
   # -- Kubernetes port where service is exposed
   port: 80
 
