@@ -1,0 +1,128 @@
+eck-elasticsearch:
+  version: 9.0.2
+  fullnameOverride: lab
+
+  nodeSets:
+    - name: masters
+      count: 3
+      config:
+        node.roles: ["master"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 8Gi
+                  cpu: 2
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Ti
+    - name: hot
+      count: 3
+      config:
+        node.roles: ["data_hot", "data_content", "ingest"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 16Gi
+                  cpu: 4
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 5Ti
+    - name: warm
+      count: 0
+      config:
+        node.roles: ["data_warm"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 16Gi
+                  cpu: 2
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Ti
+    - name: frozen
+      count: 3
+      config:
+        node.roles: ["data_frozen"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 8Gi
+                  cpu: 2
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Ti
+  secureSettings:
+    - secretName: s3-creds
+eck-kibana:
+  fullnameOverride: lab
+  version: 9.0.2
+  labels: {}
+  annotations: {}
+  count: 1
+  elasticsearchRef:
+    name: lab
+    namespace: elastic-stack
+  ingress:
+    enabled: false
+#    pathType: Prefix
+#    hosts:
+#    - host: "kibana.lab.thewortmans.org"
+#      path: "/"
+#    tls:
+#      enabled: true
+
+  http:
+    service:
+      spec:
+        type: NodePort
+
+#  config:
+#    elasticsearch:
+#      ssl:
+#        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
+#    server:
+#      ssl:
+#        enabled: true
+#      port: 5601
+#      host: 0.0.0.0
+#      publicBaseUrl: "http://kibana.lab.thewortmans.org"

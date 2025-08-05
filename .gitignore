@@ -37,3 +37,7 @@ override.tf.json
 terraform.rc
 tf/.terraform.lock.hcl
 k8s/eck/lab1/.lab1.yaml.swp
+
+f.f
+g.g
+k8s/lab-cluster/es/values-default.yaml

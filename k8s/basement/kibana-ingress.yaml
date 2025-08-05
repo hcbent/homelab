@@ -4,15 +4,21 @@ metadata:
   name: kibana-ingress
   namespace: elastic-stack
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
+    ingress.kubernetes.io/ingress.class: traefik
+
 spec:
+  ingressClassName: traefik 
+
   rules:
-    - http:
+    - host: kibana.lab.thewortmans.org
+      http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: my-service
+                name: lab-eck-kibana-kb-http
                 port:
                   number: 5601
+
