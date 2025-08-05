@@ -191,14 +191,14 @@ paperless:
     ## @param paperless.hosting.trustedOrigins [string] A list of trusted origins for unsafe requests (e.g. POST). As of Django 4.0 this is required to access the Django admin via the web
     ## ref: https://docs.paperless-ngx.com/configuration/#PAPERLESS_CSRF_TRUSTED_ORIGINS
     ##
-    trustedOrigins: ""
+    trustedOrigins: "https://*.bwortman.us""
     ## @param paperless.hosting.allowedHosts [string] If you're planning on putting Paperless on the open internet, then you really should set this value to the domain name you're using
     ## ref: https://docs.paperless-ngx.com/configuration/#PAPERLESS_ALLOWED_HOSTS
     ##
     allowedHosts: ""
     ## @param paperless.hosting.corsAllowedHosts [string] You need to add your servers to the list of allowed hosts that can do CORS calls. Set this to your public domain name
     ##
-    corsAllowedHosts: ""
+    corsAllowedHosts: "https://paperless.bwortman.us"
     ## @param paperless.hosting.trustedProxies [string] This may be needed to prevent IP address spoofing if you are using e.g. fail2ban with log entries for failed authorization attempts
     ##
     trustedProxies: ""
