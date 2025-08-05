@@ -67,7 +67,7 @@ paperless:
   secretKey:
     ## @param paperless.secretKey.value [string] Define a custom secret key for Paperless
     ##
-    value: ""
+    value: "1v6YXpa4PhTDeh7WOe05meyIQviimAkC"
     ## Existing Secret settings
     ##
     existingSecret:
