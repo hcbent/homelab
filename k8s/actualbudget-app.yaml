@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actualbudget
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: home-apps
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: 'https://community-charts.github.io/helm-charts'
+      targetRevision: '1.7.2'
+      chart: 'actualbudget'
+      helm:
+        valueFiles:
+          - $values/k8s/actualbudget/actualbudget.yaml
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/actualbudget
+      targetRevision: HEAD
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync
