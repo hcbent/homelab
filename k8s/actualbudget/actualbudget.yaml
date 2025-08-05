@@ -6,7 +6,7 @@ image:
   repository: actualbudget/actual-server
   # -- The image tag to use (e.g., latest, edge).
   # @default -- ""
-  tag: ""
+  tag: "latest"
   # -- Image pull policy (Always, IfNotPresent, Never).
   pullPolicy: IfNotPresent
 
