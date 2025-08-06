@@ -28,7 +28,7 @@ eck-elasticsearch:
     - name: hot
       count: 3
       config:
-        node.roles: ["data_hot", "data_content", "ingest"]
+        node.roles: ["remote_cluster_client","data_hot", "data_content", "ingest"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -50,7 +50,7 @@ eck-elasticsearch:
     - name: warm
       count: 0
       config:
-        node.roles: ["data_warm"]
+        node.roles: ["remote_cluster_client","data_warm"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -72,7 +72,7 @@ eck-elasticsearch:
     - name: frozen
       count: 3
       config:
-        node.roles: ["data_frozen"]
+        node.roles: ["remote_cluster_client","data_frozen"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
