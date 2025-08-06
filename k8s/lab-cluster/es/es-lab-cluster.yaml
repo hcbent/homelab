@@ -125,3 +125,23 @@ eck-kibana:
 #      port: 5601
 #      host: 0.0.0.0
 #      publicBaseUrl: "http://kibana.lab.thewortmans.org"
+#
+eck-fleet-server:
+  version: 9.1.0
+  deployment:
+    replicas: 1
+    podTemplate:
+      spec:
+        serviceAccountName: fleet-server
+        automountServiceAccountToken: true
+  elasticsearchRefs:
+    name: lab
+    namespace: elastic-stack
+  kibanaRef:
+    name: lab
+  http:
+    service:
+      spec:
+        type: ClusterIP
+  serviceAccount:
+    name: fleet-server
