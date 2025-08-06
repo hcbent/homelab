@@ -39,6 +39,7 @@ spec:
     metadata:
       labels:
         app: cerebro
+        owner: bdw
     spec:
       containers:
       - name: cerebro
