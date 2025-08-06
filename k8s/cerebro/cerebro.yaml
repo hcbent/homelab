@@ -79,10 +79,10 @@ metadata:
   name: cerebro
   namespace: default
 spec:
-  type: LoadBalancer
+  type: NodePort
   ports:
   - port: 9000
-    targetPort: 9000
+#    targetPort: 9000
     protocol: TCP
   selector:
     app: cerebro
