@@ -117,24 +117,74 @@ eck-kibana:
 
 # Enable and configure the Fleet Server
 
-eck-fleet-server:
+#eck-fleet-server:
+#  enabled: true
+#  annotations:
+#    eck.k8s.elastic.co/license: enterprise
+#  spec:
+#    elasticsearchRefs:
+#      - name: lab
+#        namespace: elastic-stack
+#    kibanaRef:
+#      name: lab
+#    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
+#    deployment:
+#      replicas: 1
+#      podTemplate:
+#        spec:
+#          containers:
+#            - name: fleet-server
+#              resources:
+#                requests:
+#                  cpu: "500m"
+#                  memory: "512Mi"
+
+eck-agent:
   enabled: true
-  annotations:
-    eck.k8s.elastic.co/license: enterprise
-  spec:
-    elasticsearchRefs:
+  
+  # Agent policy to be used.
+  policyID: eck-agent
+  # Reference to ECK-managed Kibana instance.
+  #
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  elasticsearchRefs: 
       - name: lab
         namespace: elastic-stack
-    kibanaRef:
-      name: lab
-    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
-    deployment:
-      replicas: 1
-      podTemplate:
-        spec:
-          containers:
-            - name: fleet-server
-              resources:
-                requests:
-                  cpu: "500m"
-                  memory: "512Mi"
+  # Reference to ECK-managed Fleet instance.
+  #
+  fleetServerRef:
+    name: fleet-server
+  
+  mode: fleet
+  daemonSet:
+    podTemplate:
+      spec:
+        serviceAccountName: elastic-agent
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        automountServiceAccountToken: true
+        securityContext:
+          runAsUser: 0
+  
+eck-fleet-server:
+  enabled: true
+
+  fullnameOverride: "fleet-server"
+
+  deployment:
+    replicas: 1
+    podTemplate:
+      spec:
+        serviceAccountName: fleet-server
+        automountServiceAccountToken: true
+
+  # Agent policy to be used.
+  policyID: eck-fleet-server
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  elasticsearchRefs: 
+      - name: lab
+        namespace: elastic-stack
