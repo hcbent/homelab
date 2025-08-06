@@ -6,7 +6,7 @@ eck-elasticsearch:
     - name: masters
       count: 3
       config:
-        node.roles: ["master"]
+        node.roles: ["remote_cluster_client","master"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
