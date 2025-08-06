@@ -115,18 +115,8 @@ eck-kibana:
       spec:
         type: NodePort
 
-#  config:
-#    elasticsearch:
-#      ssl:
-#        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
-#    server:
-#      ssl:
-#        enabled: true
-#      port: 5601
-#      host: 0.0.0.0
-#      publicBaseUrl: "http://kibana.lab.thewortmans.org"
-#
 # Enable and configure the Fleet Server
+
 eck-fleet-server:
   enabled: true
   annotations:
@@ -134,12 +124,10 @@ eck-fleet-server:
   spec:
     elasticsearchRefs:
       - name: lab
-    # Reference the Kibana instance (must match the name defined in eck-kibana)
+        namespace: elastic-stack
     kibanaRef:
       name: lab
-    # Fleet Server configuration
     version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
-    # Optional: Customize the pod template, replicas, or TLS settings
     deployment:
       replicas: 1
       podTemplate:
