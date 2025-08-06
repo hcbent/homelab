@@ -126,22 +126,27 @@ eck-kibana:
 #      host: 0.0.0.0
 #      publicBaseUrl: "http://kibana.lab.thewortmans.org"
 #
+# Enable and configure the Fleet Server
 eck-fleet-server:
-  version: 9.1.0
-  deployment:
-    replicas: 1
-    podTemplate:
-      spec:
-        serviceAccountName: fleet-server
-        automountServiceAccountToken: true
-  elasticsearchRefs:
-    name: lab
-    namespace: elastic-stack
-  kibanaRef:
-    name: lab
-  http:
-    service:
-      spec:
-        type: ClusterIP
-  serviceAccount:
-    name: fleet-server
+  enabled: true
+  annotations:
+    eck.k8s.elastic.co/license: enterprise
+  spec:
+    elasticsearchRefs:
+      - name: lab
+    # Reference the Kibana instance (must match the name defined in eck-kibana)
+    kibanaRef:
+      name: lab
+    # Fleet Server configuration
+    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
+    # Optional: Customize the pod template, replicas, or TLS settings
+    deployment:
+      replicas: 1
+      podTemplate:
+        spec:
+          containers:
+            - name: fleet-server
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
