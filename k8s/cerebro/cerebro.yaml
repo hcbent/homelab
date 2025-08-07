@@ -7,12 +7,12 @@ data:
   application.conf: |
     hosts = [
       {
-        host = "http://elasticsearch.bwortman.us"
+        host = "https://elasticsearch.bwortman.us"
         name = "Homelab Cluster"
         auth = {
           type = "basic"
-          username = "bret"
-          password = "2xqT2IO1OQ%tfMHP"
+          username = "elastic"
+          password = "6708tDJvWdKWHt11E9Pt7z95"
         }
       }
     ]
