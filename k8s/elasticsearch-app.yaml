@@ -20,6 +20,6 @@ spec:
       targetRevision: main
       ref: values
   syncPolicy:
-#    syncOptions:
-#      - CreateNamespace=true
+    syncOptions:
+      - CreateNamespace=false
     automated: {} # Optional: enable auto-sync
