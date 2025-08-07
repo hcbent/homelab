@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cerebro-config
-  namespace: default
+  namespace: elastic-stack
 data:
   application.conf: |
     hosts = [
@@ -27,7 +27,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cerebro
-  namespace: default
+  namespace: elastic-stack
   labels:
     app: cerebro
 spec:
@@ -78,7 +78,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cerebro
-  namespace: default
+  namespace: elastic-stack
 spec:
   type: NodePort
   ports:
@@ -94,7 +94,7 @@ spec:
 #kind: Ingress
 #metadata:
 #  name: cerebro-ingress
-#  namespace: default
+#  namespace: elastic-stack
 #  annotations:
 #    nginx.ingress.kubernetes.io/rewrite-target: /
 #spec: 
