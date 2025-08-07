@@ -27,7 +27,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cerebro
-  namespace: default
+  namespace: elastic-stack
   labels:
     app: cerebro
 spec:
