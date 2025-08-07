@@ -11,8 +11,8 @@ data:
         name = "Homelab Cluster"
         auth = {
           type = "basic"
-          username = "bret"
-          password = "eBFs37N#tqCA*rHu"
+          username = "elastic"
+          password = "***REMOVED***"
         }
       }
     ]
