@@ -114,6 +114,46 @@ eck-kibana:
     service:
       spec:
         type: NodePort
+  config:
+    xpack.fleet.agents.elasticsearch.hosts: ["https://elasticsearch-es-http.elastic-stack.svc:9200"]
+    xpack.fleet.agents.fleet_server.hosts: ["https://fleet-server-agent-http.elastic-stack.svc:8220"]
+    xpack.fleet.packages:
+    - name: system
+      version: latest
+    - name: elastic_agent
+      version: latest
+    - name: fleet_server
+      version: latest
+    - name: kubernetes
+      version: latest
+    xpack.fleet.agentPolicies:
+    - name: Fleet Server on ECK policy
+      id: eck-fleet-server
+      namespace: elastic-stack
+      is_managed: true
+      monitoring_enabled:
+      - logs
+      - metrics
+      package_policies:
+      - name: fleet_server-1
+        id: fleet_server-1
+        package:
+          name: fleet_server
+    - name: Elastic Agent on ECK policy
+      id: eck-agent
+      namespace: elastic-stack
+      is_managed: true
+      monitoring_enabled:
+      - logs
+      - metrics
+      unenroll_timeout: 900
+      package_policies:
+      - package:
+          name: system
+        name: system-1
+      - package:
+          name: kubernetes
+        name: kubernetes-1
 
 # Enable and configure the Fleet Server
 
@@ -139,35 +179,6 @@ eck-kibana:
 #                  cpu: "500m"
 #                  memory: "512Mi"
 
-eck-agent:
-  enabled: true
-  
-  # Agent policy to be used.
-  policyID: eck-agent
-  # Reference to ECK-managed Kibana instance.
-  #
-  kibanaRef:
-    name: lab
-    namespace: elastic-stack
-  elasticsearchRefs: 
-      - name: lab
-        namespace: elastic-stack
-  # Reference to ECK-managed Fleet instance.
-  #
-  fleetServerRef:
-    name: fleet-server
-  
-  mode: fleet
-  daemonSet:
-    podTemplate:
-      spec:
-        serviceAccountName: elastic-agent
-        hostNetwork: true
-        dnsPolicy: ClusterFirstWithHostNet
-        automountServiceAccountToken: true
-        securityContext:
-          runAsUser: 0
-  
 eck-fleet-server:
   enabled: true
 
@@ -188,3 +199,31 @@ eck-fleet-server:
   elasticsearchRefs: 
       - name: lab
         namespace: elastic-stack
+
+eck-agent:
+  enabled: true
+  
+  # Agent policy to be used.
+  policyID: eck-agent
+  # Reference to ECK-managed Kibana instance.
+  #
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  # Reference to ECK-managed Fleet instance.
+  #
+  fleetServerRef:
+    name: fleet-server
+    namespace: elastic-stack
+  
+  mode: fleet
+  daemonSet:
+    podTemplate:
+      spec:
+        serviceAccountName: elastic-agent
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        automountServiceAccountToken: true
+        securityContext:
+          runAsUser: 0
+  
