@@ -83,6 +83,7 @@ spec:
   type: NodePort
   ports:
   - port: 9000
+    name: https
     targetPort: 9000
     nodePort: 30490
     protocol: TCP
