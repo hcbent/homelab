@@ -6,7 +6,7 @@ eck-elasticsearch:
     - name: masters
       count: 3
       config:
-        node.roles: ["master"]
+        node.roles: ["remote_cluster_client","master"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -28,7 +28,7 @@ eck-elasticsearch:
     - name: hot
       count: 3
       config:
-        node.roles: ["data_hot", "data_content", "ingest"]
+        node.roles: ["remote_cluster_client","data_hot", "data_content", "ingest"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -50,7 +50,7 @@ eck-elasticsearch:
     - name: warm
       count: 0
       config:
-        node.roles: ["data_warm"]
+        node.roles: ["remote_cluster_client","data_warm"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -72,7 +72,7 @@ eck-elasticsearch:
     - name: frozen
       count: 3
       config:
-        node.roles: ["data_frozen"]
+        node.roles: ["remote_cluster_client","data_frozen"]
         node.store.allow_mmap: false
       podTemplate:
         spec:
@@ -115,13 +115,76 @@ eck-kibana:
       spec:
         type: NodePort
 
-#  config:
-#    elasticsearch:
-#      ssl:
-#        certificateAuthoritiesFile: /usr/share/kibana/config/elasticsearch-ca/tls.crt
-#    server:
-#      ssl:
-#        enabled: true
-#      port: 5601
-#      host: 0.0.0.0
-#      publicBaseUrl: "http://kibana.lab.thewortmans.org"
+# Enable and configure the Fleet Server
+
+#eck-fleet-server:
+#  enabled: true
+#  annotations:
+#    eck.k8s.elastic.co/license: enterprise
+#  spec:
+#    elasticsearchRefs:
+#      - name: lab
+#        namespace: elastic-stack
+#    kibanaRef:
+#      name: lab
+#    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
+#    deployment:
+#      replicas: 1
+#      podTemplate:
+#        spec:
+#          containers:
+#            - name: fleet-server
+#              resources:
+#                requests:
+#                  cpu: "500m"
+#                  memory: "512Mi"
+
+eck-agent:
+  enabled: true
+  
+  # Agent policy to be used.
+  policyID: eck-agent
+  # Reference to ECK-managed Kibana instance.
+  #
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  elasticsearchRefs: 
+      - name: lab
+        namespace: elastic-stack
+  # Reference to ECK-managed Fleet instance.
+  #
+  fleetServerRef:
+    name: fleet-server
+  
+  mode: fleet
+  daemonSet:
+    podTemplate:
+      spec:
+        serviceAccountName: elastic-agent
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        automountServiceAccountToken: true
+        securityContext:
+          runAsUser: 0
+  
+eck-fleet-server:
+  enabled: true
+
+  fullnameOverride: "fleet-server"
+
+  deployment:
+    replicas: 1
+    podTemplate:
+      spec:
+        serviceAccountName: fleet-server
+        automountServiceAccountToken: true
+
+  # Agent policy to be used.
+  policyID: eck-fleet-server
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  elasticsearchRefs: 
+      - name: lab
+        namespace: elastic-stack
