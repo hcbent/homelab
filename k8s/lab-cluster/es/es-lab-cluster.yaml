@@ -210,9 +210,9 @@ eck-agent:
   kibanaRef:
     name: lab
     namespace: elastic-stack
-  elasticsearchRefs: 
-      - name: lab
-        namespace: elastic-stack
+#  elasticsearchRefs: 
+#      - name: lab
+#        namespace: elastic-stack
   # Reference to ECK-managed Fleet instance.
   #
   fleetServerRef:
