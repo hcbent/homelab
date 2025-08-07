@@ -139,6 +139,27 @@ eck-kibana:
 #                  cpu: "500m"
 #                  memory: "512Mi"
 
+eck-fleet-server:
+  enabled: true
+
+  fullnameOverride: "fleet-server"
+
+  deployment:
+    replicas: 1
+    podTemplate:
+      spec:
+        serviceAccountName: fleet-server
+        automountServiceAccountToken: true
+
+  # Agent policy to be used.
+  policyID: eck-fleet-server
+  kibanaRef:
+    name: lab
+    namespace: elastic-stack
+  elasticsearchRefs: 
+      - name: lab
+        namespace: elastic-stack
+
 eck-agent:
   enabled: true
   
@@ -168,23 +189,3 @@ eck-agent:
         securityContext:
           runAsUser: 0
   
-eck-fleet-server:
-  enabled: true
-
-  fullnameOverride: "fleet-server"
-
-  deployment:
-    replicas: 1
-    podTemplate:
-      spec:
-        serviceAccountName: fleet-server
-        automountServiceAccountToken: true
-
-  # Agent policy to be used.
-  policyID: eck-fleet-server
-  kibanaRef:
-    name: lab
-    namespace: elastic-stack
-  elasticsearchRefs: 
-      - name: lab
-        namespace: elastic-stack
