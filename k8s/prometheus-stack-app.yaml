@@ -9,9 +9,8 @@ spec:
     namespace: default
     server: https://kubernetes.default.svc
   sources:
-    - repoURL: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
-      path: .
-      targetRevision: latest
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 75.18.1
       chart: kube-prometheus-stack
       helm:
         valueFiles:
