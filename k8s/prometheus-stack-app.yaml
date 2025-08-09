@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-stack
+  namespace: argocd # Ensure this matches your ArgoCD namespace
+spec:
+  project: default
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 75.18.1
+      chart: kube-prometheus-stack
+      helm:
+        valueFiles:
+          - $values/k8s/prometheus/prometheus.yaml
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/prometheus
+      targetRevision: HEAD
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {} # Optional: enable auto-sync
