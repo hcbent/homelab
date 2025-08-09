@@ -489,7 +489,7 @@ paperless:
     colorConversionStrategy: ""
     ## @param paperless.ocr.userArgs [string] OCRmyPDF offers many more options. Use this parameter to specify any additional arguments you wish to pass to OCRmyPDF
     ##
-    userArgs: ""
+    userArgs: "{"invalidate_digital_signatures": true}"
 
   ## Conversion configuration
   ##
