@@ -212,6 +212,7 @@ eck-agent:
     namespace: elastic-stack
   # Reference to ECK-managed Fleet instance.
   #
+  elasticsearchRefs: []
   fleetServerRef:
     name: fleet-server
     namespace: elastic-stack
