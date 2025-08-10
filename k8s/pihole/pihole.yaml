@@ -103,8 +103,7 @@ spec:
 #    port: 443
 #    targetPort: 443
 #    protocol: TCP
-  type: LoadBalancer # Use ClusterIP or NodePort if LoadBalancer is not suitable
-  loadBalancerIP: 192.168.20.1
+  type: NodePort # Use ClusterIP or NodePort if LoadBalancer is not suitable
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
