@@ -12,13 +12,13 @@ spec:
     - repoURL: https://prometheus-community.github.io/helm-charts
       targetRevision: 75.18.1
       chart: kube-prometheus-stack
-      helm:
-        valueFiles:
-          - $values/k8s/prometheus/prometheus.yaml
-    - repoURL: git@github.com/wortmanb/homelab.git
-      path: k8s/prometheus
-      targetRevision: main
-      ref: values
+#      helm:
+#        valueFiles:
+#          - $values/k8s/prometheus/prometheus.yaml
+#    - repoURL: git@github.com/wortmanb/homelab.git
+#      path: k8s/prometheus
+#      targetRevision: main
+#      ref: values
   syncPolicy:
     syncOptions:
       - CreateNamespace=false
