@@ -129,7 +129,6 @@ eck-kibana:
     xpack.fleet.agentPolicies:
     - name: Fleet Server on ECK policy
       id: eck-fleet-server
-      namespace: elastic-stack
       is_managed: true
       monitoring_enabled:
       - logs
@@ -141,7 +140,6 @@ eck-kibana:
           name: fleet_server
     - name: Elastic Agent on ECK policy
       id: eck-agent
-      namespace: elastic-stack
       is_managed: true
       monitoring_enabled:
       - logs
