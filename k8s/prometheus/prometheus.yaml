@@ -1,4 +1,3 @@
----
 # Default values for kube-prometheus-stack.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -9,7 +8,7 @@ nameOverride: ""
 
 ## Override the deployment namespace
 ##
-namespaceOverride: "kube-system"
+namespaceOverride: ""
 
 ## Provide a k8s version to auto dashboard import script example: kubeTargetVersionOverride: 1.26.6
 ##
@@ -1120,14 +1119,6 @@ alertmanager:
       seccompProfile:
         type: RuntimeDefault
 
-    ## DNS configuration for Alertmanager.
-    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#monitoring.coreos.com/v1.PodDNSConfig
-    dnsConfig: {}
-
-    ## DNS policy for Alertmanager.
-    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#dnspolicystring-alias
-    dnsPolicy: ""
-
     ## ListenLocal makes the Alertmanager server listen on loopback, so that it does not bind against the Pod IP.
     ## Note this is only for the Alertmanager UI, not the gossip communication.
     ##
@@ -1138,7 +1129,7 @@ alertmanager:
     containers: []
     # containers:
     # - name: oauth-proxy
-    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
+    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.10.0
     #   args:
     #   - --upstream=http://127.0.0.1:9093
     #   - --http-address=0.0.0.0:8081
@@ -4221,7 +4212,7 @@ prometheus:
     retention: 10d
 
     ## Maximum size of metrics
-    ## Unit format should be in the form of "50GiB"
+    ##
     retentionSize: ""
 
     ## Allow out-of-order/out-of-bounds samples ingested into Prometheus for a specified duration
@@ -4372,7 +4363,7 @@ prometheus:
     #     regex: __meta_kubernetes_node_label_(.+)
     #   - source_labels: [__address__]
     #     action: replace
-    #     target_label: __address__
+    #     targetLabel: __address__
     #     regex: ([^:;]+):(\d+)
     #     replacement: ${1}:2379
     #   - source_labels: [__meta_kubernetes_node_name]
@@ -4380,7 +4371,7 @@ prometheus:
     #     regex: .*mst.*
     #   - source_labels: [__meta_kubernetes_node_name]
     #     action: replace
-    #     target_label: node
+    #     targetLabel: node
     #     regex: (.*)
     #     replacement: ${1}
     #   metric_relabel_configs:
@@ -4471,14 +4462,6 @@ prometheus:
       seccompProfile:
         type: RuntimeDefault
 
-    ## DNS configuration for Prometheus.
-    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#monitoring.coreos.com/v1.PodDNSConfig
-    dnsConfig: {}
-
-    ## DNS policy for Prometheus.
-    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#dnspolicystring-alias
-    dnsPolicy: ""
-
     ## Priority class assigned to the Pods
     ##
     priorityClassName: ""
@@ -4518,7 +4501,7 @@ prometheus:
     containers: []
     # containers:
     # - name: oauth-proxy
-    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
+    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.10.0
     #   args:
     #   - --upstream=http://127.0.0.1:9090
     #   - --http-address=0.0.0.0:8081
