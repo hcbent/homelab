@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   destination:
-    namespace: default
+    namespace: prometheus
     server: https://kubernetes.default.svc
   sources:
     - repoURL: https://prometheus-community.github.io/helm-charts
@@ -17,9 +17,9 @@ spec:
           - $values/k8s/prometheus/prometheus.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
       path: k8s/prometheus
-      targetRevision: HEAD
+      targetRevision: main
       ref: values
   syncPolicy:
     syncOptions:
-      - CreateNamespace=true
+      - CreateNamespace=false
     automated: {} # Optional: enable auto-sync
