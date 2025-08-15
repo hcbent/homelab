@@ -21,11 +21,11 @@ service:
     ports:
       http:
         port: 3000
-        nodePort: 33000
+        nodePort: 31300
       api:
         enabled: true
         port: 9000
-        nodePort: 39000
+        nodePort: 31900
 
 #  -- environment variables. See [frontend config](https://nightly.mealie.io/documentation/getting-started/installation/frontend-config/) for more details.
 # @default -- See below
