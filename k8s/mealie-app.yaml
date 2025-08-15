@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: mealie
-  namespace: default # Ensure this matches your ArgoCD namespace
+  namespace: argocd # Ensure this matches your ArgoCD namespace
 spec:
   project: default
   destination:
