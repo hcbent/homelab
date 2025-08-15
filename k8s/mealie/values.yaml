@@ -17,18 +17,21 @@ image:
 # @default -- See values.yaml
 service:
   main:
+    type: NodePort
     ports:
       http:
         port: 3000
+        nodePort: 33000
       api:
         enabled: true
         port: 9000
+        nodePort: 39000
 
 #  -- environment variables. See [frontend config](https://nightly.mealie.io/documentation/getting-started/installation/frontend-config/) for more details.
 # @default -- See below
 env:
   # -- Set the container timezone
-  TZ: Americas/New_York
+  TZ: America/New_York
 
 ingress:
   # -- Enable and configure ingress settings for the chart under this key.
@@ -58,7 +61,7 @@ api:
   # @default -- See below
   env:
     # -- Set the container timezone
-    TZ: Americas/New_York
+    TZ: America/New_York
 
   #  -- volume mounts. Name should match a key in .Values.persistence
   # @default -- See below
