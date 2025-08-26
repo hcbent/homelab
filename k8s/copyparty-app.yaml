@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: copyparty
+spec:
+  destination:
+    namespace: copyparty
+    server: https://kubernetes.default.svc
+  source:
+    path: k8s/copyparty
+    repoURL: git@github.com:wortmanb/homelab
+    targetRevision: main
+  sources: []
+  project: home-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
