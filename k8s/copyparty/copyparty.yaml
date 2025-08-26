@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: copyparty
-          image: copyparty/copyparty:latest
+          image: copyparty/ac:latest
           ports:
             - containerPort: 3923
           volumeMounts:
