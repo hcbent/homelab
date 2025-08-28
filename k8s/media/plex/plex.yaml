@@ -65,8 +65,8 @@ spec:
           subPath: TV Shows
         resources:
           requests:
-            cpu: 1
-            memory: 1Gi
+            cpu: 2
+            memory: 8Gi
         livenessProbe:
           httpGet:
             path: /web
