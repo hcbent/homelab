@@ -104,9 +104,11 @@ dnsConfig: {}
 # Service settings
 service:
   # Service type (ClusterIP, NodePort, LoadBalancer, or ExternalName)
-  type: ClusterIP
+  type: NodePort
   # Service port
   port: 8080
+  # Optional: pick a specific nodePort, otherwise k8s assigns one
+  nodePort: 32180
   # Annotations to add to the service
   annotations: {}
 
