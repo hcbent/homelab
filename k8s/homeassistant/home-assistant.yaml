@@ -108,7 +108,7 @@ service:
   # Service port
   port: 8080
   # Optional: pick a specific nodePort, otherwise k8s assigns one
-  nodePort: 32180
+  nodePort: 31244
   # Annotations to add to the service
   annotations: {}
 
