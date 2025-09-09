@@ -1,5 +1,5 @@
 eck-elasticsearch:
-  version: 9.1.0
+  version: 9.1.3
   fullnameOverride: lab
 
   nodeSets:
@@ -100,7 +100,7 @@ eck-elasticsearch:
 
 eck-kibana:
   fullnameOverride: lab
-  version: 9.1.0
+  version: 9.1.3
   labels: {}
   annotations: {}
   count: 1
@@ -165,7 +165,7 @@ eck-kibana:
 #        namespace: elastic-stack
 #    kibanaRef:
 #      name: lab
-#    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
+#    version: 9.1.3  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
 #    deployment:
 #      replicas: 1
 #      podTemplate:
