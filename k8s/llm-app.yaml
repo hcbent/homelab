@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama-llm
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: llm
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: https://otwld.github.io/ollama-helm/
+      targetRevision: 0.57.0
+      chart: ollama
+      helm:
+        valueFiles:
+          - $values/llm/ollama.yaml
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: llm
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated: {}

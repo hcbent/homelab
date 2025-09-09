@@ -1,0 +1,131 @@
+# Ollama LLM Server Helm Values Configuration
+# https://github.com/otwld/ollama-helm
+
+# -- Image configuration
+image:
+  repository: ollama/ollama
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# -- Service configuration
+service:
+  type: ClusterIP
+  port: 11434
+
+# -- Ingress configuration for external access
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "step-issuer"
+  hosts:
+    - host: ollama.homelab.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ollama-tls
+      hosts:
+        - ollama.homelab.local
+
+# -- Resource configuration
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 8Gi
+    cpu: 4000m
+  requests:
+    memory: 4Gi
+    cpu: 2000m
+
+# -- Node selector for GPU nodes
+nodeSelector:
+  accelerator: nvidia-tesla-gpu
+
+# -- Persistent volume configuration
+persistentVolume:
+  enabled: true
+  size: 50Gi
+  storageClass: "freenas-iscsi-csi"
+  accessModes:
+    - ReadWriteOnce
+
+# -- Environment variables
+ollama:
+  gpu:
+    # -- Enable GPU support
+    enabled: true
+    # -- GPU type (nvidia, amd, cpu)
+    type: nvidia
+    # -- Number of GPUs to allocate
+    number: 1
+
+  models:
+    # -- Pre-download models on startup
+    - llama3.2:latest
+    - codellama:latest
+    - mistral:latest
+
+# -- Security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+    - ALL
+
+# -- Probes configuration
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 6
+
+# -- Autoscaling configuration (disabled for GPU workloads)
+autoscaling:
+  enabled: false
+
+# -- Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# -- Additional labels
+labels:
+  app.kubernetes.io/component: llm-server
+  homelab.local/service: ai-ml
+
+# -- Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: default
+      - namespaceSelector:
+          matchLabels:
+            name: prometheus
+      ports:
+      - protocol: TCP
+        port: 11434
