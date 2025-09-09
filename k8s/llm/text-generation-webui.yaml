@@ -1,0 +1,139 @@
+# Text Generation WebUI Helm Values Configuration
+# https://github.com/oobabooga/text-generation-webui
+
+# -- Image configuration
+image:
+  repository: atoy40/text-generation-webui
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# -- Service configuration
+service:
+  type: ClusterIP
+  port: 7860
+
+# -- Ingress configuration
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "step-issuer"
+  hosts:
+    - host: textgen.homelab.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: textgen-tls
+      hosts:
+        - textgen.homelab.local
+
+# -- Resource configuration
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 16Gi
+    cpu: 8000m
+  requests:
+    memory: 8Gi
+    cpu: 4000m
+
+# -- Node selector for GPU nodes
+nodeSelector:
+  accelerator: nvidia-tesla-gpu
+
+# -- Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# -- Persistent volume configuration
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClass: "freenas-iscsi-csi"
+  accessMode: ReadWriteOnce
+  mountPath: /app/models
+
+# -- Environment variables
+env:
+  - name: EXTRA_LAUNCH_ARGS
+    value: "--listen --verbose --api --cpu-memory 8 --gpu-memory 12"
+  - name: BUILD_EXTENSIONS_LIVE
+    value: "True"
+
+# -- GPU configuration
+gpu:
+  enabled: true
+  vendor: nvidia
+  memory: 12
+
+# -- Security context
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  fsGroup: 0
+
+securityContext:
+  allowPrivilegeEscalation: true
+  capabilities:
+    add:
+    - SYS_ADMIN
+
+# -- Probes configuration
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+# -- Resource quotas
+resourceQuota:
+  enabled: false
+
+# -- Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: default
+      ports:
+      - protocol: TCP
+        port: 7860
+
+# -- Additional labels
+labels:
+  app.kubernetes.io/component: llm-webui
+  homelab.local/service: ai-ml
+
+# -- Startup script for model downloads
+initContainers:
+  - name: model-downloader
+    image: alpine/git:latest
+    command:
+      - sh
+      - -c
+      - |
+        echo "Downloading models..."
+        # Add model download commands here if needed
+        # wget or git clone model repositories
+    volumeMounts:
+      - name: models
+        mountPath: /models
