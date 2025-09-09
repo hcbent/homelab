@@ -63,17 +63,9 @@ ollama:
     number: 1
 
   models:
-    # -- Pre-download models on startup
-    pull:
-      - llama3.2:latest
-      - codellama:latest
-      - mistral:latest
-    # -- Load models in memory at startup
-    run: []
-    # -- Create custom models at startup
-    create: []
-    # -- Clean unused models
-    clean: false
+    - llama3.2:latest
+    - codellama:latest
+    - mistral:latest
 
 # -- Security context
 podSecurityContext:
