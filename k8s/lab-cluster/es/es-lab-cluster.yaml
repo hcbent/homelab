@@ -91,6 +91,28 @@ eck-elasticsearch:
             resources:
               requests:
                 storage: 10Ti
+    - name: ml
+      count: 3
+      config:
+        node.roles: ["remote_cluster_client", "ml"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 16Gi
+                  cpu: 4
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Ti
   secureSettings:
     - secretName: s3-creds
   http:
