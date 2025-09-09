@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: text-generation-webui
+  name: open-webui
   namespace: argocd
 spec:
   project: default
@@ -9,12 +9,12 @@ spec:
     namespace: llm
     server: https://kubernetes.default.svc
   sources:
-    - repoURL: https://atoy40.github.io/helm-charts
-      targetRevision: 1.0.0
-      chart: text-generation-webui
+    - repoURL: https://helm.openwebui.com/
+      targetRevision: 3.4.0
+      chart: open-webui
       helm:
         valueFiles:
-          - $values/llm/text-generation-webui.yaml
+          - $values/llm/open-webui.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
       path: llm
       targetRevision: main
