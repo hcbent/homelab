@@ -9,8 +9,9 @@ image:
 
 # -- Service configuration
 service:
-  type: ClusterIP
+  type: NodePort
   port: 11434
+  nodePort: 31434
 
 # -- Ingress configuration for external access
 ingress:
