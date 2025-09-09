@@ -1,0 +1,32 @@
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    meta.helm.sh/release-name: democratic-csi
+    meta.helm.sh/release-namespace: default
+    storageclass.kubernetes.io/is-default-class: "true"
+  creationTimestamp: "2025-07-02T10:30:23Z"
+  labels:
+    app.kubernetes.io/instance: democratic-csi
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: democratic-csi
+    helm.sh/chart: democratic-csi-0.15.0
+  name: freenas-iscsi-csi
+  resourceVersion: "1618"
+  uid: 0dc6ba7e-6dbe-40f4-9323-d4bae8780070
+parameters:
+  csi.storage.k8s.io/controller-expand-secret-name: controller-expand-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/controller-expand-secret-namespace: default
+  csi.storage.k8s.io/controller-publish-secret-name: controller-publish-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/controller-publish-secret-namespace: default
+  csi.storage.k8s.io/node-publish-secret-name: node-publish-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/node-publish-secret-namespace: default
+  csi.storage.k8s.io/node-stage-secret-name: node-stage-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/node-stage-secret-namespace: default
+  csi.storage.k8s.io/provisioner-secret-name: provisioner-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/provisioner-secret-namespace: default
+  fsType: xfs
+provisioner: org.democratic-csi.iscsi
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
