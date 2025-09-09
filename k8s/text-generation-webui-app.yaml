@@ -16,7 +16,7 @@ spec:
         valueFiles:
           - $values/llm/open-webui.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
-      path: llm
+      path: k8s/llm
       targetRevision: main
       ref: values
   syncPolicy:
