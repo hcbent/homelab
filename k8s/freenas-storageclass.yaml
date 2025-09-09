@@ -1,0 +1,41 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    meta.helm.sh/release-name: democratic-csi
+    meta.helm.sh/release-namespace: default
+    storageclass.kubernetes.io/is-default-class: "true"
+  labels:
+    app.kubernetes.io/instance: democratic-csi
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: democratic-csi
+    helm.sh/chart: democratic-csi-0.15.0
+  name: freenas-iscsi-csi
+parameters:
+  csi.storage.k8s.io/controller-expand-secret-name: controller-expand-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/controller-expand-secret-namespace: default
+  csi.storage.k8s.io/controller-publish-secret-name: controller-publish-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/controller-publish-secret-namespace: default
+  csi.storage.k8s.io/node-publish-secret-name: node-publish-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/node-publish-secret-namespace: default
+  csi.storage.k8s.io/node-stage-secret-name: node-stage-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/node-stage-secret-namespace: default
+  csi.storage.k8s.io/provisioner-secret-name: provisioner-secret-freenas-iscsi-csi-democratic-csi
+  csi.storage.k8s.io/provisioner-secret-namespace: default
+  fsType: xfs
+  datasetParentName: tank/k8s  # Replace 'tank' with your TrueNAS pool name
+  httpConnection: |
+    protocol: http
+    host: 192.168.1.195
+    port: 80
+    allowInsecure: true
+    apiKey: 7-yFy11stIw8kTMfeCNfty3qt9tz4sWsIvdMAwZQdydNIksFE2MeVVvawBnWWrrsx1
+  sshConnection: |
+    host: 192.168.1.195
+    port: 22
+    username: root
+    password: Benm1les
+provisioner: org.democratic-csi.iscsi
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
