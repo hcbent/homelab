@@ -9,7 +9,7 @@ spec:
     namespace: llm
     server: https://kubernetes.default.svc
   sources:
-    - repoURL: https://otwld.github.io/ollama-helm/
+    - repoURL: https://helm.otwld.com/
       targetRevision: 0.57.0
       chart: ollama
       helm:
