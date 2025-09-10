@@ -12,13 +12,12 @@ eck-elasticsearch:
         spec:
           affinity:
             podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      elasticsearch.k8s.elastic.co/cluster-name: lab
-                  topologyKey: kubernetes.io/hostname
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-masters
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
               env:
@@ -49,13 +48,12 @@ eck-elasticsearch:
         spec:
           affinity:
             podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      elasticsearch.k8s.elastic.co/cluster-name: lab
-                  topologyKey: kubernetes.io/hostname
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-hot
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
               env:
@@ -86,13 +84,12 @@ eck-elasticsearch:
         spec:
           affinity:
             podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      elasticsearch.k8s.elastic.co/cluster-name: lab
-                  topologyKey: kubernetes.io/hostname
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-warm
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
               env:
@@ -123,13 +120,12 @@ eck-elasticsearch:
         spec:
           affinity:
             podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      elasticsearch.k8s.elastic.co/cluster-name: lab
-                  topologyKey: kubernetes.io/hostname
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-frozen
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
               env:
@@ -160,13 +156,12 @@ eck-elasticsearch:
         spec:
           affinity:
             podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      elasticsearch.k8s.elastic.co/cluster-name: lab
-                  topologyKey: kubernetes.io/hostname
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-ml
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
               resources:
