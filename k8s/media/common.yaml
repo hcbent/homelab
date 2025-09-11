@@ -22,9 +22,39 @@ spec:
     path: /volume1/video
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: music-pv
+  namespace: media
+spec:
+  capacity:
+    storage: 24Ti
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain # or Delete, Recycle (depending on your needs)
+  storageClassName: manual  # Use a storage class if you have one, otherwise "manual"
+  nfs:
+    server: 192.168.1.230
+    path: /volume1/music
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: video-pvc
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 24Ti
+  storageClassName: manual
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: music-pvc
   namespace: media
 spec:
   accessModes:
