@@ -1,11 +1,19 @@
 apiVersion: v1
+kind: Secret
+metadata:
+  name: pihole-secret
+  namespace: pihole
+type: Opaque
+data:
+  WEBPASSWORD: ***REMOVED***
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pihole-config
   namespace: pihole
 data:
-  TZ: "America/New_York" # Set your timezone
-  WEBPASSWORD: "***REMOVED***"
+  TZ: "America/New_York"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,7 +34,7 @@ spec:
     spec:
       containers:
       - name: pihole
-        image: pihole/pihole:latest
+        image: pihole/pihole:2024.07.0
         securityContext:
           capabilities:
             add: ["NET_ADMIN","CAP_SYS_TIME"]
@@ -46,23 +54,41 @@ spec:
         envFrom:
         - configMapRef:
             name: pihole-config
+        - secretRef:
+            name: pihole-secret
         env:
         - name: DNSMASQ_LISTENING
           value: "all"
         - name: SERVER_IP
-          value: "YOUR_CLUSTER_IP" # Replace with your cluster IP or external IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         volumeMounts:
         - name: pihole-config-volume
           mountPath: "/etc/pihole"
         - name: dnsmasq-config-volume
           mountPath: "/etc/dnsmasq.d"
+        livenessProbe:
+          httpGet:
+            path: /admin/
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /admin/
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
         resources:
           limits:
-            cpu: "8"
+            cpu: "500m"
             memory: "512Mi"
           requests:
-            cpu: "1"
-            memory: "256Mi"
+            cpu: "100m"
+            memory: "128Mi"
       volumes:
       - name: pihole-config-volume
         persistentVolumeClaim:
@@ -90,20 +116,34 @@ spec:
     protocol: UDP
   - name: http
     port: 80
-
-    # -- Optional node port for the web HTTP service
-    # nodePort: ""
-
-  # -- Configuration for the HTTPS web interface listener
-#  https:
-#    # -- Generate a service for HTTPS traffic
-#    enabled: true
-#
-#    # -- The port of the web HTTPS service
-#    port: 443
-#    targetPort: 443
-#    protocol: TCP
-  type: NodePort # Use ClusterIP or NodePort if LoadBalancer is not suitable
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pihole-ingress
+  namespace: pihole
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  tls:
+  - hosts:
+    - pihole.thewortmans.org
+    secretName: pihole-tls
+  rules:
+  - host: pihole.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: pihole-service
+            port:
+              number: 80
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
