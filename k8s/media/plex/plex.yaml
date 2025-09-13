@@ -1,4 +1,14 @@
 ---
+# Secret for Plex claim token
+apiVersion: v1
+kind: Secret
+metadata:
+  name: plex-secrets
+  namespace: media
+type: Opaque
+data:
+  plex-claim: Y2xhaW0tTi1mc3h6VzloZmc1TC1qWHlBOQ== # claim-N-fsxzW9hfdc5L-jXyA9
+---
 # PVC for Plex configuration (RWO for SQLite compatibility)
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -44,7 +54,10 @@ spec:
         - name: TZ
           value: "America/New_York" # Adjust to your timezone
         - name: PLEX_CLAIM
-          value: "claim-N-fsxzW9hfdc5L-jXyA9"
+          valueFrom:
+            secretKeyRef:
+              name: plex-secrets
+              key: plex-claim
         volumeMounts:
         - name: config
           mountPath: /config
@@ -63,6 +76,8 @@ spec:
         - name: video-pvc
           mountPath: /tv
           subPath: TV Shows
+        - name: music-pvc
+          mountPath: /music
         resources:
           requests:
             cpu: 2
@@ -80,6 +95,9 @@ spec:
       - name: video-pvc
         persistentVolumeClaim:
           claimName: video-pvc
+      - name: music-pvc
+        persistentVolumeClaim:
+          claimName: music-pvc
 ---
 # Plex Service
 apiVersion: v1

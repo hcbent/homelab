@@ -1,5 +1,5 @@
 eck-elasticsearch:
-  version: 9.1.0
+  version: 9.1.3
   fullnameOverride: lab
 
   nodeSets:
@@ -10,9 +10,23 @@ eck-elasticsearch:
         node.store.allow_mmap: false
       podTemplate:
         spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-masters
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms4g -Xmx4g"
               resources:
+                requests:
+                  memory: 6Gi
+                  cpu: 1500m
                 limits:
                   memory: 8Gi
                   cpu: 2
@@ -32,9 +46,23 @@ eck-elasticsearch:
         node.store.allow_mmap: false
       podTemplate:
         spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-hot
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms8g -Xmx8g"
               resources:
+                requests:
+                  memory: 12Gi
+                  cpu: 3
                 limits:
                   memory: 16Gi
                   cpu: 4
@@ -54,9 +82,23 @@ eck-elasticsearch:
         node.store.allow_mmap: false
       podTemplate:
         spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-warm
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms8g -Xmx8g"
               resources:
+                requests:
+                  memory: 12Gi
+                  cpu: 1500m
                 limits:
                   memory: 16Gi
                   cpu: 2
@@ -76,9 +118,23 @@ eck-elasticsearch:
         node.store.allow_mmap: false
       podTemplate:
         spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-frozen
+                topologyKey: kubernetes.io/hostname
           containers:
             - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms4g -Xmx4g"
               resources:
+                requests:
+                  memory: 6Gi
+                  cpu: 1500m
                 limits:
                   memory: 8Gi
                   cpu: 2
@@ -91,6 +147,43 @@ eck-elasticsearch:
             resources:
               requests:
                 storage: 10Ti
+    - name: ml
+      count: 3
+      config:
+        node.roles: ["remote_cluster_client", "ml"]
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    elasticsearch.k8s.elastic.co/cluster-name: lab
+                    elasticsearch.k8s.elastic.co/statefulset-name: lab-es-ml
+                topologyKey: kubernetes.io/hostname
+          containers:
+            - name: elasticsearch
+              resources:
+                requests:
+                  memory: 12Gi
+                  cpu: 3
+                limits:
+                  memory: 16Gi
+                  cpu: 4
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Ti
+  updateStrategy:
+    changeBudget:
+      maxSurge: 1
+      maxUnavailable: 1
   secureSettings:
     - secretName: s3-creds
   http:
@@ -100,7 +193,7 @@ eck-elasticsearch:
 
 eck-kibana:
   fullnameOverride: lab
-  version: 9.1.0
+  version: 9.1.3
   labels: {}
   annotations: {}
   count: 1
@@ -165,7 +258,7 @@ eck-kibana:
 #        namespace: elastic-stack
 #    kibanaRef:
 #      name: lab
-#    version: 9.1.0  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
+#    version: 9.1.3  # Specify the Elastic Stack version (match with Elasticsearch/Kibana)
 #    deployment:
 #      replicas: 1
 #      podTemplate:

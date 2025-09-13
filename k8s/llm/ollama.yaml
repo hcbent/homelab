@@ -9,8 +9,9 @@ image:
 
 # -- Service configuration
 service:
-  type: ClusterIP
+  type: NodePort
   port: 11434
+  nodePort: 31434
 
 # -- Ingress configuration for external access
 ingress:
@@ -33,7 +34,7 @@ ingress:
 # -- Resource configuration
 resources:
   limits:
-    nvidia.com/gpu: 1
+    nvidia.com/gpu: 0
     memory: 8Gi
     cpu: 4000m
   requests:
@@ -41,8 +42,8 @@ resources:
     cpu: 2000m
 
 # -- Node selector for GPU nodes
-nodeSelector:
-  accelerator: nvidia-tesla-gpu
+#nodeSelector:
+#  accelerator: nvidia-tesla-gpu
 
 # -- Persistent volume configuration
 persistentVolume:
@@ -56,14 +57,13 @@ persistentVolume:
 ollama:
   gpu:
     # -- Enable GPU support
-    enabled: true
+    enabled: false
     # -- GPU type (nvidia, amd, cpu)
     type: nvidia
     # -- Number of GPUs to allocate
     number: 1
 
   models:
-    # -- Pre-download models on startup
     - llama3.2:latest
     - codellama:latest
     - mistral:latest
