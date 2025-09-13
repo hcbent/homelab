@@ -14,7 +14,7 @@ spec:
       chart: ollama
       helm:
         valueFiles:
-          - $values/llm/ollama.yaml
+          - $values/k8s/llm/ollama.yaml
     - repoURL: git@github.com/wortmanb/homelab.git
       path: k8s/llm
       targetRevision: main
