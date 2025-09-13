@@ -12,7 +12,7 @@ image:
   # Image pull policy
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "2024.12"
 
 # List of imagePullSecrets for private image repositories
 imagePullSecrets: []
@@ -36,16 +36,17 @@ podAnnotations: {}
 
 # Pod security context settings
 podSecurityContext:
-  {}
-  # runAsUser: 568
-  # runAsGroup: 568
-  # fsGroup: 568
-  # fsGroupChangePolicy: "OnRootMismatch"
+  runAsUser: 568
+  runAsGroup: 568
+  fsGroup: 568
+  fsGroupChangePolicy: "OnRootMismatch"
 
 # Environment variables
-env: []
-# - name: TZ
-#   value: Europe/Prague
+env:
+- name: TZ
+  value: America/New_York
+- name: PYTHONPATH
+  value: "/config/custom_components"
 # - name: SOME_VAR_FROM_CONFIG_MAP
 #   valueFrom:
 #     configMapRef:
@@ -159,7 +160,24 @@ affinity: {}
 # Set a priorityClassName on Home Assistant pods
 priorityClassName: ""
 
-initContainers: []
+initContainers:
+# HACS (Home Assistant Community Store) init container
+- name: init-hacs
+  image: alpine/git:latest
+  command: ["/bin/sh", "-c"]
+  args:
+  - |
+    echo "Installing HACS..."
+    cd /tmp/hacs
+    git clone https://github.com/hacs/integration.git .
+    cp -r custom_components/hacs /custom-components/
+    chown -R 568:568 /custom-components/hacs
+    echo "HACS installation complete"
+  volumeMounts:
+  - name: hacs-downloads
+    mountPath: /tmp/hacs
+  - name: custom-components
+    mountPath: /custom-components
 # Example of integrating a custom component before starting the Home Assistant container
 # Uses emptyDir custom-components, see below
 # - name: init-panasonic-cc
@@ -312,9 +330,13 @@ persistence:
   matchExpressions: {}
 
 # if you need any additional volumes, you can define them here
-additionalVolumes: []
-  # - name: custom-components
-  #   emptyDir: {}
+additionalVolumes:
+- name: custom-components
+  emptyDir: {}
+- name: hacs-downloads
+  emptyDir: {}
+- name: python-packages
+  emptyDir: {}
 
   # - hostPath:
   #     path: >-
@@ -322,9 +344,13 @@ additionalVolumes: []
   #     type: CharDevice
   #   name: usb
 # if you need any additional volume mounts, you can define them here
-additionalMounts: []
-  # - mountPath: /config/custom_components/panasonic_cc
-  #   name: custom-components
+additionalMounts:
+- mountPath: /config/custom_components
+  name: custom-components
+- mountPath: /tmp/hacs
+  name: hacs-downloads
+- mountPath: /usr/local/lib/python3.12/site-packages/custom
+  name: python-packages
 
   # - mountPath: /dev/ttyACM0
   #   name: usb
