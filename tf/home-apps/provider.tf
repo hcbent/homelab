@@ -4,8 +4,3 @@ provider "proxmox" {
     pm_password = var.pm_password
     pm_tls_insecure = var.pm_tls_insecure
 }
-
-# Vault provider temporarily commented out
-# provider "vault" {
-#   address = "http://127.0.0.1:8200"
-# }
