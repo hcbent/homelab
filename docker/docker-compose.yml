@@ -46,6 +46,7 @@ services:
     volumes:
       - ./sonarr/config:/config
       - media-tv-storage:/tv
+      - media-downloads-storage:/downloads
     ports:
       - "8989:8989"
     restart: unless-stopped
