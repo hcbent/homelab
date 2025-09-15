@@ -1,18 +1,19 @@
-kibana
-fleeet
+[home_apps]
+plex
+docker
 
 [elasticsearch_nodes]
-es01
-es02
-es03
 es04
 es05
 es06
-
-[elasticsearch_masters]
 es07
 es08
 es09
+
+[elasticsearch_masters]
+es01
+es02
+es03
 
 [k8s_cp]
 kube01
@@ -27,17 +28,14 @@ kube06
 [infrastructure]
 infra
 proxy
-plex
 torrent
 #homeassistant
 pihole
 
 [elasticsearch_all:children]
 elasticsearch_nodes
-kibana
-fleet
 elasticsearch_masters
 
-#[k8s:children]
-#k8s_cp
-#k8s_worker
+[k8s:children]
+k8s_cp
+k8s_worker
