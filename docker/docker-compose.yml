@@ -49,9 +49,6 @@ services:
     ports:
       - "8989:8989"
     restart: unless-stopped
-    command: >
-      sh -c "ln -sf /data/downloads /downloads 2>/dev/null || true &&
-             /init"
     depends_on:
       - qbittorrent
       - jackett
@@ -71,10 +68,6 @@ services:
     ports:
       - "7878:7878"
     restart: unless-stopped
-    command: >
-      sh -c "ln -sf /data/downloads /downloads 2>/dev/null || true &&
-             ln -sf /data/Movies /movies 2>/dev/null || true &&
-             /init"
     depends_on:
       - qbittorrent
       - jackett
