@@ -17,4 +17,9 @@ module "kubernetes_vms" {
   network_model  = var.kubernetes_vms[count.index].network_model
   network_bridge = var.kubernetes_vms[count.index].network_bridge
   ipconfig0      = var.kubernetes_vms[count.index].ipconfig0
+
+  # Cloud-init user configuration
+  ciuser         = var.ciuser
+  cipassword     = var.cipassword
+  sshkeys        = var.sshkeys
 }
