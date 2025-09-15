@@ -1,0 +1,23 @@
+# Inventory for newly deployed VMs
+# Update IP addresses after Terraform deployment
+
+[new_elasticsearch]
+# Add Elasticsearch VMs here after deployment
+# es01 ansible_host=192.168.x.x
+# es02 ansible_host=192.168.x.x
+# es03 ansible_host=192.168.x.x
+
+[new_kubernetes]
+# Add Kubernetes VMs here after deployment
+# kube01 ansible_host=192.168.x.x
+# kube02 ansible_host=192.168.x.x
+# kube03 ansible_host=192.168.x.x
+
+[new_vms:children]
+new_elasticsearch
+new_kubernetes
+
+[new_vms:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/id_rsa
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
