@@ -127,3 +127,4 @@ Applications follow the ArgoCD Application pattern in `*-app.yaml` files:
 - **Certificate Management**: Automated TLS with step-certificates and cert-manager
 - **Storage Security**: CSI with secure iSCSI/NFS backends
 - Put all docker compose files under the docker/ directory.
+- Keep terraform files organized under the tf/ directory.
