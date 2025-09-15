@@ -84,11 +84,11 @@ services:
       - PGID=1000
       - TZ=America/New_York
       # Sonarr Configuration
-      - UN_SONARR_0_URL=http://sonarr:8989
-      - UN_SONARR_0_API_KEY=your_sonarr_api_key_here
+      - UN_SONARR_0_URL=http://localhost:8989
+      - UN_SONARR_0_API_KEY=***REMOVED***
       # Radarr Configuration
-      - UN_RADARR_0_URL=http://radarr:7878
-      - UN_RADARR_0_API_KEY=your_radarr_api_key_here
+      - UN_RADARR_0_URL=http://localhost:7878
+      - UN_RADARR_0_API_KEY=***REMOVED***
       # General Configuration
       - UN_DEBUG=false
       - UN_LOG_FILE=/config/unpackerr.log
