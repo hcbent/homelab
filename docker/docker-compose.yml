@@ -27,7 +27,7 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - ./qbittorrent/config:/config
-      - media-storage:/media/video
+      - media-storage:/data
     ports:
       - "8080:8080"
       - "6881:6881"
@@ -45,8 +45,7 @@ services:
       - TZ=America/New_York
     volumes:
       - ./sonarr/config:/config
-      - media-tv-storage:/tv
-      - media-storage:/media
+      - media-storage:/data
     ports:
       - "8989:8989"
     restart: unless-stopped
@@ -65,8 +64,7 @@ services:
       - TZ=America/New_York
     volumes:
       - ./radarr/config:/config
-      - media-movies-storage:/movies
-      - media-storage:/media
+      - media-storage:/data
     ports:
       - "7878:7878"
     restart: unless-stopped
@@ -103,7 +101,7 @@ services:
       - UN_DIR_MODE=0755
     volumes:
       - ./unpackerr/config:/config
-      - media-storage:/media/video
+      - media-storage:/data
     restart: unless-stopped
     depends_on:
       - sonarr
@@ -119,18 +117,6 @@ volumes:
       type: nfs
       o: addr=192.168.1.230,rw,nfsvers=4
       device: ":/volume1/video"
-  media-tv-storage:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=192.168.1.230,rw,nfsvers=4
-      device: ":/volume1/video/TV Shows"
-  media-movies-storage:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=192.168.1.230,rw,nfsvers=4
-      device: ":/volume1/video/Movies"
 
 networks:
   media-net:
