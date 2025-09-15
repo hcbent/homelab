@@ -65,6 +65,7 @@ services:
     volumes:
       - ./radarr/config:/config
       - media-movies-storage:/movies
+      - media-downloads-storage:/downloads
     ports:
       - "7878:7878"
     restart: unless-stopped
@@ -129,6 +130,12 @@ volumes:
       type: nfs
       o: addr=192.168.1.230,rw,nfsvers=4
       device: ":/volume1/video/Movies"
+  media-downloads-storage:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.1.230,rw,nfsvers=4
+      device: ":/volume1/video/downloads"
 
 networks:
   media-net:
