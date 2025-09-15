@@ -1,14 +1,9 @@
-# Description: Define the variables that will be used in the Terraform configuration
+# Kubernetes cluster variables
+
 variable "pm_api_url" {
     description = "The URL of the Proxmox API"
     type = string
     default = "https://pve1.lab.thewortmans.org:8006/api2/json"
-}
-
-variable "proxmox_nodes" {
-    description = "List of available Proxmox nodes"
-    type = list(string)
-    default = ["pve1.lab.thewortmans.org", "pve2.lab.thewortmans.org", "pve3.lab.thewortmans.org"]
 }
 
 variable "pm_tls_insecure" {
@@ -29,7 +24,7 @@ variable "pm_password" {
     sensitive = true
 }
 
-variable "vms" {
-  description = "List of VM configurations"
+variable "kubernetes_vms" {
+  description = "List of Kubernetes VM configurations"
   type        = list(map(string))
 }
