@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: jackett
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./jackett/config:/config
+      - ./jackett/downloads:/downloads
+    ports:
+      - "9117:9117"
+    restart: unless-stopped
+    networks:
+      - media-net
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - WEBUI_PORT=8080
+    volumes:
+      - ./qbittorrent/config:/config
+      - media-storage:/media/video
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    restart: unless-stopped
+    networks:
+      - media-net
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./sonarr/config:/config
+      - media-tv-storage:/tv
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+    depends_on:
+      - qbittorrent
+      - jackett
+    networks:
+      - media-net
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./radarr/config:/config
+      - media-movies-storage:/movies
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+    depends_on:
+      - qbittorrent
+      - jackett
+    networks:
+      - media-net
+
+  unpackerr:
+    image: golift/unpackerr:latest
+    container_name: unpackerr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      # Sonarr Configuration
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=your_sonarr_api_key_here
+      # Radarr Configuration
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=your_radarr_api_key_here
+      # General Configuration
+      - UN_DEBUG=false
+      - UN_LOG_FILE=/config/unpackerr.log
+      - UN_LOG_FILES=10
+      - UN_LOG_FILE_MB=10
+      - UN_INTERVAL=2m
+      - UN_START_DELAY=1m
+      - UN_RETRY_DELAY=5m
+      - UN_MAX_RETRIES=3
+      - UN_PARALLEL=1
+      - UN_FILE_MODE=0644
+      - UN_DIR_MODE=0755
+    volumes:
+      - ./unpackerr/config:/config
+      - media-storage:/media/video
+    restart: unless-stopped
+    depends_on:
+      - sonarr
+      - radarr
+      - qbittorrent
+    networks:
+      - media-net
+
+volumes:
+  media-storage:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.1.230,rw,nfsvers=4
+      device: ":/volume1/video"
+  media-tv-storage:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.1.230,rw,nfsvers=4
+      device: ":/volume1/video/TV Shows"
+  media-movies-storage:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.1.230,rw,nfsvers=4
+      device: ":/volume1/video/Movies"
+
+networks:
+  media-net:
+    driver: bridge
