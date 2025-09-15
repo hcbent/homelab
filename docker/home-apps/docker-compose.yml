@@ -34,7 +34,7 @@ services:
       - home-apps-net
 
   paperless-redis:
-    image: docker.io/library/redis:7
+    image: docker.io/library/redis:8
     container_name: paperless-redis
     restart: unless-stopped
     volumes:
