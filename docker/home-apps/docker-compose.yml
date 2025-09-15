@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  actualbudget:
+    image: actualbudget/actual-server:latest
+    container_name: actualbudget
+    ports:
+      - "5006:5006"
+    volumes:
+      - actualbudget_data:/data
+    restart: unless-stopped
+    environment:
+      - ACTUAL_PORT=5006
+    networks:
+      - actualbudget-net
+
+volumes:
+  actualbudget_data:
+    driver: local
+
+networks:
+  actualbudget-net:
+    driver: bridge

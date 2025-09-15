@@ -126,3 +126,4 @@ Applications follow the ArgoCD Application pattern in `*-app.yaml` files:
 - **RBAC**: Service accounts with appropriate cluster roles (e.g., `skooner-auth.yaml`)
 - **Certificate Management**: Automated TLS with step-certificates and cert-manager
 - **Storage Security**: CSI with secure iSCSI/NFS backends
+- Put all docker compose files under the docker/ directory.
