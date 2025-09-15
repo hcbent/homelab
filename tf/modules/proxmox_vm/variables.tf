@@ -9,7 +9,7 @@ variable "name" {
 variable "target_node" {
     description = "The Proxmox node to deploy the VM on"
     type = string
-    default = "pve"
+    default = "pve1.lab.thewortmans.org"
 }
 
 variable "vmid" {
@@ -19,9 +19,9 @@ variable "vmid" {
 }
 
 variable "clone" {
-    description = "The ID of the VM to clone"
-    type = number
-    default = 8000
+    description = "The name of the template to clone"
+    type = string
+    default = "ubuntu-25.04"
 }
 
 variable "cores" {
@@ -51,7 +51,13 @@ variable "disk_size" {
 variable "disk_storage" {
     description = "The storage type to use for the VM's disk"
     type = string
-    default = "local-lvm"
+    default = "tank"
+}
+
+variable "full_clone" {
+    description = "Whether to create a full clone of the template"
+    type = bool
+    default = true
 }
 
 variable "network_model" {
@@ -76,4 +82,23 @@ variable "os_type" {
     description = "The type of operating system to install on the VM"
     type = string
     default = "linux"
+}
+
+variable "ciuser" {
+    description = "The cloud-init user to create"
+    type = string
+    default = "bret"
+}
+
+variable "cipassword" {
+    description = "The password for the cloud-init user"
+    type = string
+    sensitive = true
+    default = null
+}
+
+variable "sshkeys" {
+    description = "SSH public keys for the cloud-init user"
+    type = string
+    default = ""
 }

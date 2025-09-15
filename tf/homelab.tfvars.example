@@ -1,0 +1,40 @@
+# Example configuration for adding VMs to your homelab
+# Copy this to homelab.tfvars and customize as needed
+
+# Proxmox user credentials
+pm_user = "terraform@pve"
+pm_password = "your-terraform-user-password"
+
+# List of VMs to create
+vms = [
+  {
+    name           = "test-vm-01"
+    target_node    = "pve1.lab.thewortmans.org"
+    vmid           = "201"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "2"
+    memory         = "2048"
+    sockets        = "1"
+    disk_size      = "20G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "test-vm-02"
+    target_node    = "pve1.lab.thewortmans.org"
+    vmid           = "202"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "4096"
+    sockets        = "1"
+    disk_size      = "30G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  }
+]
