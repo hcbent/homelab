@@ -28,3 +28,20 @@ variable "kubernetes_vms" {
   description = "List of Kubernetes VM configurations"
   type        = list(map(string))
 }
+
+variable "ciuser" {
+  description = "The cloud-init user to create"
+  type        = string
+  default     = "bret"
+}
+
+variable "cipassword" {
+  description = "The password for the cloud-init user"
+  type        = string
+  sensitive   = true
+}
+
+variable "sshkeys" {
+  description = "SSH public keys for the cloud-init user"
+  type        = string
+}
