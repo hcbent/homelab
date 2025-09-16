@@ -8,6 +8,7 @@ resource "proxmox_vm_qemu" "vm" {
   agent       = 1
   bios        = "seabios"
   scsihw      = "virtio-scsi-pci"
+  tags        = var.tags
 
   cpu {
     cores   = var.cores
@@ -41,7 +42,6 @@ resource "proxmox_vm_qemu" "vm" {
   }
 
   ipconfig0 = var.ipconfig0
-  tags = ""
 
   ciuser     = var.ciuser
   cipassword = var.cipassword != null ? var.cipassword : null

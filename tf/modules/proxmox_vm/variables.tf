@@ -102,3 +102,9 @@ variable "sshkeys" {
     type = string
     default = ""
 }
+
+variable "tags" {
+    description = "Tags for this VM"
+    type = string
+    default = null
+}
