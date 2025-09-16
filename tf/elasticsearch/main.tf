@@ -17,6 +17,7 @@ module "elasticsearch_vms" {
   network_model  = var.elasticsearch_vms[count.index].network_model
   network_bridge = var.elasticsearch_vms[count.index].network_bridge
   ipconfig0      = var.elasticsearch_vms[count.index].ipconfig0
+  tags           = var.elasticsearch_vms[count.index].tags
 
   # Cloud-init user configuration
   ciuser         = var.ciuser
