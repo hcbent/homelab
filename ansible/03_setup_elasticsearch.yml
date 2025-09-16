@@ -1,0 +1,143 @@
+---
+- name: Install and configure Elasticsearch cluster
+  hosts: elasticsearch_all
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Download Elasticsearch GPG key
+      get_url:
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+        dest: /usr/share/keyrings/elasticsearch-keyring.asc
+        mode: '0644'
+
+    - name: Add Elasticsearch repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.asc] https://artifacts.elastic.co/packages/9.x/apt stable main"
+        state: present
+        update_cache: yes
+
+    - name: Install Elasticsearch
+      apt:
+        name: "elasticsearch={{ elasticsearch_version }}"
+        state: present
+
+    - name: Create elasticsearch data directory
+      file:
+        path: /var/lib/elasticsearch
+        state: directory
+        owner: elasticsearch
+        group: elasticsearch
+        mode: '0755'
+
+    - name: Create elasticsearch log directory
+      file:
+        path: /var/log/elasticsearch
+        state: directory
+        owner: elasticsearch
+        group: elasticsearch
+        mode: '0755'
+
+- name: Configure Elasticsearch master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Configure Elasticsearch for master nodes
+      template:
+        src: elasticsearch-master.yml.j2
+        dest: /etc/elasticsearch/elasticsearch.yml
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+    - name: Set JVM heap size for master nodes
+      template:
+        src: jvm-master.options.j2
+        dest: /etc/elasticsearch/jvm.options.d/heap.options
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+  handlers:
+    - name: restart elasticsearch
+      systemd:
+        name: elasticsearch
+        state: restarted
+        enabled: yes
+
+- name: Configure Elasticsearch hot data nodes
+  hosts: elasticsearch_hot
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Configure Elasticsearch for hot data nodes
+      template:
+        src: elasticsearch-hot.yml.j2
+        dest: /etc/elasticsearch/elasticsearch.yml
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+    - name: Set JVM heap size for hot data nodes
+      template:
+        src: jvm-data.options.j2
+        dest: /etc/elasticsearch/jvm.options.d/heap.options
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+  handlers:
+    - name: restart elasticsearch
+      systemd:
+        name: elasticsearch
+        state: restarted
+        enabled: yes
+
+- name: Configure Elasticsearch frozen data nodes
+  hosts: elasticsearch_frozen
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Configure Elasticsearch for frozen data nodes
+      template:
+        src: elasticsearch-frozen.yml.j2
+        dest: /etc/elasticsearch/elasticsearch.yml
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+    - name: Set JVM heap size for frozen data nodes
+      template:
+        src: jvm-data.options.j2
+        dest: /etc/elasticsearch/jvm.options.d/heap.options
+        owner: root
+        group: elasticsearch
+        mode: '0660'
+      notify: restart elasticsearch
+
+  handlers:
+    - name: restart elasticsearch
+      systemd:
+        name: elasticsearch
+        state: restarted
+        enabled: yes
+
+- name: Start Elasticsearch services
+  hosts: elasticsearch_all
+  become: yes
+  gather_facts: no
+  tasks:
+    - name: Enable and start Elasticsearch
+      systemd:
+        name: elasticsearch
+        state: started
+        enabled: yes
