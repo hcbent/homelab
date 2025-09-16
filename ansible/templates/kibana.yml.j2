@@ -1,0 +1,28 @@
+# Kibana configuration for homelab cluster
+server.port: 5601
+server.host: "0.0.0.0"
+server.name: "{{ inventory_hostname }}"
+
+# Elasticsearch connection
+elasticsearch.hosts: {{ elasticsearch_hosts | to_json }}
+
+# Paths
+path.data: /var/lib/kibana
+logging.appenders.file.type: file
+logging.appenders.file.fileName: /var/log/kibana/kibana.log
+logging.appenders.file.layout.type: json
+
+# Logging configuration
+logging.root.level: info
+
+# Security settings (basic configuration for homelab)
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "{{ ansible_machine_id | hash('sha256') | truncate(32, True, '') }}"
+
+# Performance and monitoring
+elasticsearch.requestTimeout: 30000
+elasticsearch.shardTimeout: 30000
+elasticsearch.pingTimeout: 1500
+
+# UI settings
+server.publicBaseUrl: "http://{{ inventory_hostname }}:5601"
