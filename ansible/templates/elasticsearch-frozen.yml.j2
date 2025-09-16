@@ -1,0 +1,43 @@
+# Elasticsearch configuration for frozen data nodes
+cluster.name: {{ cluster_name }}
+node.name: {{ inventory_hostname }}
+
+# Frozen data node configuration
+node.roles: [ data_frozen ]
+
+# Node attributes for allocation
+node.attr.data: frozen
+
+# Network settings
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# Discovery settings
+discovery.seed_hosts: {{ discovery_seed_hosts | to_json }}
+cluster.initial_master_nodes: {{ cluster_initial_master_nodes | to_json }}
+
+# Path settings
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+
+# Security settings (basic configuration)
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl:
+  enabled: false
+xpack.security.transport.ssl:
+  enabled: false
+
+# Frozen node specific settings
+# Frozen nodes should have lower heap and memory requirements
+indices.memory.index_buffer_size: 10%
+
+# Cluster settings for frozen nodes
+cluster.routing.allocation.disk.threshold_enabled: true
+cluster.routing.allocation.disk.watermark.low: 90%
+cluster.routing.allocation.disk.watermark.high: 94%
+cluster.routing.allocation.disk.watermark.flood_stage: 96%
+
+# Enable searchable snapshots for frozen indices
+xpack.searchable.snapshot.shared_cache.size: 50%
