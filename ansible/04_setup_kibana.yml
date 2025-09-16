@@ -1,0 +1,61 @@
+---
+- name: Install and configure Kibana
+  hosts: kibana
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Download Elasticsearch GPG key (for Kibana repo)
+      get_url:
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+        dest: /usr/share/keyrings/elasticsearch-keyring.asc
+        mode: '0644'
+
+    - name: Add Elastic repository for Kibana
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.asc] https://artifacts.elastic.co/packages/9.x/apt stable main"
+        state: present
+        update_cache: yes
+
+    - name: Install Kibana
+      apt:
+        name: "kibana={{ kibana_version }}"
+        state: present
+
+    - name: Create kibana data directory
+      file:
+        path: /var/lib/kibana
+        state: directory
+        owner: kibana
+        group: kibana
+        mode: '0755'
+
+    - name: Create kibana log directory
+      file:
+        path: /var/log/kibana
+        state: directory
+        owner: kibana
+        group: kibana
+        mode: '0755'
+
+    - name: Configure Kibana
+      template:
+        src: kibana.yml.j2
+        dest: /etc/kibana/kibana.yml
+        owner: root
+        group: kibana
+        mode: '0660'
+      notify: restart kibana
+
+    - name: Enable and start Kibana service
+      systemd:
+        name: kibana
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart kibana
+      systemd:
+        name: kibana
+        state: restarted
+        enabled: yes
