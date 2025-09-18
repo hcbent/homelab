@@ -2,13 +2,15 @@
 plex
 docker
 
+[elasticsearch_bootstrap]
+es04
+
 [elasticsearch_masters]
 es01
 es02
 es03
 
 [elasticsearch_hot]
-es04
 es05
 es06
 
@@ -17,8 +19,10 @@ es07
 es08
 es09
 
-[elasticsearch_other]
+[kibana_nodes]
 kibana
+
+[elasticsearch_other]
 fleet
 
 [k8s_cp]
@@ -39,17 +43,19 @@ torrent
 pihole
 
 [elasticsearch_all:children]
+elasticsearch_bootstrap
 elasticsearch_masters
 elasticsearch_hot
 elasticsearch_frozen
+elasticsearch_bootstrap
 
 [elasticsearch_all:vars]
 elasticsearch_version=9.1.3
-cluster_name=homelab-cluster
+cluster_name=lab
 discovery_seed_hosts=["es01","es02","es03"]
 cluster_initial_master_nodes=["es01","es02","es03"]
 
-[kibana:vars]
+[kibana_nodes:vars]
 kibana_version=9.1.3
 elasticsearch_hosts=["http://es01:9200","http://es02:9200","http://es03:9200"]
 
