@@ -1,0 +1,151 @@
+---
+- name: Install Elasticsearch on non-bootstrap nodes
+  hosts: elasticsearch_all:!{{ bootstrap_node }}
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Download and install Elasticsearch GPG key
+      shell: wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/elasticsearch-keyring.gpg
+
+    - name: Install apt-transport-https
+      apt:
+        name: apt-transport-https
+        state: present
+        update_cache: yes
+
+    - name: Add Elasticsearch repository
+      lineinfile:
+        path: /etc/apt/sources.list.d/elastic-9.x.list
+        line: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/9.x/apt stable main"
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Update package cache and install Elasticsearch
+      apt:
+        name: elasticsearch
+        state: present
+        update_cache: yes
+
+    - name: Set cluster.name in elasticsearch.yml
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?cluster\.name:'
+        line: "cluster.name: {{ cluster_name }}"
+        backup: yes
+
+    - name: Set network.host to 0.0.0.0
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?network\.host:'
+        line: "network.host: 0.0.0.0"
+
+- name: Generate enrollment token on bootstrap node
+  hosts: "{{ bootstrap_node }}"
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Generate enrollment token for new nodes
+      shell: /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
+      register: enrollment_token_result
+
+    - name: Store enrollment token as fact
+      set_fact:
+        enrollment_token: "{{ enrollment_token_result.stdout }}"
+
+    - name: Display enrollment token
+      debug:
+        msg: "Enrollment token: {{ enrollment_token }}"
+
+- name: Enroll non-bootstrap nodes to cluster
+  hosts: elasticsearch_all:!{{ bootstrap_node }}
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Get enrollment token from bootstrap node
+      set_fact:
+        enrollment_token: "{{ hostvars[bootstrap_node]['enrollment_token'] }}"
+
+    - name: Reconfigure node with enrollment token
+      shell: /usr/share/elasticsearch/bin/elasticsearch-reconfigure-node --enrollment-token {{ enrollment_token }}
+      args:
+        creates: /etc/elasticsearch/certs
+
+    - name: Set node.roles for elasticsearch_master nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["master", "remote_cluster_client"]'
+      when: "'elasticsearch_master' in group_names"
+
+    - name: Set node.roles for elasticsearch_hot nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["data_hot", "data_content"]'
+      when: "'elasticsearch_hot' in group_names"
+
+    - name: Set node.roles for elasticsearch_cold nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["data_cold"]'
+      when: "'elasticsearch_cold' in group_names"
+
+    - name: Set node.roles for elasticsearch_frozen nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["data_frozen"]'
+      when: "'elasticsearch_frozen' in group_names"
+
+    - name: Set node.roles for elasticsearch_warm nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["data_warm"]'
+      when: "'elasticsearch_warm' in group_names"
+
+    - name: Set node.roles for elasticsearch_ingest nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["ingest"]'
+      when: "'elasticsearch_ingest' in group_names"
+
+    - name: Set node.roles for elasticsearch_ml nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["ml"]'
+      when: "'elasticsearch_ml' in group_names"
+
+    - name: Set node.roles for elasticsearch_coordinating nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["remote_cluster_client"]'
+      when: "'elasticsearch_coordinating' in group_names"
+
+    - name: Set node.roles for elasticsearch_transform nodes
+      lineinfile:
+        path: /etc/elasticsearch/elasticsearch.yml
+        regexp: '^#?node\.roles:'
+        line: 'node.roles: ["transform"]'
+      when: "'elasticsearch_transform' in group_names"
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Elasticsearch service
+      systemd:
+        name: elasticsearch.service
+        enabled: yes
+        state: started

@@ -45,3 +45,4 @@ variable "sshkeys" {
   description = "SSH public keys for the cloud-init user"
   type        = string
 }
+
