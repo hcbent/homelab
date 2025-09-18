@@ -1,0 +1,30 @@
+# Elasticsearch single-node cluster configuration
+cluster.name: homelab-cluster
+node.name: {{ inventory_hostname }}
+
+# Network settings
+network.host: {{ ansible_default_ipv4.address }}
+http.port: 9200
+
+# Node roles - all roles for single node
+node.roles: [ master, data_hot, data_content, data_warm, data_cold, data_frozen, ingest, ml, remote_cluster_client, transform ]
+
+# Single node discovery
+discovery.type: single-node
+
+# Disable security for now to get basic cluster working
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+
+# Path settings
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+
+# Memory settings
+bootstrap.memory_lock: true
+
+# Cluster settings
+cluster.routing.allocation.disk.threshold_enabled: true
+cluster.routing.allocation.disk.watermark.low: 85%
+cluster.routing.allocation.disk.watermark.high: 90%
+cluster.routing.allocation.disk.watermark.flood_stage: 95%

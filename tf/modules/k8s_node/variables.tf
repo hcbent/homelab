@@ -55,3 +55,8 @@ variable "ssh_host" {
     description = "The hostname or IP address of the VM."
     type        = string
 }
+
+variable "tags" {
+    description = "Tags for resources"
+    type        = string
+}
