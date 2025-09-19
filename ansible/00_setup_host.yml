@@ -39,68 +39,47 @@
         path: ~/git/dotfile/.git
       register: file_check
 
-    - name: Clone dotfiles repository
+    - name: Setup dotfiles and SSH keys for user bret
+      become_user: bret
       block:
         - name: Ensure .ssh directory exists
           file:
             path: ~/.ssh
             state: directory
             mode: '0700'
-  
-        - name: Copy GitHub SSH keys
-          copy:
-            src:  /Users/bdw/.ssh/github_rsa
-            dest: ~/.ssh/
-            mode: '0600'
-  
-        - name: Copy GitHub SSH keys
-          copy:
-            src:  /Users/bdw/.ssh/github_rsa.pub
-            dest: ~/.ssh/
-            mode: '0600'
-  
-        - name: Copy SSH config
-          copy:
-            src: /Users/bdw/.ssh/config
-            dest: ~/.ssh/config
-            mode: '0600'
-  
-        - name: Copy known_hosts
-          copy:
-            src: /Users/bdw/.ssh/known_hosts
-            dest: ~/.ssh/known_hosts
-            mode: '0600'
-  
-        - name: Ensure git/dotfiles exists
+
+        - name: Rsync SSH files from localhost
+          shell: rsync -av /Users/bret/.ssh/github* /Users/bret/.ssh/config /Users/bret/.ssh/known_hosts {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
+          delegate_to: localhost
+          connection: local
+
+        - name: Create git directory
           file:
-            dest: ~/git/dotfiles
+            path: ~/git
             state: directory
-  
+
         - name: Clone dotfiles repository
           git:
-            repo: 'git@github.com:wortmanb/dotfiles.git'
-            dest: '~/git/dotfiles/'
-            clone: true
-            update: true
-          environment:
-            GIT_TERMINAL_PROMPT: 0 
+            repo: git@github.com:wortmanb/dotfiles.git
+            dest: ~/git/dotfiles
+            clone: yes
+            update: yes
+
+        - name: Run linux setup script
+          shell: ./__setup/linux.sh
+          args:
+            chdir: ~/git/dotfiles
+
+        - name: Run setup script
+          shell: ./setup.sh
+          args:
+            chdir: ~/git/dotfiles
       when: file_check.stat.exists == False
 
-    - name: Empty .ssh directory
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      with_fileglob:
-        - "/home/bret/.ssh/*"
-
-    - name: Setup dotfiles
-      shell: >
-        './git/dotfiles/__setup/linux.sh'
-
-    - name: Install dotfiles
-      shell: >
-        './git/dotfiles/setup.sh'
-
     - name: Change shell to zsh
-      shell: >
-        'chsh -s $(which zsh)'
+      user:
+        name: "{{ ansible_user }}"
+        shell: /usr/bin/zsh
+      become: true
+      retries: 3
+      delay: 5
