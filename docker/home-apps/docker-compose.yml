@@ -106,26 +106,6 @@ services:
     networks:
       - home-apps-net
 
-  pihole:
-    image: pihole/pihole:latest
-    container_name: pihole
-    ports:
-      - "5353:53/tcp"
-      - "5353:53/udp"
-      - "67:67/udp"
-      - "8053:80/tcp"
-    environment:
-      TZ: 'America/New_York'
-      WEBPASSWORD: 'admin'
-      PIHOLE_DNS_: '1.1.1.1;8.8.8.8'
-      DNSMASQ_LISTENING: 'all'
-    volumes:
-      - pihole_etc:/etc/pihole
-      - pihole_dnsmasq:/etc/dnsmasq.d
-    restart: unless-stopped
-    networks:
-      - home-apps-net
-
 volumes:
   actualbudget_data:
     driver: local
@@ -142,10 +122,6 @@ volumes:
   paperless_db_data:
     driver: local
   paperless_redis_data:
-    driver: local
-  pihole_etc:
-    driver: local
-  pihole_dnsmasq:
     driver: local
 
 networks:
