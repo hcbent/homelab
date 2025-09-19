@@ -60,11 +60,53 @@ resource "proxmox_vm_qemu" "vm" {
 
 
   lifecycle {
-    #ignore_changes = [
-    #  network,
-    #  disks,
-    #  serial
-    #]
+    prevent_destroy = true
+    ignore_changes = [
+      # Core VM creation attributes that force replacement
+      clone,
+      full_clone,
+
+      # Runtime and computed attributes
+      boot,
+      bootdisk,
+      current_node,
+      default_ipv4_address,
+      default_ipv6_address,
+      ssh_host,
+      ssh_port,
+      linked_vmid,
+      unused_disk,
+      reboot_required,
+
+      # Network changes that might occur during runtime
+      network,
+
+      # Disk changes to prevent recreation
+      disks,
+
+      # Serial console changes
+      serial,
+
+      # Cloud-init and configuration that might differ
+      ciupgrade,
+      onboot,
+      os_type,
+      ipconfig0,
+      cipassword,
+      sshkeys,
+      searchdomain,
+      nameserver,
+
+      # Provider-managed attributes
+      additional_wait,
+      agent_timeout,
+      automatic_reboot,
+      clone_wait,
+      define_connection_info,
+      description,
+      skip_ipv4,
+      skip_ipv6
+    ]
   }
 }
 
