@@ -1,4 +1,21 @@
 ---
+- name: Install QEMU Guest Agent
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install qemu-guest-agent
+      apt:
+        name: qemu-guest-agent
+        state: present
+        update_cache: yes
+
+    - name: Enable and start qemu-guest-agent service
+      systemd:
+        name: qemu-guest-agent
+        enabled: yes
+        state: started
+
 - name: Deploy a basic Linux server
   hosts: all
   gather_facts: false
@@ -14,24 +31,25 @@
       apt:
         name:
           - git
-          - curl
-          - vim
-          - unzip 
           - python3-pip
-          - zsh 
-          - autoconf 
-          - htop 
-          - eslint 
-          - gettext 
-          - luajit 
-          - neovim 
-          - npm
-          - stow 
-          - tmux
-          - openssl 
-          - ripgrep 
-          - fzf 
-          - kitty-terminfo
+          - zsh
+          # Commented out for faster testing - uncomment if needed:
+          # - curl
+          # - vim
+          # - unzip
+          # - autoconf
+          # - htop
+          # - eslint
+          # - gettext
+          # - luajit
+          # - neovim
+          # - npm
+          # - stow
+          # - tmux
+          # - openssl
+          # - ripgrep
+          # - fzf
+          # - kitty-terminfo
         state: present
 
     - name: Test for dotfiles
@@ -47,6 +65,30 @@
             path: ~/.ssh
             state: directory
             mode: '0700'
+
+        - name: Clean up all old host keys from localhost known_hosts
+          shell: |
+            # Remove all variations of the hostname
+            ssh-keygen -R {{ inventory_hostname }} || true
+            ssh-keygen -R {{ ansible_host | default(inventory_hostname) }} || true
+            ssh-keygen -R {{ inventory_hostname.split('.')[0] }} || true
+            # Also remove any remaining entries that contain the hostname
+            sed -i.bak '/{{ inventory_hostname }}/d' ~/.ssh/known_hosts || true
+            sed -i.bak '/{{ inventory_hostname.split('.')[0] }}/d' ~/.ssh/known_hosts || true
+          delegate_to: localhost
+          connection: local
+          ignore_errors: yes
+
+        - name: Add current host key to localhost known_hosts
+          shell: ssh-keyscan -H {{ inventory_hostname }} >> ~/.ssh/known_hosts
+          delegate_to: localhost
+          connection: local
+
+        - name: Test SSH connection to ensure host key is accepted
+          shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ inventory_hostname }} 'echo "SSH connection test successful"'
+          delegate_to: localhost
+          connection: local
+          ignore_errors: yes
 
         - name: Rsync SSH files from localhost
           shell: rsync -av /Users/bret/.ssh/github* /Users/bret/.ssh/config /Users/bret/.ssh/known_hosts {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
@@ -69,6 +111,8 @@
           shell: ./__setup/linux.sh
           args:
             chdir: ~/git/dotfiles
+          async: 1200
+          poll: 10
 
         - name: Run setup script
           shell: ./setup.sh
