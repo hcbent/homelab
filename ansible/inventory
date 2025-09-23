@@ -19,6 +19,11 @@ es07
 es08
 es09
 
+[elasticsearch_ml]
+es10
+es11
+es12
+
 [kibana_nodes]
 kibana
 
@@ -48,6 +53,7 @@ elasticsearch_masters
 elasticsearch_hot
 elasticsearch_frozen
 elasticsearch_bootstrap
+elasticsearch_ml
 
 [elasticsearch_all:vars]
 elasticsearch_version=9.1.3
