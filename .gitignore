@@ -44,3 +44,4 @@ k8s/lab-cluster/es/values-default.yaml
 k8s/.llm-app.yaml.swp
 .ansible/.lock
 ELASTIC_PASSWORD
+MONITORING_PASSWORD
