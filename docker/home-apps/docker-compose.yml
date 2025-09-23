@@ -34,7 +34,7 @@ services:
       - home-apps-net
 
   paperless-redis:
-    image: docker.io/library/redis:7
+    image: docker.io/library/redis:8
     container_name: paperless-redis
     restart: unless-stopped
     volumes:
@@ -89,7 +89,7 @@ services:
       - home-apps-net
 
   paperless-gotenberg:
-    image: docker.io/gotenberg/gotenberg:7
+    image: docker.io/gotenberg/gotenberg:8
     container_name: paperless-gotenberg
     restart: unless-stopped
     command:
