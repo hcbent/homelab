@@ -1,0 +1,11 @@
+{
+  "description": "Simple pipeline without ML inference - embeddings will be added by your application",
+  "processors": [
+    {
+      "set": {
+        "field": "processed_at",
+        "value": "{{_ingest.timestamp}}"
+      }
+    }
+  ]
+}
