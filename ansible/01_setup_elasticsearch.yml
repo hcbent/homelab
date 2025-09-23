@@ -78,6 +78,40 @@
       debug:
         msg: "Enrollment token: {{ enrollment_token }}"
 
+- name: Configure elasticsearch nodes with all roles
+  hosts: elasticsearch_nodes
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Get enrollment token from bootstrap node
+      set_fact:
+        enrollment_token: "{{ hostvars[groups['elasticsearch_bootstrap'][0]]['enrollment_token'] }}"
+
+    - name: Display enrollment token
+      debug:
+        msg: "Enrollment token: {{ enrollment_token }}"
+
+    - name: Reconfigure node with enrollment token
+      shell: yes | /usr/share/elasticsearch/bin/elasticsearch-reconfigure-node -s --enrollment-token {{ enrollment_token }}
+      register: reconfigure_result
+      async: 60
+      poll: 5
+
+    - name: Display reconfigure output
+      debug:
+        var: reconfigure_result
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Elasticsearch service
+      systemd:
+        name: elasticsearch.service
+        enabled: yes
+        state: started
+
 - name: Configure elasticsearch_master nodes
   hosts: elasticsearch_masters
   become: yes
