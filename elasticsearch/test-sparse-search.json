@@ -1,0 +1,11 @@
+{
+  "query": {
+    "sparse_vector": {
+      "field": "content_embedding",
+      "inference_id": ".elser_model_2",
+      "query": "how to filter lists in python"
+    }
+  },
+  "_source": ["title", "content"],
+  "size": 3
+}
