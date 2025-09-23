@@ -1,0 +1,3 @@
+- My kibana instance is at https://kibana.bwortman.us/
+- My elasticsearch instance can be queried at https://elasticsearch.bwortman.us/
+- My elasticsearch cluster consists of nodes named es01-es09.

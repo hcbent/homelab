@@ -1,0 +1,87 @@
+{
+  "mappings": {
+    "_meta": {
+      "created_by": "file-data-visualizer",
+      "updated_for": "sparse-vector-rag"
+    },
+    "properties": {
+      "author": {
+        "type": "keyword"
+      },
+      "category": {
+        "type": "keyword"
+      },
+      "code_examples": {
+        "type": "boolean"
+      },
+      "content": {
+        "type": "text"
+      },
+      "content_embedding": {
+        "type": "dense_vector",
+        "dims": 384
+      },
+      "created_at": {
+        "type": "date_nanos",
+        "format": "iso8601"
+      },
+      "difficulty": {
+        "type": "keyword"
+      },
+      "id": {
+        "type": "keyword"
+      },
+      "index": {
+        "properties": {
+          "_id": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "_index": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          }
+        }
+      },
+      "python_version": {
+        "type": "double"
+      },
+      "rating": {
+        "type": "double"
+      },
+      "related_topics": {
+        "type": "keyword"
+      },
+      "tags": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text"
+      },
+      "title_embedding": {
+        "type": "dense_vector",
+        "dims": 384
+      },
+      "updated_at": {
+        "type": "date_nanos",
+        "format": "iso8601"
+      },
+      "views": {
+        "type": "long"
+      },
+      "word_count": {
+        "type": "long"
+      }
+    }
+  }
+}
