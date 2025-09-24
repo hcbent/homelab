@@ -1,0 +1,93 @@
+---
+- name: Install Elastic Agent on designated hosts
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    elastic_agent_version: "9.1.3"
+    fleet_server_url: "https://fleet.lab.thewortmans.org:8220"
+    enrollment_token: "eWVEZGQ1a0J2MldTbEF0NTdTVmc6S21HMnozRFBIVjlrdzJSVXlZU1dRZw=="
+
+  tasks:
+    - name: Download and install Elastic Agent
+      shell: |
+        curl -L -O https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        tar xzvf elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        cd elastic-agent-{{ elastic_agent_version }}-linux-x86_64
+        ./elastic-agent install \
+          --url={{ fleet_server_url }} \
+          --enrollment-token={{ enrollment_token }} \
+          --insecure \
+          --non-interactive \
+          --force
+      args:
+        creates: /opt/Elastic/Agent/elastic-agent
+
+    - name: Verify Elastic Agent service is running
+      systemd:
+        name: elastic-agent
+        state: started
+        enabled: yes
+
+- name: Install Elastic Agent on Kubernetes nodes
+  hosts: k8s
+  become: yes
+  gather_facts: yes
+
+  vars:
+    elastic_agent_version: "9.1.3"
+    fleet_server_url: "https://fleet.lab.thewortmans.org:8220"
+    enrollment_token: "eWVEZGQ1a0J2MldTbEF0NTdTVmc6S21HMnozRFBIVjlrdzJSVXlZU1dRZw=="
+
+  tasks:
+    - name: Download and install Elastic Agent
+      shell: |
+        curl -L -O https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        tar xzvf elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        cd elastic-agent-{{ elastic_agent_version }}-linux-x86_64
+        ./elastic-agent install \
+          --url={{ fleet_server_url }} \
+          --enrollment-token={{ enrollment_token }} \
+          --insecure \
+          --non-interactive \
+          --force
+      args:
+        creates: /opt/Elastic/Agent/elastic-agent
+
+    - name: Verify Elastic Agent service is running
+      systemd:
+        name: elastic-agent
+        state: started
+        enabled: yes
+
+- name: Install Elastic Agent on Infrastructure nodes
+  hosts: infrastructure
+  become: yes
+  gather_facts: yes
+
+  vars:
+    elastic_agent_version: "9.1.3"
+    fleet_server_url: "https://fleet.lab.thewortmans.org:8220"
+    enrollment_token: "eWVEZGQ1a0J2MldTbEF0NTdTVmc6S21HMnozRFBIVjlrdzJSVXlZU1dRZw=="
+
+  tasks:
+    - name: Download and install Elastic Agent
+      shell: |
+        curl -L -O https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        tar xzvf elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+        cd elastic-agent-{{ elastic_agent_version }}-linux-x86_64
+        ./elastic-agent install \
+          --url={{ fleet_server_url }} \
+          --enrollment-token={{ enrollment_token }} \
+          --insecure \
+          --non-interactive \
+          --force
+      args:
+        creates: /opt/Elastic/Agent/elastic-agent
+
+    - name: Verify Elastic Agent service is running
+      systemd:
+        name: elastic-agent
+        state: started
+        enabled: yes

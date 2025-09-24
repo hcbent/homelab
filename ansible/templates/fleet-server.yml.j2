@@ -1,0 +1,33 @@
+# Fleet Server configuration for homelab cluster
+# This is a minimal configuration as Fleet Server is primarily configured
+# through the installation command parameters
+
+outputs:
+  default:
+    type: elasticsearch
+    hosts: {{ elasticsearch_hosts | to_json }}
+
+agent:
+  monitoring:
+    enabled: true
+    logs: true
+    metrics: true
+
+# Fleet Server settings
+fleet:
+  agent:
+    id: "{{ ansible_machine_id }}"
+
+# Logging configuration
+logging:
+  level: info
+  to_files: true
+  files:
+    path: /var/log/elastic-agent
+    name: elastic-agent
+    keepfiles: 7
+    permissions: 0644
+
+# Management settings
+management:
+  mode: fleet
