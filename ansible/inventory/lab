@@ -32,10 +32,12 @@ elasticsearch_bootstrap
 elasticsearch_ml
 
 [elasticsearch_all:vars]
-elasticsearch_version=9.1.3
+elasticsearch_version=9.1.4
 cluster_name=lab
 discovery_seed_hosts=["es01","es02","es03"]
 cluster_initial_master_nodes=["es01","es02","es03"]
+elasticsearch_username=bret
+elasticsearch_password=Benm1les
 
 [kibana_nodes:vars]
 kibana_version=9.1.3

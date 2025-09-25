@@ -1,6 +1,6 @@
 ---
-- name: Rolling upgrade of Elasticsearch cluster - Non-master nodes
-  hosts: elasticsearch_nodes:!elasticsearch_masters
+- name: Rolling upgrade of Elasticsearch cluster - Non-Master nodes
+  hosts: elasticsearch_all:!elasticsearch_masters
   become: yes
   user: bret
   serial: 1
@@ -8,10 +8,140 @@
   vars:
     elasticsearch_service: elasticsearch
     elasticsearch_port: 9200
-    elasticsearch_version: "8.18.0"
+    elasticsearch_version: "9.1.4"
     master_node: "{{ groups['elasticsearch_masters'][0] }}.lab.thewortmans.org"
-    es_username: "bret"
-    es_password: "2xqT2IO1OQ%tfMHP"
+    es_username: "{{ elasticsearch_username | default('elastic') }}"
+    es_password: "{{ elasticsearch_password | default('changeme') }}"
+
+  pre_tasks:
+    - name: Test connectivity to master node
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: cluster_health
+      delegate_to: localhost
+      become: no
+      run_once: true
+      ignore_errors: true
+    - name: Debug cluster health response
+      debug:
+        var: cluster_health
+      run_once: true
+
+    - name: Fail if cluster health check failed to get valid response
+      fail:
+        msg: "Cluster health check failed: {{ cluster_health.msg | default('No response') }}"
+      when: cluster_health.failed or cluster_health.content is not defined
+      run_once: true
+
+    - name: Check cluster status
+      assert:
+        that:
+          - cluster_health.json.status == 'green'
+        fail_msg: "Cluster is in red status, aborting upgrade"
+      run_once: true
+
+    - name: Disable shard allocation (via master)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "primaries"
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+      run_once: true
+
+  tasks:
+    - name: Stop Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: stopped
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade Elasticsearch to specified version
+      apt:
+        name: "elasticsearch={{ elasticsearch_version }}"
+        state: present
+      register: es_upgrade
+
+    - name: Start Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: started
+      register: es_start
+
+    - name: Wait for node to join cluster
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ elasticsearch_port }}"
+        timeout: 300
+      when: es_start.changed or es_upgrade.changed
+
+    - name: Re-enable shard allocation (via master)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": null
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+
+    - name: Wait for cluster to stabilize (via master)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: _result
+      retries: 100
+      delay: 10
+      until: _result.json.status == "green"
+      delegate_to: localhost
+      ignore_errors: false
+
+- name: Rolling upgrade of Elasticsearch cluster - Master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  serial: 1
+  user: bret
+  gather_facts: no
+
+  vars:
+    elasticsearch_service: elasticsearch
+    elasticsearch_port: 9200
+    elasticsearch_version: "9.1.4"
+    non_master_node: "{{ groups['elasticsearch_nodes'] | difference(groups['elasticsearch_masters']) | first }}.lab.thewortmans.org"
+    master_node: "{{ groups['elasticsearch_masters'][0] }}.lab.thewortmans.org"
+    es_username: "{{ elasticsearch_username | default('elastic') }}"
+    es_password: "{{ elasticsearch_password | default('changeme') }}"
 
   pre_tasks:
     - name: Test connectivity to master node
@@ -47,7 +177,7 @@
 
     - name: Disable shard allocation (via master)
       uri:
-        url: "http://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
         method: PUT
         body_format: json
         url_username: "{{ es_username }}"
@@ -58,8 +188,6 @@
               "cluster.routing.allocation.enable": "primaries"
             }
           }
-        url_username: "{{ es_username }}"
-        url_password: "{{ es_password }}"
         status_code: 200
         validate_certs: no
       delegate_to: localhost
@@ -96,82 +224,9 @@
         timeout: 300
       when: es_start.changed or es_upgrade.changed
 
-    - name: Wait for cluster to stabilize (via master)
-      uri:
-        url: "http://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
-        return_content: yes
-        url_username: "{{ es_username }}"
-        url_password: "{{ es_password }}"
-      register: cluster_status
-      retries: 5
-      delay: 10
-      until: cluster_status.json.status in ['yellow', 'green']
-      delegate_to: localhost
-
-- name: Rolling upgrade of Elasticsearch cluster - Master nodes
-  hosts: elasticsearch_masters
-  become: yes
-  serial: 1
-  user: bret
-  gather_facts: no
-
-  vars:
-    elasticsearch_service: elasticsearch
-    elasticsearch_port: 9200
-    elasticsearch_version: "8.18.0"
-    non_master_node: "{{ groups['elasticsearch_nodes'] | difference(groups['elasticsearch_masters']) | first }}.lab.thewortmans.org"
-    es_username: "bret"
-    es_password: "2xqT2IO1OQ%tfMHP"
-
-  tasks:
-    - name: Stop Elasticsearch service
-      service:
-        name: "{{ elasticsearch_service }}"
-        state: stopped
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Upgrade Elasticsearch to specified version
-      apt:
-        name: "elasticsearch={{ elasticsearch_version }}"
-        state: present
-      register: es_upgrade
-
-    - name: Start Elasticsearch service
-      service:
-        name: "{{ elasticsearch_service }}"
-        state: started
-      register: es_start
-
-    - name: Wait for node to join cluster
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: "{{ elasticsearch_port }}"
-        timeout: 300
-      when: es_start.changed or es_upgrade.changed
-
-    - name: Wait for cluster to stabilize (via non-master)
-      uri:
-        url: "https://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
-        return_content: yes
-        url_username: "{{ es_username }}"
-        url_password: "{{ es_password }}"
-        status_code: 200
-        validate_certs: no
-      register: cluster_status
-      delegate_to: localhost
-      become: no
-      retries: 500
-      delay: 10
-      until: cluster_status.json.status in ['yellow', 'green']
-
-  post_tasks:
     - name: Re-enable shard allocation (via non-master)
       uri:
-        url: "http://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        url: "https://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/settings"
         method: PUT
         body_format: json
         url_username: "{{ es_username }}"
@@ -179,17 +234,31 @@
         body: >
           {
             "persistent": {
-              "cluster.routing.allocation.enable": "all"
+              "cluster.routing.allocation.enable": null
             }
           }
-        url_username: "{{ es_username }}"
-        url_password: "{{ es_password }}"
         status_code: 200
         validate_certs: no
       delegate_to: localhost
       become: no
-      when: inventory_hostname == groups['elasticsearch_masters'][-1]
 
+    - name: Wait for cluster to stabilize (via non-master)
+      uri:
+        url: "https://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: _result
+      delegate_to: localhost
+      become: no
+      retries: 100
+      delay: 10
+      until: _result.json.status == "green"
+      ignore_errors: false
+
+  post_tasks:
     - name: Verify final cluster health (via non-master)
       uri:
         url: "https://{{ non_master_node }}:{{ elasticsearch_port }}/_cluster/health"

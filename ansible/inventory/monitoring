@@ -8,6 +8,11 @@ mes01
 mes02
 mes03
 
+[elasticsearch_masters]
+mes01
+mes02
+mes03
+
 [kibana_nodes]
 mkib
 
@@ -16,10 +21,12 @@ elasticsearch_bootstrap
 elasticsearch_nodes
 
 [elasticsearch_all:vars]
-elasticsearch_version=9.1.3
+elasticsearch_version=9.1.4
 cluster_name=monitoring
 discovery_seed_hosts=["mes01","mes02","mes03"]
 cluster_initial_master_nodes=["mes01","mes02","mes03"]
+elasticsearch_username=bret
+elasticsearch_password=Benm1les
 
 [kibana_nodes:vars]
 kibana_version=9.1.3
