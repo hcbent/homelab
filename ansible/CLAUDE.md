@@ -1,0 +1,1 @@
+- There are two plays in @upgrade_elasticsearch.yml. If unsure whether to perform modifications to just one play, the other, or both, please ask.
