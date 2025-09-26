@@ -1,0 +1,11 @@
+# Host-specific variables for lidarr
+ansible_host: "192.168.1.100"  # Change to actual IP
+ansible_user: "bret"
+
+# Application specific settings
+lidarr:
+  port: 8686
+  data_path: "/opt/lidarr"
+
+# Include encrypted host secrets
+host_secrets: "{{ vault_host_secrets }}"
