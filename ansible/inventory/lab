@@ -38,6 +38,9 @@ discovery_seed_hosts=["es01","es02","es03"]
 cluster_initial_master_nodes=["es01","es02","es03"]
 elasticsearch_username=bret
 elasticsearch_password=Benm1les
+s3_access_key_id=AKIAYW2UULNFFS2NNXAT
+s3_secret_access_key=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
+s3_bucket=bdw-lab-backups
 
 [kibana_nodes:vars]
 kibana_version=9.1.3
