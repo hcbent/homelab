@@ -4,6 +4,8 @@
   become: true
   gather_facts: false
   vars:
+    proxmox_vm_action: basic_host_setup
+    ansible_user: bret
     install_qemu_agent: true
     basic_host_setup: true
     setup_dotfiles: true
