@@ -39,7 +39,7 @@
       ignore_errors: yes
 
     - name: Rsync SSH files from localhost
-      shell: rsync -av {{ local_ssh_path }}/{{ ssh_files_pattern }} {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
+      shell: cd {{ local_ssh_path }} && rsync -av {{ ssh_files_pattern }} {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
       delegate_to: localhost
       connection: local
 
