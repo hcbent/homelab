@@ -1,0 +1,249 @@
+---
+- name: Rolling restart of Elasticsearch cluster - Non-Master nodes
+  hosts: elasticsearch_all:!elasticsearch_masters
+  become: yes
+  user: bret
+  serial: 1
+  gather_facts: no
+
+  vars:
+    elasticsearch_service: elasticsearch
+    elasticsearch_port: 9200
+    master_node: "{{ groups['elasticsearch_masters'][0] }}.lab.thewortmans.org"
+    es_username: "{{ elasticsearch_username | default('elastic') }}"
+    es_password: "{{ elasticsearch_password | default('changeme') }}"
+
+  pre_tasks:
+    - name: Test connectivity to master node
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: cluster_health
+      delegate_to: localhost
+      become: no
+      run_once: true
+      ignore_errors: true
+
+    - name: Debug cluster health response
+      debug:
+        var: cluster_health
+      run_once: true
+
+    - name: Fail if cluster health check failed to get valid response
+      fail:
+        msg: "Cluster health check failed: {{ cluster_health.msg | default('No response') }}"
+      when: cluster_health.failed or cluster_health.content is not defined
+      run_once: true
+
+    - name: Check cluster status is green before starting
+      assert:
+        that:
+          - cluster_health.json.status == 'green'
+        fail_msg: "Cluster is not green ({{ cluster_health.json.status }}), aborting restart"
+      run_once: true
+
+    - name: Disable shard allocation (via master node)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "primaries"
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+
+  tasks:
+    - name: Stop Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: stopped
+
+    - name: Start Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: started
+      register: es_start
+
+    - name: Wait for node to join cluster
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ elasticsearch_port }}"
+        timeout: 300
+
+    - name: Re-enable shard allocation (via master node)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": null
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+
+    - name: Wait for cluster to stabilize (via master node)
+      uri:
+        url: "https://{{ master_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: _result
+      retries: 100
+      delay: 10
+      until: _result.json.status == "green"
+      delegate_to: localhost
+      become: no
+      ignore_errors: false
+
+- name: Rolling restart of Elasticsearch cluster - Master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  serial: 1
+  user: bret
+  gather_facts: no
+
+  vars:
+    elasticsearch_service: elasticsearch
+    elasticsearch_port: 9200
+    nonmaster_node: "{{ (groups['elasticsearch_all'] | difference(groups['elasticsearch_masters']))[0] }}.lab.thewortmans.org"
+    es_username: "{{ elasticsearch_username | default('elastic') }}"
+    es_password: "{{ elasticsearch_password | default('changeme') }}"
+
+  pre_tasks:
+    - name: Test connectivity to non-master node
+      uri:
+        url: "https://{{ nonmaster_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: cluster_health
+      delegate_to: localhost
+      become: no
+      run_once: true
+      ignore_errors: true
+
+    - name: Debug cluster health response
+      debug:
+        var: cluster_health
+      run_once: true
+
+    - name: Fail if cluster health check failed to get valid response
+      fail:
+        msg: "Cluster health check failed: {{ cluster_health.msg | default('No response') }}"
+      when: cluster_health.failed or cluster_health.content is not defined
+      run_once: true
+
+    - name: Check cluster status before restarting masters
+      assert:
+        that:
+          - cluster_health.json.status != 'red'
+        fail_msg: "Cluster is in red status, aborting restart"
+      run_once: true
+
+    - name: Disable shard allocation (via non-master node)
+      uri:
+        url: "https://{{ nonmaster_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": "primaries"
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+
+  tasks:
+    - name: Stop Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: stopped
+
+    - name: Start Elasticsearch service
+      service:
+        name: "{{ elasticsearch_service }}"
+        state: started
+      register: es_start
+
+    - name: Wait for node to join cluster
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ elasticsearch_port }}"
+        timeout: 300
+
+    - name: Re-enable shard allocation (via non-master node)
+      uri:
+        url: "https://{{ nonmaster_node }}:{{ elasticsearch_port }}/_cluster/settings"
+        method: PUT
+        body_format: json
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        body: >
+          {
+            "persistent": {
+              "cluster.routing.allocation.enable": null
+            }
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      become: no
+
+    - name: Wait for cluster to stabilize (via non-master node)
+      uri:
+        url: "https://{{ nonmaster_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: _result
+      delegate_to: localhost
+      become: no
+      retries: 100
+      delay: 10
+      until: _result.json.status == "green"
+      ignore_errors: false
+
+  post_tasks:
+    - name: Verify final cluster health (via non-master node)
+      uri:
+        url: "https://{{ nonmaster_node }}:{{ elasticsearch_port }}/_cluster/health"
+        return_content: yes
+        url_username: "{{ es_username }}"
+        url_password: "{{ es_password }}"
+        status_code: 200
+        validate_certs: no
+      register: final_health
+      delegate_to: localhost
+      become: no
+      failed_when: final_health.json.status == 'red'
+      run_once: true
