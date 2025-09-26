@@ -26,7 +26,7 @@ services:
       - TZ=America/New_York
     volumes:
       - ./lidarr/config:/config
-      - music-storage:/data
+      - music-storage:/music
       - downloads-storage:/downloads
     ports:
       - "8686:8686"
