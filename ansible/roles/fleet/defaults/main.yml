@@ -1,0 +1,34 @@
+---
+# Fleet role defaults
+# Handles both Fleet Server and Elastic Agent configurations
+
+# Version settings
+fleet_agent_version: "{{ fleet_agent_version | default('9.1.3') }}"
+elastic_agent_version: "{{ elastic_agent_version | default('9.1.3') }}"
+
+# Service and path settings
+fleet_service_name: elastic-agent
+elastic_agent_service: elastic-agent
+fleet_data_dir: /opt/Elastic/Agent/data
+fleet_log_dir: /var/log/elastic-agent
+elastic_agent_binary_path: /opt/Elastic/Agent/elastic-agent
+
+# Fleet Server configuration (for fleet_server_setup action)
+# elasticsearch_hosts: []
+# fleet_service_token: ""
+# fleet_server_policy_id: ""
+# fleet_server_host: ""
+fleet_server_port: 8220
+
+# Elastic Agent configuration (for agent_install action)
+fleet_server_url: "https://fleet.lab.thewortmans.org:8220"
+enrollment_token: ""  # Must be provided via variables
+
+# Download settings for agent installation
+elastic_agent_download_url: "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz"
+elastic_agent_temp_dir: "/tmp/elastic-agent-{{ elastic_agent_version }}-linux-x86_64"
+
+# Installation flags
+elastic_agent_insecure: true
+elastic_agent_non_interactive: true
+elastic_agent_force: true

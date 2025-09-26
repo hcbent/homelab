@@ -1,0 +1,17 @@
+---
+# Service configuration tasks
+- name: Enable and start QEMU Guest Agent
+  systemd:
+    name: qemu-guest-agent
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Set timezone
+  timezone:
+    name: "{{ vm_timezone }}"
+
+- name: Verify QEMU Guest Agent is running
+  systemd:
+    name: qemu-guest-agent
+  register: qemu_status

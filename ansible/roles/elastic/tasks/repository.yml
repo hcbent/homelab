@@ -1,0 +1,21 @@
+---
+# Elasticsearch repository setup tasks
+- name: Download and install Elasticsearch GPG key
+  shell: wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o {{ elastic_gpg_key_path }}
+  args:
+    creates: "{{ elastic_gpg_key_path }}"
+
+- name: Install apt-transport-https
+  apt:
+    name: "{{ elastic_required_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Add Elasticsearch repository
+  lineinfile:
+    path: "{{ elastic_repo_path }}"
+    line: "{{ elastic_repo_line }}"
+    create: yes
+    owner: root
+    group: root
+    mode: '0644'

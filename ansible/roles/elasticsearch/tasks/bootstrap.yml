@@ -1,0 +1,23 @@
+---
+# Elasticsearch bootstrap tasks
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start Elasticsearch service
+  systemd:
+    name: "{{ elasticsearch_service_name }}.service"
+    enabled: yes
+    state: started
+
+- name: Generate enrollment token for new nodes
+  shell: /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
+  register: enrollment_token_result
+
+- name: Store enrollment token as fact
+  set_fact:
+    enrollment_token: "{{ enrollment_token_result.stdout }}"
+
+- name: Display enrollment token
+  debug:
+    msg: "Enrollment token: {{ enrollment_token }}"

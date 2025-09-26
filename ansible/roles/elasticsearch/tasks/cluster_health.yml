@@ -1,0 +1,26 @@
+---
+# Common cluster health check tasks
+- name: Test connectivity to query node
+  uri:
+    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cluster/health"
+    return_content: yes
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    status_code: 200
+    validate_certs: no
+  register: cluster_health
+  delegate_to: localhost
+  become: no
+  run_once: true
+  ignore_errors: true
+
+- name: Debug cluster health response
+  debug:
+    var: cluster_health
+  run_once: true
+
+- name: Fail if cluster health check failed to get valid response
+  fail:
+    msg: "Cluster health check failed: {{ cluster_health.msg | default('No response') }}"
+  when: cluster_health.failed or cluster_health.content is not defined
+  run_once: true

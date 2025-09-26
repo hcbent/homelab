@@ -1,0 +1,44 @@
+---
+# Enhanced QEMU Guest Agent installation tasks
+- name: Wait for system to be ready
+  wait_for_connection:
+    connect_timeout: 20
+    sleep: 5
+    delay: 5
+    timeout: 300
+
+- name: Update package cache (Ubuntu/Debian)
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install QEMU Guest Agent (Ubuntu/Debian)
+  apt:
+    name: qemu-guest-agent
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+  notify: restart qemu-guest-agent
+
+- name: Install QEMU Guest Agent (RedHat/CentOS/Rocky)
+  yum:
+    name: qemu-guest-agent
+    state: present
+  when: ansible_facts['os_family'] == "RedHat"
+  notify: restart qemu-guest-agent
+
+- name: Enable and start QEMU Guest Agent service
+  systemd:
+    name: qemu-guest-agent
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Verify QEMU Guest Agent is running
+  systemd:
+    name: qemu-guest-agent
+  register: qemu_agent_status
+
+- name: Display QEMU Guest Agent status
+  debug:
+    msg: "QEMU Guest Agent is {{ qemu_agent_status.status.ActiveState }}"

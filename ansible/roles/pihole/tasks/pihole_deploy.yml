@@ -1,0 +1,61 @@
+---
+# Pi-hole container deployment tasks
+- name: Create Pi-hole data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ pihole_directories }}"
+
+- name: Stop any existing Pi-hole container
+  docker_container:
+    name: "{{ pihole_container_name }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Deploy Pi-hole container
+  docker_container:
+    name: "{{ pihole_container_name }}"
+    image: "{{ pihole_image }}"
+    restart_policy: unless-stopped
+    network_mode: host
+    env:
+      TZ: "{{ pihole_timezone }}"
+      WEBPASSWORD: "{{ pihole_webpassword }}"
+      PIHOLE_DNS_: "{{ pihole_dns1 }};{{ pihole_dns2 }}"
+      DNSMASQ_LISTENING: "all"
+      INTERFACE: "{{ ansible_default_ipv4.interface }}"
+    volumes:
+      - "{{ pihole_base_dir }}/etc-pihole:/etc/pihole"
+      - "{{ pihole_base_dir }}/etc-dnsmasq.d:/etc/dnsmasq.d"
+    capabilities:
+      - NET_ADMIN
+
+- name: Wait for Pi-hole to be ready
+  wait_for:
+    port: 80
+    host: "{{ ansible_default_ipv4.address }}"
+    delay: 10
+    timeout: 60
+
+- name: Wait for DNS service to be ready
+  wait_for:
+    port: 53
+    host: "{{ ansible_default_ipv4.address }}"
+    delay: 5
+    timeout: 30
+
+- name: Test DNS resolution
+  shell: dig @{{ ansible_default_ipv4.address }} google.com
+  register: dns_test
+  ignore_errors: yes
+
+- name: Display Pi-hole access information
+  debug:
+    msg:
+      - "Pi-hole web interface: http://{{ ansible_default_ipv4.address }}/admin"
+      - "Password: {{ pihole_webpassword }}"
+      - "DNS server: {{ ansible_default_ipv4.address }}:53"
+      - "DNS test result: {{ 'PASSED' if dns_test.rc == 0 else 'FAILED' }}"

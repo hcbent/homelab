@@ -1,0 +1,14 @@
+---
+# Proxy role defaults
+proxy_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - software-properties-common
+  - apache2-utils
+  - docker.io
+  - docker-compose
+  - containerd
+
+proxy_docker_compose_source: ~/git/homelab/ansible/proxy-docker-compose.yml
+proxy_docker_compose_dest: /root/docker-compose.yml

@@ -1,0 +1,24 @@
+---
+# Fleet server configuration tasks
+- name: Install Fleet Server
+  shell: |
+    elastic-agent install \
+      --fleet-server-es={{ elasticsearch_hosts | join(',') }} \
+      --fleet-server-service-token={{ fleet_service_token }} \
+      --fleet-server-policy={{ fleet_server_policy_id }} \
+      --fleet-server-host={{ fleet_server_host }} \
+      --fleet-server-port={{ fleet_server_port }} \
+      --non-interactive \
+      --force
+  args:
+    creates: "{{ fleet_data_dir }}/elastic-agent.lock"
+  when:
+    - elasticsearch_hosts is defined
+    - fleet_service_token is defined
+    - fleet_server_policy_id is defined
+
+- name: Enable and start Elastic Agent service
+  systemd:
+    name: "{{ fleet_service_name }}"
+    state: started
+    enabled: yes

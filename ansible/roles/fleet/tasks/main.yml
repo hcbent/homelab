@@ -1,0 +1,17 @@
+---
+# Main task file for fleet role
+# Handles both Fleet Server setup and Elastic Agent installation
+
+# Fleet Server setup actions
+- name: Include Fleet Server installation
+  include_tasks: fleet_install.yml
+  when: fleet_action == 'fleet_server_setup'
+
+- name: Include Fleet Server configuration
+  include_tasks: fleet_configure.yml
+  when: fleet_action == 'fleet_server_setup'
+
+# Elastic Agent installation actions
+- name: Include Elastic Agent installation
+  include_tasks: agent_install.yml
+  when: fleet_action == 'agent_install'

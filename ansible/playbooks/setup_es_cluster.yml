@@ -1,0 +1,31 @@
+---
+- name: Install Elasticsearch on non-bootstrap nodes
+  hosts: elasticsearch_all:!{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0] }}
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: install
+
+  roles:
+    - elastic
+    - elasticsearch
+
+- name: Generate enrollment token on bootstrap node
+  hosts: "{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0] }}"
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: cluster_setup
+
+  roles:
+    - elasticsearch
+
+- name: Enroll non-bootstrap nodes to cluster
+  hosts: elasticsearch_all:!{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0] }}
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: enroll_nodes
+
+  roles:
+    - elasticsearch

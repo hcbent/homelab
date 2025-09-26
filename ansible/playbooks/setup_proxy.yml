@@ -1,0 +1,8 @@
+---
+- name: Setup proxy
+  hosts: proxy
+  become: true
+  gather_facts: false
+
+  roles:
+    - proxy

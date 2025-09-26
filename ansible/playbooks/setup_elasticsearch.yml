@@ -1,0 +1,121 @@
+---
+- name: Install Elasticsearch on all nodes
+  hosts: elasticsearch_all
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: install
+
+  roles:
+    - elastic
+    - elasticsearch
+
+- name: Configure and start bootstrap node
+  hosts: elasticsearch_bootstrap
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: bootstrap
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch nodes with all roles
+  hosts: elasticsearch_nodes
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch hot nodes
+  hosts: elasticsearch_hot
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch cold nodes
+  hosts: elasticsearch_cold
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch frozen nodes
+  hosts: elasticsearch_frozen
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch warm nodes
+  hosts: elasticsearch_warm
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch ingest nodes
+  hosts: elasticsearch_ingest
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch ml nodes
+  hosts: elasticsearch_ml
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch coordinating nodes
+  hosts: elasticsearch_coordinating
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
+
+- name: Configure elasticsearch transform nodes
+  hosts: elasticsearch_transform
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: configure_node
+
+  roles:
+    - elasticsearch
