@@ -1,0 +1,39 @@
+---
+# Shard allocation management tasks
+- name: Disable shard allocation
+  uri:
+    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cluster/settings"
+    method: PUT
+    body_format: json
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    body: >
+      {
+        "persistent": {
+          "cluster.routing.allocation.enable": "primaries"
+        }
+      }
+    status_code: 200
+    validate_certs: no
+  delegate_to: localhost
+  become: no
+  when: shard_allocation_action == 'disable'
+
+- name: Re-enable shard allocation
+  uri:
+    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cluster/settings"
+    method: PUT
+    body_format: json
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    body: >
+      {
+        "persistent": {
+          "cluster.routing.allocation.enable": null
+        }
+      }
+    status_code: 200
+    validate_certs: no
+  delegate_to: localhost
+  become: no
+  when: shard_allocation_action == 'enable'

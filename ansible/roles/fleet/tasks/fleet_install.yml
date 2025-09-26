@@ -1,0 +1,24 @@
+---
+# Fleet server installation tasks
+- name: Update package cache and install Elastic Agent
+  apt:
+    name: "elastic-agent={{ fleet_agent_version }}"
+    state: present
+    update_cache: yes
+
+- name: Create elastic-agent data directory
+  file:
+    path: "{{ fleet_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+    recurse: yes
+
+- name: Create elastic-agent log directory
+  file:
+    path: "{{ fleet_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'

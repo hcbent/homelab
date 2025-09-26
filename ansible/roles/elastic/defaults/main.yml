@@ -1,0 +1,10 @@
+---
+# Elastic stack common defaults
+elastic_version: "9.x"
+elastic_gpg_key_path: /usr/share/keyrings/elasticsearch-keyring.gpg
+elastic_repo_path: "/etc/apt/sources.list.d/elastic-{{ elastic_version }}.list"
+elastic_repo_line: "deb [signed-by={{ elastic_gpg_key_path }}] https://artifacts.elastic.co/packages/{{ elastic_version }}/apt stable main"
+
+# Required packages
+elastic_required_packages:
+  - apt-transport-https

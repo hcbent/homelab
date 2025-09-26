@@ -1,0 +1,7 @@
+---
+# Main task file for kibana role
+- name: Include Kibana installation
+  include_tasks: install.yml
+
+- name: Include Kibana configuration
+  include_tasks: configure.yml

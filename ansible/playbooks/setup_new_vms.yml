@@ -1,0 +1,15 @@
+---
+- name: Setup newly deployed VMs from Terraform
+  hosts: new_vms
+  become: yes
+  gather_facts: yes
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_host_key_checking: false
+    ansible_ssh_user: "{{ vm_user | default('ubuntu') }}"
+    vm_timezone: "{{ vm_timezone | default('America/New_York') }}"
+    enable_unattended_upgrades: true
+    proxmox_vm_action: new_vm_setup
+
+  roles:
+    - proxmox_vm

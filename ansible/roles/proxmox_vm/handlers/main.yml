@@ -1,0 +1,7 @@
+---
+# Proxmox VM handlers
+- name: restart qemu-guest-agent
+  systemd:
+    name: qemu-guest-agent
+    state: restarted
+    daemon_reload: yes

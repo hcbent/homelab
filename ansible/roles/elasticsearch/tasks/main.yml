@@ -1,0 +1,46 @@
+---
+# Main task file for comprehensive elasticsearch role
+# Handles installation, operations, and configuration
+
+# Installation actions
+- name: Include installation tasks
+  include_tasks: install.yml
+  when: elasticsearch_action in ['install', 'full_setup']
+
+- name: Include bootstrap tasks
+  include_tasks: bootstrap.yml
+  when: elasticsearch_action == 'bootstrap'
+
+- name: Include node configuration tasks
+  include_tasks: configure_node.yml
+  when: elasticsearch_action == 'configure_node'
+
+# Operational actions
+- name: Include cluster health checks
+  include_tasks: cluster_health.yml
+  when: elasticsearch_action in ['health_check', 'restart', 'upgrade']
+
+- name: Include shard allocation tasks
+  include_tasks: shard_allocation.yml
+  when: elasticsearch_action in ['restart', 'upgrade'] and shard_allocation_action is defined
+
+- name: Include service restart tasks
+  include_tasks: service_restart.yml
+  when: elasticsearch_action in ['restart', 'upgrade']
+
+- name: Include keystore management tasks
+  include_tasks: keystore.yml
+  when: elasticsearch_action == 'keystore'
+
+# Configuration actions
+- name: Include cluster fixup tasks
+  include_tasks: fixup_cluster.yml
+  when: elasticsearch_action == 'fixup_cluster'
+
+- name: Include cluster setup tasks
+  include_tasks: cluster_setup.yml
+  when: elasticsearch_action == 'cluster_setup'
+
+- name: Include node enrollment tasks
+  include_tasks: enroll_nodes.yml
+  when: elasticsearch_action == 'enroll_nodes'

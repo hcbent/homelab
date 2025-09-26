@@ -1,0 +1,10 @@
+---
+- name: Fix up Elasticsearch cluster configuration
+  hosts: elasticsearch_all
+  become: yes
+  gather_facts: no
+  vars:
+    elasticsearch_action: fixup_cluster
+
+  roles:
+    - elasticsearch

@@ -1,0 +1,25 @@
+---
+# Pi-hole role defaults
+pihole_webpassword: "***REMOVED***"
+pihole_dns1: "1.1.1.1"
+pihole_dns2: "8.8.8.8"
+pihole_timezone: "America/New_York"
+
+# Docker settings
+pihole_image: "pihole/pihole:latest"
+pihole_container_name: "pihole"
+docker_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - software-properties-common
+  - docker.io
+  - docker-compose
+  - containerd
+
+# Pi-hole directories
+pihole_base_dir: /opt/pihole
+pihole_directories:
+  - "{{ pihole_base_dir }}"
+  - "{{ pihole_base_dir }}/etc-pihole"
+  - "{{ pihole_base_dir }}/etc-dnsmasq.d"

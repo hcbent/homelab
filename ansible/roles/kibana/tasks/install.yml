@@ -1,0 +1,23 @@
+---
+# Kibana installation tasks
+- name: Update package cache and install Kibana
+  apt:
+    name: "kibana={{ kibana_version }}"
+    state: present
+    update_cache: yes
+
+- name: Create kibana data directory
+  file:
+    path: "{{ kibana_data_dir }}"
+    state: directory
+    owner: "{{ kibana_user }}"
+    group: "{{ kibana_group }}"
+    mode: '0755'
+
+- name: Create kibana log directory
+  file:
+    path: "{{ kibana_log_dir }}"
+    state: directory
+    owner: "{{ kibana_user }}"
+    group: "{{ kibana_group }}"
+    mode: '0755'

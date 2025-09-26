@@ -1,0 +1,14 @@
+---
+# Main task file for proxy role
+- name: Install packages
+  apt:
+    name: "{{ proxy_packages }}"
+    state: present
+
+- name: Copy docker compose file
+  copy:
+    src: "{{ proxy_docker_compose_source }}"
+    dest: "{{ proxy_docker_compose_dest }}"
+
+- name: Apply docker compose file
+  command: docker-compose -f {{ proxy_docker_compose_dest }} up -d

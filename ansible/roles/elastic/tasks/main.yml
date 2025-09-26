@@ -1,0 +1,5 @@
+---
+# Main task file for elastic_common role
+- name: Include repository setup
+  include_tasks: repository.yml
+  when: setup_elastic_repository | default(true)

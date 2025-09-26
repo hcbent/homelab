@@ -1,0 +1,20 @@
+---
+# Elasticsearch installation tasks
+- name: Update package cache and install Elasticsearch
+  apt:
+    name: elasticsearch
+    state: present
+    update_cache: yes
+
+- name: Set cluster.name in elasticsearch.yml
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?cluster\.name:'
+    line: "cluster.name: {{ elasticsearch_cluster_name }}"
+    backup: yes
+
+- name: Set network.host
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?network\.host:'
+    line: "network.host: {{ elasticsearch_network_host }}"

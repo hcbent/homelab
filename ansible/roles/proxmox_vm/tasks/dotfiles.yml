@@ -1,0 +1,76 @@
+---
+# Dotfiles and SSH key setup tasks
+- name: Test for dotfiles
+  ansible.builtin.stat:
+    path: "{{ dotfiles_path }}/.git"
+  register: file_check
+
+- name: Setup dotfiles and SSH keys for user bret
+  become_user: bret
+  block:
+    - name: Ensure .ssh directory exists
+      file:
+        path: ~/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: Clean up all old host keys from localhost known_hosts
+      shell: |
+        # Remove all variations of the hostname
+        ssh-keygen -R {{ inventory_hostname }} || true
+        ssh-keygen -R {{ ansible_host | default(inventory_hostname) }} || true
+        ssh-keygen -R {{ inventory_hostname.split('.')[0] }} || true
+        # Also remove any remaining entries that contain the hostname
+        sed -i.bak '/{{ inventory_hostname }}/d' ~/.ssh/known_hosts || true
+        sed -i.bak '/{{ inventory_hostname.split('.')[0] }}/d' ~/.ssh/known_hosts || true
+      delegate_to: localhost
+      connection: local
+      ignore_errors: yes
+
+    - name: Add current host key to localhost known_hosts
+      shell: ssh-keyscan -H {{ inventory_hostname }} >> ~/.ssh/known_hosts
+      delegate_to: localhost
+      connection: local
+
+    - name: Test SSH connection to ensure host key is accepted
+      shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ inventory_hostname }} 'echo "SSH connection test successful"'
+      delegate_to: localhost
+      connection: local
+      ignore_errors: yes
+
+    - name: Rsync SSH files from localhost
+      shell: rsync -av {{ local_ssh_path }}/{{ ssh_files_pattern }} {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
+      delegate_to: localhost
+      connection: local
+
+    - name: Create git directory
+      file:
+        path: ~/git
+        state: directory
+
+    - name: Clone dotfiles repository
+      git:
+        repo: "{{ dotfiles_repo }}"
+        dest: "{{ dotfiles_path }}"
+        clone: yes
+        update: yes
+
+    - name: Run linux setup script
+      shell: ./__setup/linux.sh
+      args:
+        chdir: "{{ dotfiles_path }}"
+      async: 1200
+      poll: 10
+
+    - name: Run setup script
+      shell: ./setup.sh
+      args:
+        chdir: "{{ dotfiles_path }}"
+  when: file_check.stat.exists == False and setup_dotfiles
+
+- name: Change shell to zsh
+  user:
+    name: "{{ ansible_user }}"
+    shell: "{{ default_shell }}"
+  retries: 3
+  delay: 5
