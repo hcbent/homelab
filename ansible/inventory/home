@@ -1,6 +1,7 @@
 [home_apps]
 plex
 docker
+lidarr
 
 [k8s_cp]
 kube01
