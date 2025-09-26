@@ -1,0 +1,7 @@
+# Non-sensitive global variables
+homelab_domain: "home.lab"
+timezone: "America/New_York"
+default_user: "bret"
+
+# Include encrypted secrets
+secrets: "{{ vault_secrets }}"

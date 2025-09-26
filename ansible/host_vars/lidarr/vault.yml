@@ -1,0 +1,10 @@
+# Host-specific encrypted secrets for lidarr
+vault_host_secrets:
+  lidarr:
+    api_key: "CHANGE_ME_LIDARR_API_KEY"
+    download_client_password: "CHANGE_ME_DOWNLOAD_PASSWORD"
+
+  # Host-specific database credentials if needed
+  local_db:
+    username: "lidarr_user"
+    password: "CHANGE_ME_LIDARR_DB_PASSWORD"
