@@ -1,0 +1,37 @@
+---
+# Elasticsearch node enrollment tasks
+- name: Get enrollment token from bootstrap node
+  set_fact:
+    enrollment_token: "{{ hostvars[bootstrap_node]['enrollment_token'] }}"
+
+- name: Reconfigure node with enrollment token
+  shell: /usr/share/elasticsearch/bin/elasticsearch-reconfigure-node --enrollment-token {{ enrollment_token }}
+  args:
+    creates: /etc/elasticsearch/certs
+
+- name: Set node.roles based on group membership
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?node\.roles:'
+    line: 'node.roles: {{ node_roles[item] | to_json }}'
+  when: item in group_names and node_roles[item] | length > 0
+  loop:
+    - elasticsearch_masters
+    - elasticsearch_hot
+    - elasticsearch_cold
+    - elasticsearch_frozen
+    - elasticsearch_warm
+    - elasticsearch_ingest
+    - elasticsearch_ml
+    - elasticsearch_coordinating
+    - elasticsearch_transform
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start Elasticsearch service
+  systemd:
+    name: elasticsearch.service
+    enabled: yes
+    state: started

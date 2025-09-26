@@ -1,0 +1,16 @@
+---
+# Kibana configuration tasks
+- name: Configure Kibana
+  template:
+    src: kibana.yml.j2
+    dest: "{{ kibana_config_path }}"
+    owner: root
+    group: "{{ kibana_group }}"
+    mode: '0660'
+  notify: restart kibana
+
+- name: Enable and start Kibana service
+  systemd:
+    name: kibana
+    state: started
+    enabled: yes

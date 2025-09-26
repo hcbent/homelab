@@ -1,0 +1,14 @@
+---
+# DNS configuration tasks
+- name: Stop and disable systemd-resolved to free port 53
+  systemd:
+    name: systemd-resolved
+    state: stopped
+    enabled: no
+
+- name: Configure manual DNS resolution
+  copy:
+    dest: /etc/resolv.conf
+    content: |
+      nameserver {{ pihole_dns1 }}
+      nameserver {{ pihole_dns2 }}

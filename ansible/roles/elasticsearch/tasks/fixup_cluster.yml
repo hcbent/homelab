@@ -1,0 +1,20 @@
+---
+# Elasticsearch cluster fixup tasks
+- name: Remove cluster.initial_master_nodes setting
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?cluster\.initial_master_nodes:'
+    state: absent
+    backup: yes
+
+- name: Remove any existing discovery.seed_nodes setting
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?discovery\.seed_nodes:'
+    state: absent
+
+- name: Add discovery.seed_nodes configuration
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    line: 'discovery.seed_nodes: {{ discovery_seed_nodes | to_json }}'
+    backup: yes

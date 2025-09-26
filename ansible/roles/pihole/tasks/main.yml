@@ -1,0 +1,10 @@
+---
+# Main task file for pihole role
+- name: Include Docker setup
+  include_tasks: docker_setup.yml
+
+- name: Include DNS configuration
+  include_tasks: dns_setup.yml
+
+- name: Include Pi-hole deployment
+  include_tasks: pihole_deploy.yml

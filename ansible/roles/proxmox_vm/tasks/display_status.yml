@@ -1,0 +1,9 @@
+---
+# Display setup completion status
+- name: Display setup completion status
+  debug:
+    msg:
+      - "VM {{ inventory_hostname }} setup complete!"
+      - "QEMU Guest Agent: {{ qemu_status.status.ActiveState }}"
+      - "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+      - "Kernel: {{ ansible_facts['kernel'] }}"

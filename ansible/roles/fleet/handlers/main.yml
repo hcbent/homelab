@@ -1,0 +1,13 @@
+---
+# Fleet handlers
+- name: restart fleet-server
+  systemd:
+    name: "{{ fleet_service_name }}"
+    state: restarted
+    enabled: yes
+
+- name: restart elastic-agent
+  systemd:
+    name: "{{ elastic_agent_service }}"
+    state: restarted
+    enabled: yes

@@ -1,0 +1,15 @@
+---
+- name: Install and configure QEMU Guest Agent on all VMs
+  hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_host_key_checking: false
+    install_qemu_agent: true
+    qemu_agent_enhanced: true
+    basic_host_setup: false
+    setup_dotfiles: false
+
+  roles:
+    - proxmox_vm

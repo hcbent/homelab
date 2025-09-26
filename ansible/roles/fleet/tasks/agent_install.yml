@@ -1,0 +1,26 @@
+---
+# Elastic Agent installation tasks
+- name: Verify enrollment token is provided
+  fail:
+    msg: "enrollment_token must be provided"
+  when: enrollment_token == ""
+
+- name: Download and install Elastic Agent
+  shell: |
+    curl -L -O {{ elastic_agent_download_url }}
+    tar xzvf elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
+    cd elastic-agent-{{ elastic_agent_version }}-linux-x86_64
+    ./elastic-agent install \
+      --url={{ fleet_server_url }} \
+      --enrollment-token={{ enrollment_token }} \
+      {{ '--insecure' if elastic_agent_insecure else '' }} \
+      {{ '--non-interactive' if elastic_agent_non_interactive else '' }} \
+      {{ '--force' if elastic_agent_force else '' }}
+  args:
+    creates: "{{ elastic_agent_binary_path }}"
+
+- name: Verify Elastic Agent service is running
+  systemd:
+    name: "{{ elastic_agent_service }}"
+    state: started
+    enabled: yes

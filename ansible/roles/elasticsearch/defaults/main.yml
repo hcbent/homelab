@@ -1,0 +1,42 @@
+---
+# Comprehensive Elasticsearch role defaults
+elasticsearch_service: elasticsearch
+elasticsearch_service_name: elasticsearch
+elasticsearch_port: 9200
+elasticsearch_version: "9.1.4"
+elasticsearch_config_path: /etc/elasticsearch/elasticsearch.yml
+elasticsearch_cluster_name: "{{ cluster_name | default('elasticsearch') }}"
+elasticsearch_network_host: "0.0.0.0"
+es_username: "{{ elasticsearch_username | default('elastic') }}"
+es_password: "{{ elasticsearch_password | default('changeme') }}"
+
+# Domain suffix for nodes
+domain_suffix: lab.thewortmans.org
+
+# Cluster health timeouts and retries
+health_check_retries: 100
+health_check_delay: 10
+node_startup_timeout: 300
+
+# Node role configurations
+node_roles:
+  elasticsearch_bootstrap: []  # Default roles for bootstrap node
+  elasticsearch_nodes: []      # Default roles for general nodes
+  elasticsearch_masters: ["master", "remote_cluster_client"]
+  elasticsearch_hot: ["data_hot", "data_content"]
+  elasticsearch_cold: ["data_cold"]
+  elasticsearch_frozen: ["data_frozen"]
+  elasticsearch_warm: ["data_warm"]
+  elasticsearch_ingest: ["ingest"]
+  elasticsearch_ml: ["ml"]
+  elasticsearch_coordinating: ["remote_cluster_client"]
+  elasticsearch_transform: ["transform"]
+
+# Discovery settings
+discovery_seed_nodes:
+  - "192.168.10.31:9300"
+  - "192.168.10.32:9300"
+  - "192.168.10.33:9300"
+
+# Bootstrap node for cluster operations
+bootstrap_node: "{{ bootstrap_node | default(groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0]) }}"
