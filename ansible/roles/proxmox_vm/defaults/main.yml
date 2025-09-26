@@ -1,0 +1,45 @@
+---
+# Proxmox VM role defaults
+
+# Basic host setup packages
+basic_packages:
+  - git
+  - python3-pip
+  - zsh
+
+# Essential packages for new VMs (more comprehensive)
+essential_packages:
+  - qemu-guest-agent
+  - curl
+  - wget
+  - vim
+  - htop
+  - net-tools
+  - software-properties-common
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+
+# Dotfiles configuration
+dotfiles_repo: git@github.com:wortmanb/dotfiles.git
+dotfiles_path: ~/git/dotfiles
+default_shell: /usr/bin/zsh
+
+# SSH and dotfiles sync settings
+local_ssh_path: /Users/bret/.ssh
+ssh_files_pattern: "github* config known_hosts"
+setup_dotfiles: true
+
+# New VM setup defaults
+vm_user: ubuntu
+vm_timezone: "America/New_York"
+
+# SSH and connection settings for new VMs
+vm_ssh_timeout: 600
+vm_connect_timeout: 30
+vm_connect_delay: 10
+vm_connect_sleep: 5
+
+# Security updates configuration
+enable_unattended_upgrades: true

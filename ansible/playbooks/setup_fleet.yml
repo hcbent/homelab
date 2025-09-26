@@ -1,0 +1,11 @@
+---
+- name: Install and configure Fleet Server
+  hosts: fleet
+  become: yes
+  gather_facts: yes
+  vars:
+    fleet_action: fleet_server_setup
+
+  roles:
+    - elastic
+    - fleet

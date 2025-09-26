@@ -1,0 +1,11 @@
+---
+# Basic host setup tasks
+- name: Update and upgrade apt packages
+  apt:
+    update_cache: true
+    upgrade: dist
+
+- name: Install basic packages
+  apt:
+    name: "{{ basic_packages }}"
+    state: present

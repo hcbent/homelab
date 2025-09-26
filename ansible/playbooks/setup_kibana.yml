@@ -1,0 +1,9 @@
+---
+- name: Install and configure Kibana
+  hosts: kibana_nodes
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - elastic
+    - kibana

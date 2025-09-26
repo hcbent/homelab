@@ -1,0 +1,107 @@
+---
+- name: Rolling restart of Elasticsearch cluster - Non-Master nodes
+  hosts: elasticsearch_all:!elasticsearch_masters
+  become: yes
+  user: bret
+  serial: 1
+  gather_facts: no
+  vars:
+    elasticsearch_action: restart
+    query_node: "{{ groups['elasticsearch_masters'][0] }}.{{ domain_suffix }}"
+    required_cluster_status: green
+
+  pre_tasks:
+    - name: Check cluster status is green before starting
+      include_role:
+        name: elasticsearch
+        tasks_from: cluster_health
+      vars:
+        elasticsearch_action: health_check
+
+    - name: Check cluster status is green before starting
+      assert:
+        that:
+          - cluster_health.json.status == 'green'
+        fail_msg: "Cluster is not green ({{ cluster_health.json.status }}), aborting restart"
+      run_once: true
+
+    - name: Disable shard allocation
+      include_role:
+        name: elasticsearch
+        tasks_from: shard_allocation
+      vars:
+        shard_allocation_action: disable
+
+  tasks:
+    - name: Restart Elasticsearch service and verify
+      include_role:
+        name: elasticsearch
+        tasks_from: service_restart
+
+    - name: Re-enable shard allocation
+      include_role:
+        name: elasticsearch
+        tasks_from: shard_allocation
+      vars:
+        shard_allocation_action: enable
+
+- name: Rolling restart of Elasticsearch cluster - Master nodes
+  hosts: elasticsearch_masters
+  become: yes
+  serial: 1
+  user: bret
+  gather_facts: no
+  vars:
+    elasticsearch_action: restart
+    query_node: "{{ (groups['elasticsearch_all'] | difference(groups['elasticsearch_masters']))[0] }}.{{ domain_suffix }}"
+    required_cluster_status: green
+
+  pre_tasks:
+    - name: Check cluster health before restarting masters
+      include_role:
+        name: elasticsearch
+        tasks_from: cluster_health
+      vars:
+        elasticsearch_action: health_check
+
+    - name: Check cluster status before restarting masters
+      assert:
+        that:
+          - cluster_health.json.status != 'red'
+        fail_msg: "Cluster is in red status, aborting restart"
+      run_once: true
+
+    - name: Disable shard allocation
+      include_role:
+        name: elasticsearch
+        tasks_from: shard_allocation
+      vars:
+        shard_allocation_action: disable
+
+  tasks:
+    - name: Restart Elasticsearch service and verify
+      include_role:
+        name: elasticsearch
+        tasks_from: service_restart
+
+    - name: Re-enable shard allocation
+      include_role:
+        name: elasticsearch
+        tasks_from: shard_allocation
+      vars:
+        shard_allocation_action: enable
+
+  post_tasks:
+    - name: Verify final cluster health
+      include_role:
+        name: elasticsearch
+        tasks_from: cluster_health
+      vars:
+        elasticsearch_action: health_check
+      run_once: true
+
+    - name: Ensure cluster is not red
+      fail:
+        msg: "Final cluster status is red"
+      when: cluster_health.json.status == 'red'
+      run_once: true

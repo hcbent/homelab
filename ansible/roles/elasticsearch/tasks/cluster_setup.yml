@@ -1,0 +1,16 @@
+---
+# Elasticsearch cluster setup tasks (for setup_es_cluster.yml functionality)
+- name: Generate enrollment token on bootstrap node
+  shell: /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
+  register: enrollment_token_result
+  when: inventory_hostname == bootstrap_node
+
+- name: Store enrollment token as fact
+  set_fact:
+    enrollment_token: "{{ enrollment_token_result.stdout }}"
+  when: inventory_hostname == bootstrap_node
+
+- name: Display enrollment token
+  debug:
+    msg: "Enrollment token: {{ enrollment_token }}"
+  when: inventory_hostname == bootstrap_node
