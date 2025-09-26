@@ -17,16 +17,30 @@ variable "pm_tls_insecure" {
     default = true
 }
 
+variable "vault_address" {
+  description = "Vault server address"
+  type        = string
+  default     = "http://localhost:8200"
+}
+
+variable "vault_token" {
+  description = "Vault authentication token"
+  type        = string
+  sensitive   = true
+}
+
 variable "pm_user" {
-    description = "Proxmox username"
+    description = "Proxmox username (retrieved from Vault)"
     type = string
     sensitive = true
+    default = ""
 }
 
 variable "pm_password" {
-    description = "Proxmox password"
+    description = "Proxmox password (retrieved from Vault)"
     type = string
     sensitive = true
+    default = ""
 }
 
 variable "vms" {
