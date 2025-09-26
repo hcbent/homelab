@@ -1,0 +1,24 @@
+# Ansible Vault password file
+.vault_pass
+
+# Unencrypted vault files (these should be encrypted before committing)
+**/vault.yml.unencrypted
+**/secrets.yml.unencrypted
+
+# Ansible retry files
+*.retry
+
+# Temporary files
+.ansible/
+
+# Local environment files
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
