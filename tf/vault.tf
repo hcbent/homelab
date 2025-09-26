@@ -1,11 +1,23 @@
-# vault.tf - temporarily commented out
+terraform {
+  required_providers {
+    vault = {
+      source  = "hashicorp/vault"
+      version = "~> 4.0"
+    }
+  }
+}
 
-# # Retrieve PM_USER from Vault
-# data "vault_generic_secret" "pm_user" {
-#   path = "secret/pm_user"
-# }
+provider "vault" {
+  address = var.vault_address
+  token   = var.vault_token
+}
 
-# # Retrieve PM_PASS from Vault
-# data "vault_generic_secret" "pm_pass" {
-#   path = "secret/pm_pass"
-# }
+data "vault_kv_secret_v2" "proxmox_credentials" {
+  mount = "secret"
+  name  = "proxmox"
+}
+
+data "vault_kv_secret_v2" "vm_credentials" {
+  mount = "secret"
+  name  = "vm-defaults"
+}
