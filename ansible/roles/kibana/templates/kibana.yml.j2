@@ -1,0 +1,28 @@
+# Kibana configuration file
+# Managed by Ansible - DO NOT EDIT MANUALLY
+# This is a fallback configuration if enrollment token setup fails
+
+# Server configuration
+server.host: "0.0.0.0"
+server.port: 5601
+server.name: "{{ ansible_hostname }}"
+
+# Elasticsearch configuration (localhost since on same host)
+elasticsearch.hosts: ["http://localhost:9200"]
+
+# Logging
+logging:
+  appenders:
+    file:
+      type: file
+      fileName: {{ kibana_log_dir }}/kibana.log
+      layout:
+        type: json
+  root:
+    appenders:
+      - default
+      - file
+    level: info
+
+# Data paths
+path.data: {{ kibana_data_dir }}

@@ -1,6 +1,35 @@
 ---
 # Kibana configuration tasks
-- name: Configure Kibana
+
+- name: Check if Kibana is already configured
+  stat:
+    path: "{{ kibana_config_path }}"
+  register: kibana_config_stat
+
+- name: Generate Kibana enrollment token from Elasticsearch
+  command: /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s kibana
+  register: kibana_enrollment_token
+  when: not kibana_config_stat.stat.exists
+  become: yes
+
+- name: Configure Kibana with enrollment token
+  shell: |
+    echo "{{ kibana_enrollment_token.stdout }}" | /usr/share/kibana/bin/kibana-setup --enrollment-token
+  when:
+    - not kibana_config_stat.stat.exists
+    - kibana_enrollment_token is defined
+    - kibana_enrollment_token.stdout is defined
+  become: yes
+
+- name: Ensure Kibana config directory exists
+  file:
+    path: /etc/kibana
+    state: directory
+    owner: root
+    group: "{{ kibana_group }}"
+    mode: '0755'
+
+- name: Configure Kibana (fallback if enrollment fails)
   template:
     src: kibana.yml.j2
     dest: "{{ kibana_config_path }}"
@@ -8,6 +37,7 @@
     group: "{{ kibana_group }}"
     mode: '0660'
   notify: restart kibana
+  when: kibana_config_stat.stat.exists or (kibana_enrollment_token is not defined or kibana_enrollment_token.stdout is not defined)
 
 - name: Enable and start Kibana service
   systemd:
