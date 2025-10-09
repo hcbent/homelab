@@ -28,6 +28,7 @@ services:
       - ./lidarr/config:/config
       - music-storage:/music
       - downloads-storage:/downloads
+      - media-storage:/data
     ports:
       - "8686:8686"
     restart: unless-stopped
