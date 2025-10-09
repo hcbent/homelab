@@ -1,0 +1,16 @@
+---
+# Wait for cluster to turn green
+- name: Wait for cluster to turn green
+  uri:
+    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cluster/health"
+    return_content: yes
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    status_code: 200
+    validate_certs: no
+  register: cluster_status
+  retries: 120
+  delay: 10
+  until: cluster_status.json.status == 'green'
+  delegate_to: localhost
+  become: no
