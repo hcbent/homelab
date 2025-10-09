@@ -16,19 +16,3 @@
     host: "{{ inventory_hostname }}"
     port: "{{ elasticsearch_port }}"
     timeout: "{{ node_startup_timeout }}"
-
-- name: Wait for cluster to stabilize
-  uri:
-    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cluster/health"
-    return_content: yes
-    url_username: "{{ es_username }}"
-    url_password: "{{ es_password }}"
-    status_code: 200
-    validate_certs: no
-  register: _result
-  retries: "{{ health_check_retries }}"
-  delay: "{{ health_check_delay }}"
-  until: _result.json.status == required_cluster_status
-  delegate_to: localhost
-  become: no
-  ignore_errors: false
