@@ -25,6 +25,7 @@
         fail_msg: "Cluster is not green ({{ cluster_health.json.status }}), aborting restart"
       run_once: true
 
+  tasks:
     - name: Disable shard allocation
       include_role:
         name: elasticsearch
@@ -32,11 +33,20 @@
       vars:
         shard_allocation_action: disable
 
-  tasks:
-    - name: Restart Elasticsearch service and verify
+    - name: Stop Elasticsearch service
+      service:
+        name: elasticsearch
+        state: stopped
+
+    - name: Start Elasticsearch service
+      service:
+        name: elasticsearch
+        state: started
+
+    - name: Wait for node to rejoin cluster
       include_role:
         name: elasticsearch
-        tasks_from: service_restart
+        tasks_from: wait_for_node_rejoin
 
     - name: Re-enable shard allocation
       include_role:
@@ -44,6 +54,11 @@
         tasks_from: shard_allocation
       vars:
         shard_allocation_action: enable
+
+    - name: Wait for cluster to turn green
+      include_role:
+        name: elasticsearch
+        tasks_from: wait_for_green
 
 - name: Rolling restart of Elasticsearch cluster - Master nodes
   hosts: elasticsearch_masters
@@ -71,6 +86,7 @@
         fail_msg: "Cluster is in red status, aborting restart"
       run_once: true
 
+  tasks:
     - name: Disable shard allocation
       include_role:
         name: elasticsearch
@@ -78,11 +94,20 @@
       vars:
         shard_allocation_action: disable
 
-  tasks:
-    - name: Restart Elasticsearch service and verify
+    - name: Stop Elasticsearch service
+      service:
+        name: elasticsearch
+        state: stopped
+
+    - name: Start Elasticsearch service
+      service:
+        name: elasticsearch
+        state: started
+
+    - name: Wait for node to rejoin cluster
       include_role:
         name: elasticsearch
-        tasks_from: service_restart
+        tasks_from: wait_for_node_rejoin
 
     - name: Re-enable shard allocation
       include_role:
@@ -90,6 +115,11 @@
         tasks_from: shard_allocation
       vars:
         shard_allocation_action: enable
+
+    - name: Wait for cluster to turn green
+      include_role:
+        name: elasticsearch
+        tasks_from: wait_for_green
 
   post_tasks:
     - name: Verify final cluster health
