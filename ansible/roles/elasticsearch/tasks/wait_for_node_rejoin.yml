@@ -1,0 +1,16 @@
+---
+# Wait for a specific node to rejoin the cluster by checking _cat/nodes
+- name: Wait for node {{ inventory_hostname }} to rejoin cluster
+  uri:
+    url: "https://{{ query_node }}:{{ elasticsearch_port }}/_cat/nodes?format=json"
+    return_content: yes
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    status_code: 200
+    validate_certs: no
+  register: nodes_list
+  retries: 60
+  delay: 10
+  until: nodes_list.json | selectattr('name', 'equalto', inventory_hostname) | list | length > 0
+  delegate_to: localhost
+  become: no
