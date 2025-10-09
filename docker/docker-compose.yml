@@ -17,27 +17,6 @@ services:
     networks:
       - media-net
 
-  lidarr:
-    image: lscr.io/linuxserver/lidarr:latest
-    container_name: lidarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-    volumes:
-      - ./lidarr/config:/config
-      - music-storage:/music
-      - downloads-storage:/downloads
-      - media-storage:/data
-    ports:
-      - "8686:8686"
-    restart: unless-stopped
-    depends_on:
-      - qbittorrent
-      - jackett
-    networks:
-      - media-net
-
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
@@ -146,13 +125,6 @@ volumes:
       type: nfs
       o: addr=192.168.1.230,rw,nfsvers=4
       device: ":/volume1/video/downloads"
-  music-storage:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=192.168.1.230,rw,nfsvers=4
-      device: ":/volume1/music"
-
 networks:
   media-net:
     driver: bridge
