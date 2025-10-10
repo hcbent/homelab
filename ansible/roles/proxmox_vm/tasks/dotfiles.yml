@@ -27,10 +27,10 @@
       connection: local
       ignore_errors: yes
 
-    - name: Add current host key to localhost known_hosts
-      shell: ssh-keyscan -H {{ inventory_hostname }} >> ~/.ssh/known_hosts
-      delegate_to: localhost
-      connection: local
+    # - name: Add current host key to localhost known_hosts
+    #   shell: ssh-keyscan -H {{ inventory_hostname }} >> ~/.ssh/known_hosts
+    #   delegate_to: localhost
+    #   connection: local
 
     - name: Test SSH connection to ensure host key is accepted
       shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ inventory_hostname }} 'echo "SSH connection test successful"'

@@ -1,6 +1,8 @@
 ---
 # Elastic stack common defaults
-elastic_version: "9.x"
+# Automatically derive the repository version (8.x or 9.x) from elasticsearch_version
+# Falls back to kibana_version if elasticsearch_version is not defined
+elastic_version: "{{ (elasticsearch_version | default(kibana_version | default('9.1.4'))).split('.')[0] }}.x"
 elastic_gpg_key_path: /usr/share/keyrings/elasticsearch-keyring.gpg
 elastic_repo_path: "/etc/apt/sources.list.d/elastic-{{ elastic_version }}.list"
 elastic_repo_line: "deb [signed-by={{ elastic_gpg_key_path }}] https://artifacts.elastic.co/packages/{{ elastic_version }}/apt stable main"
