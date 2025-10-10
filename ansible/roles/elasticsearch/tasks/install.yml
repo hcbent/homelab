@@ -2,7 +2,7 @@
 # Elasticsearch installation tasks
 - name: Update package cache and install Elasticsearch
   apt:
-    name: elasticsearch
+    name: "elasticsearch={{ elasticsearch_version }}"
     state: present
     update_cache: yes
 
