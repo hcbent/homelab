@@ -39,4 +39,4 @@ discovery_seed_nodes:
   - "192.168.10.33:9300"
 
 # Bootstrap node for cluster operations
-bootstrap_node: "{{ bootstrap_node | default(groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0]) }}"
+bootstrap_node: "{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0] }}"
