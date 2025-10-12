@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  cerebro:
+    image: lmenezes/cerebro:latest
+    container_name: cerebro
+    environment:
+      - CEREBRO_PORT=9000
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./cerebro/config:/opt/cerebro/conf
+      - ./cerebro/logs:/opt/cerebro/logs
+    restart: unless-stopped
+    networks:
+      - elastic-net
+
+networks:
+  elastic-net:
+    driver: bridge
