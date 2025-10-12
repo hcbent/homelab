@@ -46,3 +46,9 @@ k8s/.llm-app.yaml.swp
 ELASTIC_PASSWORD
 MONITORING_PASSWORD
 cchs:ELASTIC_PASSWORD
+docker/jackett/config/Jackett
+docker/lidarr/config
+docker/qbittorrent/config
+docker/radarr/config
+docker/sonarr/config
+docker/unpackerr/config
