@@ -9,6 +9,8 @@ resource "proxmox_vm_qemu" "vm" {
   bios        = "seabios"
   scsihw      = "virtio-scsi-pci"
   tags        = var.tags
+  onboot      = var.onboot
+  startup     = var.startup
 
   cpu {
     cores   = var.cores
