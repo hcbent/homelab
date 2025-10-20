@@ -108,3 +108,15 @@ variable "tags" {
     type = string
     default = null
 }
+
+variable "onboot" {
+    description = "Whether to start the VM on boot"
+    type = bool
+    default = true
+}
+
+variable "startup" {
+    description = "Startup order and delay for the VM"
+    type = string
+    default = null
+}

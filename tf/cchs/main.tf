@@ -18,6 +18,11 @@ module "cchs_vms" {
   network_bridge = var.vms[count.index].network_bridge
   ipconfig0      = var.vms[count.index].ipconfig0
 
+  # VM behavior and metadata
+  tags           = var.vms[count.index].tags
+  startup        = var.vms[count.index].startup
+  onboot         = var.vms[count.index].onboot
+
   # Cloud-init user configuration
   ciuser         = var.ciuser
   cipassword     = var.cipassword
