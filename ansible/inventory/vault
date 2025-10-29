@@ -1,0 +1,8 @@
+# Vault inventory
+# Standalone Vault server for secret management
+
+[vault]
+vault ansible_host=192.168.10.41 ansible_user=bret
+
+[vault:vars]
+ansible_python_interpreter=/usr/bin/python3
