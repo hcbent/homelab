@@ -1,0 +1,76 @@
+# Vault Configuration
+
+## SECURITY NOTICE
+
+**DO NOT COMMIT VAULT UNSEAL KEYS OR ROOT TOKENS TO GIT**
+
+This file is a template showing the structure of Vault initialization data.
+The actual keys and tokens should be stored securely outside of version control.
+
+## Initialization Process
+
+After deploying Vault, you need to initialize it:
+
+```bash
+# Initialize Vault (creates unseal keys and root token)
+kubectl exec -n vault vault-0 -- vault operator init
+
+# The output will contain:
+# - 5 Unseal Keys (you need 3 to unseal)
+# - 1 Initial Root Token
+
+# IMPORTANT: Store these securely!
+# - Use a password manager (1Password, Bitwarden, etc.)
+# - Use a secrets management system (encrypted file, hardware security key)
+# - NEVER commit these to version control
+```
+
+## Unsealing Vault
+
+```bash
+# Unseal Vault (requires 3 of 5 keys)
+kubectl exec -n vault vault-0 -- vault operator unseal <UNSEAL_KEY_1>
+kubectl exec -n vault vault-0 -- vault operator unseal <UNSEAL_KEY_2>
+kubectl exec -n vault vault-0 -- vault operator unseal <UNSEAL_KEY_3>
+```
+
+## Accessing Vault
+
+```bash
+# Login with root token
+kubectl exec -n vault vault-0 -- vault login <ROOT_TOKEN>
+
+# Or access via UI
+# https://vault.lab.thewortmans.org
+```
+
+## Auto-Unseal Configuration (Recommended)
+
+For production use, configure auto-unseal using one of these methods:
+- Cloud KMS (AWS KMS, GCP KMS, Azure Key Vault)
+- Transit seal using another Vault instance
+- HSM/PKCS11
+
+See: https://developer.hashicorp.com/vault/docs/concepts/seal
+
+## Secret Storage Locations
+
+Vault secrets for this homelab are stored at:
+- `secret/homelab/freenas` - TrueNAS/FreeNAS credentials
+- `secret/homelab/elasticsearch` - Elasticsearch passwords
+- `secret/homelab/apps/*` - Application-specific secrets
+
+## Backup and Recovery
+
+1. **Backup unseal keys**: Store in secure, redundant locations
+2. **Backup Vault data**: Regular snapshots of the storage backend
+3. **Test recovery procedures**: Regularly verify you can restore from backups
+
+## Security Best Practices
+
+1. **Never commit secrets to Git**
+2. **Rotate root token** after initial setup
+3. **Use AppRole or Kubernetes auth** instead of root token
+4. **Enable audit logging**
+5. **Implement least-privilege policies**
+6. **Regular key rotation**
