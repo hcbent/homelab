@@ -1,0 +1,113 @@
+---
+# Example Ansible playbook using Vault integration
+# This demonstrates how to retrieve secrets from HashiCorp Vault
+
+- name: Example Vault Integration
+  hosts: localhost
+  gather_facts: no
+
+  # Set environment variables for Vault authentication
+  environment:
+    VAULT_ADDR: "https://vault.lab.thewortmans.org:8200"
+    VAULT_TOKEN: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    VAULT_SKIP_VERIFY: "true"
+
+  tasks:
+    - name: Install hvac Python library (required for Vault)
+      pip:
+        name: hvac
+        state: present
+      delegate_to: localhost
+      run_once: true
+
+    # Method 1: Using hvac library directly (recommended)
+    - name: Read FreeNAS credentials from Vault
+      set_fact:
+        freenas_api_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/homelab/freenas/credentials:api_key') }}"
+        freenas_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/homelab/freenas/credentials:root_password') }}"
+      no_log: true
+
+    # Method 2: Using URI module to call Vault API
+    - name: Read secret via Vault API
+      uri:
+        url: "https://vault.lab.thewortmans.org:8200/v1/secret/data/homelab/freenas/credentials"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+        validate_certs: no
+        return_content: yes
+      register: vault_response
+      no_log: true
+
+    - name: Extract credentials from API response
+      set_fact:
+        api_key_from_api: "{{ vault_response.json.data.data.api_key }}"
+      no_log: true
+
+    # Method 3: Using shell with vault CLI
+    - name: Read secret using vault CLI
+      shell: |
+        export VAULT_ADDR=https://vault.lab.thewortmans.org:8200
+        export VAULT_SKIP_VERIFY=true
+        vault kv get -field=api_key secret/homelab/freenas/credentials
+      register: api_key_cli
+      no_log: true
+      changed_when: false
+
+    - name: Display (non-sensitive) confirmation
+      debug:
+        msg: "Successfully retrieved credentials from Vault"
+
+---
+# Real-world example: Using Vault secrets in deployment
+- name: Deploy application with Vault secrets
+  hosts: all
+  become: true
+
+  environment:
+    VAULT_ADDR: "https://vault.lab.thewortmans.org:8200"
+    VAULT_TOKEN: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    VAULT_SKIP_VERIFY: "true"
+
+  vars:
+    # Retrieve secrets from Vault
+    elasticsearch_password: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/homelab/elasticsearch/passwords:elastic_password') }}"
+    plex_claim_token: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/homelab/apps/plex:claim_token') }}"
+
+  tasks:
+    - name: Configure application with secret
+      template:
+        src: app-config.j2
+        dest: /etc/app/config.yml
+        mode: '0600'
+      no_log: true
+
+---
+# Example: Authenticate to Vault using userpass
+- name: Authenticate to Vault with userpass
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Login to Vault with userpass
+      uri:
+        url: "https://vault.lab.thewortmans.org:8200/v1/auth/userpass/login/ansible"
+        method: POST
+        body_format: json
+        body:
+          password: "{{ ansible_vault_password }}"
+        validate_certs: no
+        return_content: yes
+      register: vault_login
+      no_log: true
+
+    - name: Set Vault token for subsequent tasks
+      set_fact:
+        vault_token: "{{ vault_login.json.auth.client_token }}"
+      no_log: true
+
+    - name: Export token for use in other plays
+      set_fact:
+        cacheable: yes
+        vault_auth_token: "{{ vault_token }}"
+      no_log: true
