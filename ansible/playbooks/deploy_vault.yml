@@ -1,0 +1,203 @@
+---
+# Ansible playbook to deploy HashiCorp Vault on a standalone VM
+# This installs Vault as a systemd service with file storage backend
+
+- name: Deploy HashiCorp Vault
+  hosts: vault
+  become: true
+  vars:
+    vault_version: "1.18.3"
+    vault_user: "vault"
+    vault_group: "vault"
+    vault_install_dir: "/opt/vault"
+    vault_config_dir: "/etc/vault.d"
+    vault_data_dir: "/var/lib/vault"
+    vault_log_dir: "/var/log/vault"
+    vault_tls_dir: "/etc/vault.d/tls"
+    vault_address: "0.0.0.0:8200"
+    vault_cluster_address: "0.0.0.0:8201"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - unzip
+          - curl
+          - jq
+          - openssl
+        state: present
+
+    - name: Create Vault user
+      user:
+        name: "{{ vault_user }}"
+        system: yes
+        shell: /bin/false
+        home: "{{ vault_data_dir }}"
+        create_home: no
+
+    - name: Create Vault directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0755'
+      loop:
+        - "{{ vault_install_dir }}"
+        - "{{ vault_config_dir }}"
+        - "{{ vault_data_dir }}"
+        - "{{ vault_log_dir }}"
+        - "{{ vault_tls_dir }}"
+
+    - name: Download Vault binary
+      get_url:
+        url: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+        dest: "/tmp/vault_{{ vault_version }}_linux_amd64.zip"
+        mode: '0644'
+
+    - name: Unzip Vault binary
+      unarchive:
+        src: "/tmp/vault_{{ vault_version }}_linux_amd64.zip"
+        dest: "{{ vault_install_dir }}"
+        remote_src: yes
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0755'
+
+    - name: Create symlink to Vault binary
+      file:
+        src: "{{ vault_install_dir }}/vault"
+        dest: /usr/local/bin/vault
+        state: link
+
+    - name: Generate self-signed TLS certificate
+      command: >
+        openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509
+        -subj "/C=US/ST=State/L=City/O=Homelab/CN=vault.lab.thewortmans.org"
+        -keyout {{ vault_tls_dir }}/vault-key.pem
+        -out {{ vault_tls_dir }}/vault-cert.pem
+      args:
+        creates: "{{ vault_tls_dir }}/vault-cert.pem"
+
+    - name: Set TLS certificate permissions
+      file:
+        path: "{{ item }}"
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0600'
+      loop:
+        - "{{ vault_tls_dir }}/vault-key.pem"
+        - "{{ vault_tls_dir }}/vault-cert.pem"
+
+    - name: Create Vault configuration file
+      copy:
+        content: |
+          # Vault configuration file
+          # Storage backend - using file storage for simplicity
+          storage "file" {
+            path = "{{ vault_data_dir }}"
+          }
+
+          # Listener configuration
+          listener "tcp" {
+            address       = "{{ vault_address }}"
+            tls_cert_file = "{{ vault_tls_dir }}/vault-cert.pem"
+            tls_key_file  = "{{ vault_tls_dir }}/vault-key.pem"
+          }
+
+          # API address
+          api_addr = "https://vault.lab.thewortmans.org:8200"
+          cluster_addr = "https://{{ ansible_default_ipv4.address }}:8201"
+
+          # UI
+          ui = true
+
+          # Disable mlock for development (remove in production)
+          disable_mlock = true
+
+          # Log level
+          log_level = "info"
+        dest: "{{ vault_config_dir }}/vault.hcl"
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0640'
+
+    - name: Create Vault systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=HashiCorp Vault
+          Documentation=https://www.vaultproject.io/docs/
+          After=network-online.target
+          Wants=network-online.target
+          ConditionFileNotEmpty={{ vault_config_dir }}/vault.hcl
+
+          [Service]
+          Type=notify
+          User={{ vault_user }}
+          Group={{ vault_group }}
+          ProtectSystem=full
+          ProtectHome=read-only
+          PrivateTmp=yes
+          PrivateDevices=yes
+          SecureBits=keep-caps
+          AmbientCapabilities=CAP_IPC_LOCK
+          NoNewPrivileges=yes
+          ExecStart={{ vault_install_dir }}/vault server -config={{ vault_config_dir }}/vault.hcl
+          ExecReload=/bin/kill --signal HUP $MAINPID
+          KillMode=process
+          KillSignal=SIGINT
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          LimitNOFILE=65536
+          LimitMEMLOCK=infinity
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/vault.service
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Vault service
+      systemd:
+        name: vault
+        enabled: yes
+        state: started
+
+    - name: Wait for Vault to be ready
+      wait_for:
+        port: 8200
+        delay: 5
+        timeout: 60
+
+    - name: Set VAULT_ADDR environment variable globally
+      lineinfile:
+        path: /etc/environment
+        line: 'VAULT_ADDR=https://vault.lab.thewortmans.org:8200'
+        create: yes
+
+    - name: Display post-installation message
+      debug:
+        msg:
+          - "Vault has been installed successfully!"
+          - "Access Vault at: https://vault.lab.thewortmans.org:8200"
+          - ""
+          - "IMPORTANT: Initialize Vault with:"
+          - "  vault operator init"
+          - ""
+          - "This will generate unseal keys and a root token."
+          - "STORE THESE SECURELY - they cannot be recovered!"
+          - ""
+          - "After initialization, unseal Vault with:"
+          - "  vault operator unseal <key1>"
+          - "  vault operator unseal <key2>"
+          - "  vault operator unseal <key3>"
