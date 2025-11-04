@@ -1,0 +1,163 @@
+# Example Terraform variables for Elasticsearch cluster
+# Copy this file to elasticsearch.tfvars and configure for your environment
+#
+# IMPORTANT: Credentials are retrieved from Vault
+# Run: export VAULT_ADDR="https://192.168.10.101:8200"
+# Run: export VAULT_TOKEN=$(vault login -token-only)
+#
+# Secrets stored in Vault:
+# - vault kv get secret/homelab/proxmox/terraform  (pm_user, pm_password)
+
+# Proxmox API credentials are retrieved from Vault (see provider.tf)
+# pm_user = ""       # Retrieved from: vault kv get -field=username secret/homelab/proxmox/terraform
+# pm_password = ""   # Retrieved from: vault kv get -field=password secret/homelab/proxmox/terraform
+
+# Elasticsearch cluster VM definitions
+elasticsearch_vms = [
+  # Data nodes (es01-es06)
+  {
+    name           = "es01"
+    target_node    = "pve1"
+    vmid           = "301"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.31/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es02"
+    target_node    = "pve2"
+    vmid           = "302"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.32/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es03"
+    target_node    = "pve3"
+    vmid           = "303"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.33/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es04"
+    target_node    = "pve1"
+    vmid           = "304"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.34/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es05"
+    target_node    = "pve2"
+    vmid           = "305"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.35/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es06"
+    target_node    = "pve3"
+    vmid           = "306"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "4"
+    memory         = "8192"
+    sockets        = "2"
+    disk_size      = "1024G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch"
+    ipconfig0      = "ip=192.168.10.36/24,gw=192.168.10.1"
+  },
+  # Master nodes (es07-es09)
+  {
+    name           = "es07"
+    target_node    = "pve1"
+    vmid           = "307"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "2"
+    memory         = "4096"
+    sockets        = "1"
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch,master"
+    ipconfig0      = "ip=192.168.10.37/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es08"
+    target_node    = "pve2"
+    vmid           = "308"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "2"
+    memory         = "4096"
+    sockets        = "1"
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch,master"
+    ipconfig0      = "ip=192.168.10.38/24,gw=192.168.10.1"
+  },
+  {
+    name           = "es09"
+    target_node    = "pve3"
+    vmid           = "309"
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = "2"
+    memory         = "4096"
+    sockets        = "1"
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    tags           = "elasticsearch,master"
+    ipconfig0      = "ip=192.168.10.39/24,gw=192.168.10.1"
+  }
+]

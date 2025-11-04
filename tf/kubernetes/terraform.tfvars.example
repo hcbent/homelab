@@ -1,0 +1,107 @@
+# Example Terraform variables for Kubernetes cluster
+# Copy this file to terraform.tfvars and configure for your environment
+#
+# IMPORTANT: Credentials are retrieved from Vault
+# Run: export VAULT_ADDR="https://192.168.10.101:8200"
+# Run: export VAULT_TOKEN=$(vault login -token-only)
+#
+# Secrets stored in Vault:
+# - vault kv get secret/homelab/proxmox/terraform  (pm_user, pm_password)
+
+# Proxmox API credentials are retrieved from Vault (see provider.tf)
+# pm_user = ""       # Retrieved from: vault kv get -field=username secret/homelab/proxmox/terraform
+# pm_password = ""   # Retrieved from: vault kv get -field=password secret/homelab/proxmox/terraform
+
+# Kubernetes cluster VM definitions
+vms = [
+  {
+    name           = "kube01"
+    target_node    = "pve1"
+    vmid           = 201
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 2
+    memory         = 2048
+    sockets        = 1
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "kube02"
+    target_node    = "pve2"
+    vmid           = 202
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 2
+    memory         = 2048
+    sockets        = 1
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "kube03"
+    target_node    = "pve3"
+    vmid           = 203
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 2
+    memory         = 2048
+    sockets        = 1
+    disk_size      = "100G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "kube04"
+    target_node    = "pve1"
+    vmid           = 204
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 4
+    memory         = 8192
+    sockets        = 1
+    disk_size      = "200G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "kube05"
+    target_node    = "pve2"
+    vmid           = 205
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 4
+    memory         = 8192
+    sockets        = 1
+    disk_size      = "200G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  },
+  {
+    name           = "kube06"
+    target_node    = "pve3"
+    vmid           = 206
+    clone          = "ubuntu-25.04"
+    os_type        = "linux"
+    cores          = 4
+    memory         = 8192
+    sockets        = 1
+    disk_size      = "200G"
+    disk_storage   = "tank"
+    network_model  = "virtio"
+    network_bridge = "vmbr0"
+    ipconfig0      = "ip=dhcp"
+  }
+]

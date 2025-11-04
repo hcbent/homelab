@@ -1,2 +1,6 @@
 grafana:
-  adminPassword: ***REMOVED***
+  # Use existing secret for admin password
+  admin:
+    existingSecret: prometheus-grafana-secret
+    userKey: admin-user
+    passwordKey: admin-password

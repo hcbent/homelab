@@ -1,7 +1,13 @@
 # Example Terraform variables for Vault VM
-# Copy this to terraform.tfvars and customize
+# Copy this file to terraform.tfvars and configure for your environment
+#
+# IMPORTANT: Credentials are retrieved from Vault (bootstrapping case)
+# For initial Vault VM creation, use temporary credentials
+# After Vault is operational, migrate to Vault-based auth
 
-# Proxmox credentials
+# Proxmox API credentials
+# Initial setup: Use temporary credentials
+# After Vault is operational: vault kv get secret/homelab/proxmox/terraform
 pm_user     = "terraform@pve"
 pm_password = "your-terraform-password"
 
@@ -13,9 +19,9 @@ cores       = 2
 memory      = 4096
 disk_size   = "50G"
 disk_storage = "tank"
-ipconfig0   = "ip=192.168.10.41/24,gw=192.168.10.1"
+ipconfig0   = "ip=192.168.10.101/24,gw=192.168.10.1"
 
-# Cloud-init user
+# Cloud-init user (initial access)
 ciuser      = "bret"
 cipassword  = "your-initial-password"
 sshkeys     = <<-EOT

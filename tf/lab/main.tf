@@ -1,8 +1,14 @@
 # Elasticsearch cluster Terraform configuration
 
+# Local values using Vault secrets
+locals {
+  ciuser     = coalesce(var.ciuser, data.vault_kv_secret_v2.proxmox.data["ciuser"])
+  cipassword = coalesce(var.cipassword, data.vault_kv_secret_v2.proxmox.data["cipassword"])
+}
+
 module "elasticsearch_vms" {
   source = "../modules/proxmox_vm"
-  count = length(var.elasticsearch_vms)
+  count  = length(var.elasticsearch_vms)
 
   name           = var.elasticsearch_vms[count.index].name
   target_node    = var.elasticsearch_vms[count.index].target_node
@@ -19,8 +25,8 @@ module "elasticsearch_vms" {
   ipconfig0      = var.elasticsearch_vms[count.index].ipconfig0
   tags           = var.elasticsearch_vms[count.index].tags
 
-  # Cloud-init user configuration
-  ciuser         = var.ciuser
-  cipassword     = var.cipassword
-  sshkeys        = var.sshkeys
+  # Cloud-init user configuration from Vault
+  ciuser     = local.ciuser
+  cipassword = local.cipassword
+  sshkeys    = var.sshkeys
 }

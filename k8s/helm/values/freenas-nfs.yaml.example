@@ -27,22 +27,22 @@ driver:
     instance_id:
     httpConnection:
       protocol: https
-      host: 192.168.2.24
+      host: truenas.lab.thewortmans.org
       port: 443
       username: root
-      # SECURITY: Retrieve from Vault
-      apiKey: "CHANGEME"  # vault kv get -field=api_key_nfs secret/homelab/freenas/credentials
+      # Retrieve from Vault: vault kv get -field=api_key secret/homelab/freenas/credentials
+      apiKey: VAULT_SECRET_REFERENCE
       allowInsecure: false
     sshConnection:
       host: 192.168.2.24
       port: 22
       username: root
-      # SECURITY: Use either password OR privateKey - retrieve from Vault
-      password: "CHANGEME"  # vault kv get -field=password secret/homelab/freenas/credentials
-      # Or use privateKey:
+      # Use either password OR privateKey - retrieve from Vault
+      # Retrieve password: vault kv get -field=password secret/homelab/freenas/ssh
+      password: VAULT_SECRET_REFERENCE
+      # Or use privateKey (retrieve with: vault kv get -field=private_key secret/homelab/freenas/ssh)
       # privateKey: |
-      #   CHANGEME_SSH_PRIVATE_KEY
-      #   # Retrieve with: vault kv get -field=private_key secret/homelab/freenas/ssh
+      #   VAULT_SECRET_REFERENCE
     zfs:
       datasetParentName: tank/k8s/nfs/vols
       detachedSnapshotsDatasetParentName: tank/k8s/nfs/snaps

@@ -1,0 +1,58 @@
+# Example Ansible inventory for Elasticsearch cluster
+# Copy this file to 'lab' and configure for your environment
+#
+# IMPORTANT: Retrieve credentials from Vault before running playbooks
+# vault kv get secret/homelab/elasticsearch/lab/credentials
+# vault kv get secret/homelab/aws/s3
+
+[elasticsearch_bootstrap]
+es04
+
+[elasticsearch_masters]
+es01
+es02
+es03
+
+[elasticsearch_hot]
+es05
+es06
+
+[elasticsearch_frozen]
+es07
+es08
+es09
+
+[elasticsearch_ml]
+es10
+es11
+es12
+
+[kibana_nodes]
+kibana
+
+[elasticsearch_all:children]
+elasticsearch_bootstrap
+elasticsearch_masters
+elasticsearch_hot
+elasticsearch_frozen
+elasticsearch_bootstrap
+elasticsearch_ml
+
+[elasticsearch_all:vars]
+elasticsearch_version=9.1.4
+cluster_name=lab
+discovery_seed_hosts=["es01","es02","es03"]
+cluster_initial_master_nodes=["es01","es02","es03"]
+# Retrieve from Vault: vault kv get -field=username secret/homelab/elasticsearch/lab/credentials
+elasticsearch_username=VAULT_SECRET_REFERENCE
+# Retrieve from Vault: vault kv get -field=password secret/homelab/elasticsearch/lab/credentials
+elasticsearch_password=VAULT_SECRET_REFERENCE
+# Retrieve from Vault: vault kv get -field=access_key_id secret/homelab/aws/s3
+s3_access_key_id=VAULT_SECRET_REFERENCE
+# Retrieve from Vault: vault kv get -field=secret_access_key secret/homelab/aws/s3
+s3_secret_access_key=VAULT_SECRET_REFERENCE
+s3_bucket=bdw-lab-backups
+
+[kibana_nodes:vars]
+kibana_version=9.1.3
+elasticsearch_hosts=["http://es01:9200","http://es02:9200","http://es03:9200"]

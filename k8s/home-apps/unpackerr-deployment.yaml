@@ -29,11 +29,17 @@ spec:
             - name: UN_LOG_FILE
               value: /downloads/unpackerr.log
             - name: UN_RADARR_0_API_KEY
-              value: ae98c5ec6ee94ef8811173ac6ef02f17
+              valueFrom:
+                secretKeyRef:
+                  name: unpackerr-secret
+                  key: radarr_api_key
             - name: UN_RADARR_0_URL
               value: https://radarr.bwortman.us
             - name: UN_SONARR_0_API_KEY
-              value: 22d6c3ec5c9d45a2baba1cf9f4d92ebb
+              valueFrom:
+                secretKeyRef:
+                  name: unpackerr-secret
+                  key: sonarr_api_key
             - name: UN_SONARR_0_URL
               value: https://sonarr.bwortman.us
           image: golift/unpackerr

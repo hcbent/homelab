@@ -108,14 +108,22 @@ Before deploying this infrastructure, ensure you have:
 
 4. **Create configuration files from examples**:
    ```bash
-   # Terraform
+   # Terraform configurations
    cp tf/kubernetes/terraform.tfvars.example tf/kubernetes/terraform.tfvars
+   cp tf/lab/terraform.tfvars.example tf/lab/terraform.tfvars
 
-   # Kubernetes storage
+   # Kubernetes storage configurations
    cp k8s/helm/values/freenas-nfs.yaml.example k8s/helm/values/freenas-nfs.yaml
    cp k8s/helm/values/freenas-iscsi.yaml.example k8s/helm/values/freenas-iscsi.yaml
 
-   # Edit files and replace placeholders with actual values
+   # Ansible inventory files
+   cp ansible/inventory/lab.example ansible/inventory/lab
+
+   # Docker compose configurations
+   cp docker/docker-compose.yml.example docker/docker-compose.yml
+
+   # Edit files and replace VAULT_SECRET_REFERENCE placeholders
+   # with actual values retrieved from Vault
    ```
 
 5. **Deploy infrastructure** (see [detailed guide](docs/DEPLOYMENT-GUIDE.md)):
@@ -159,20 +167,119 @@ This repository follows security best practices with **zero secrets in code**:
 
 ### Using Example Files
 
-Configuration files with secrets follow the `.example` pattern:
+This repository uses the `.example` file pattern for all configuration files containing secrets. This ensures that sensitive credentials are never committed to version control while providing clear templates for external users.
 
-```yaml
-# Example: freenas-nfs.yaml.example
-driver: freenas-nfs
-server: 192.168.2.24
-username: root
-password: VAULT_SECRET_REFERENCE  # Retrieve with: vault kv get secret/homelab/freenas/credentials
+#### Example File Pattern
+
+All sensitive configuration files have corresponding `.example` versions that:
+- Provide complete file structure with all required fields
+- Use placeholder values for secrets: `VAULT_SECRET_REFERENCE`
+- Include inline comments showing the Vault path to retrieve each secret
+- Are tracked in git, while the real files (without `.example`) are gitignored
+
+**Example: Terraform variables file**
+```hcl
+# tf/kubernetes/terraform.tfvars.example
+# Proxmox API credentials are retrieved from Vault
+# pm_user = ""       # Retrieved from: vault kv get -field=username secret/homelab/proxmox/terraform
+# pm_password = ""   # Retrieved from: vault kv get -field=password secret/homelab/proxmox/terraform
+
+vms = [
+  {
+    name = "kube01"
+    # ... VM configuration
+  }
+]
 ```
 
-To use:
-1. Copy the `.example` file: `cp config.yaml.example config.yaml`
-2. Replace placeholders with actual values from Vault
-3. The real file is gitignored and will never be committed
+**Example: Kubernetes secret manifest**
+```yaml
+# k8s/pihole/pihole.yaml.example
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pihole-secret
+data:
+  # Retrieve from Vault: vault kv get -field=webpassword secret/homelab/pihole/lab/credentials
+  # Then base64 encode: echo -n "password" | base64
+  WEBPASSWORD: REPLACE_WITH_BASE64_ENCODED_PASSWORD
+```
+
+**Example: Docker Compose file**
+```yaml
+# docker/docker-compose.yml.example
+services:
+  app:
+    environment:
+      # Retrieve from Vault: vault kv get -field=api_key secret/homelab/apps/service
+      - API_KEY=VAULT_SECRET_REFERENCE
+```
+
+**Example: Ansible inventory**
+```ini
+# ansible/inventory/lab.example
+[elasticsearch_all:vars]
+# Retrieve from Vault: vault kv get -field=username secret/homelab/elasticsearch/lab/credentials
+elasticsearch_username=VAULT_SECRET_REFERENCE
+# Retrieve from Vault: vault kv get -field=password secret/homelab/elasticsearch/lab/credentials
+elasticsearch_password=VAULT_SECRET_REFERENCE
+```
+
+#### Using Example Files
+
+To use an example file:
+
+1. **Copy the `.example` file**:
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
+
+2. **Retrieve secrets from Vault**:
+   ```bash
+   export VAULT_ADDR="https://192.168.10.101:8200"
+   vault login
+   vault kv get secret/homelab/service/credentials
+   ```
+
+3. **Replace placeholders**:
+   - Replace `VAULT_SECRET_REFERENCE` with actual values from Vault
+   - Follow inline comments for the correct Vault path for each secret
+   - For base64-encoded secrets (Kubernetes), encode the value before inserting
+
+4. **The real file is gitignored**:
+   - Files without `.example` suffix are automatically gitignored
+   - Your credentials will never be committed to version control
+
+#### Available Example Files
+
+The repository includes `.example` versions for:
+
+**Terraform configurations**:
+- `tf/kubernetes/terraform.tfvars.example` - Kubernetes cluster VMs
+- `tf/lab/terraform.tfvars.example` - Elasticsearch cluster VMs
+- `tf/elasticsearch.tfvars.example` - Elasticsearch-specific configuration
+- `tf/homelab.tfvars.example` - General homelab VMs
+- `tf/vault/terraform.tfvars.example` - Vault server VM
+
+**Kubernetes manifests**:
+- `k8s/helm/values/freenas-nfs.yaml.example` - NFS storage driver
+- `k8s/helm/values/freenas-iscsi.yaml.example` - iSCSI storage driver
+- `k8s/pihole/pihole.yaml.example` - Pi-hole deployment
+- `k8s/lab-cluster/aws_secret.yaml.example` - AWS S3 credentials
+- `k8s/basement/eck-license-secret.yaml.example` - Elastic Cloud license
+
+**Ansible inventories**:
+- `ansible/inventory/lab.example` - Lab Elasticsearch cluster
+- `ansible/inventory/cchs.example` - CCHS Elasticsearch cluster
+- `ansible/inventory/monitoring.example` - Monitoring cluster
+- `ansible/playbooks/add_agent.yml.example` - Elastic Agent deployment
+- `ansible/playbooks/deploy_pihole.yml.example` - Pi-hole deployment
+
+**Docker Compose**:
+- `docker/docker-compose.yml.example` - Media stack services
+- `docker/home-apps/docker-compose.yml.example` - Home application services
+
+For complete documentation on secret management, see [docs/SECRET-MANAGEMENT.md](docs/SECRET-MANAGEMENT.md).
 
 ## Documentation
 

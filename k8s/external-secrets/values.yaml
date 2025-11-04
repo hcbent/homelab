@@ -1,0 +1,66 @@
+# External Secrets Operator Helm values
+# Reference: https://github.com/external-secrets/external-secrets
+
+# Install CRDs
+installCRDs: true
+
+# Webhook configuration
+webhook:
+  create: true
+  port: 9443
+
+# Cert Controller configuration
+certController:
+  create: true
+
+# RBAC settings
+rbac:
+  create: true
+
+# Service Account
+serviceAccount:
+  create: true
+  name: external-secrets
+
+# Resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Pod Security
+podSecurityContext:
+  fsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# Enable concurrent reconciliation
+concurrent: 1
+
+# Logging
+logLevel: info
+logFormat: json
+
+# Metrics
+metrics:
+  service:
+    enabled: true
+    port: 8080
+
+# Enable prometheus metrics
+prometheus:
+  enabled: true
+  service:
+    port: 8081
