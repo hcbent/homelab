@@ -11,6 +11,7 @@ resource "proxmox_vm_qemu" "vm" {
   tags        = var.tags
   onboot      = var.onboot
   startup     = var.startup
+  hastate     = var.hastate
 
   cpu {
     cores   = var.cores

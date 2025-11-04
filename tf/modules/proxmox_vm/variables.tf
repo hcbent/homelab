@@ -120,3 +120,9 @@ variable "startup" {
     type = string
     default = null
 }
+
+variable "hastate" {
+    description = "HA state for the VM"
+    type = string
+    default = null
+}
