@@ -18,6 +18,8 @@ module "home_app_vms" {
   network_bridge = var.home_app_vms[count.index].network_bridge
   ipconfig0      = var.home_app_vms[count.index].ipconfig0
   tags           = var.home_app_vms[count.index].tags
+  startup        = var.home_app_vms[count.index].startup
+  hastate        = var.home_app_vms[count.index].hastate
 
   # Cloud-init user configuration
   ciuser     = var.ciuser
