@@ -88,10 +88,15 @@ ansible/**/*.backup
 *_PASSWORD
 *_TOKEN
 *_API_KEY
+*_api_key
 *_SECRET
 *.pem
 *.key
 !*.pub
+
+# Specific secret files (explicit blocks)
+CCHS_PASSWORD
+makerspace_es_api_key
 
 # Backup files that may contain secrets
 *.backup
