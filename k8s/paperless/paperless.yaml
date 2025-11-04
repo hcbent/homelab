@@ -144,7 +144,7 @@ paperless:
     adminUser: "admin"
     ## @param paperless.auth.adminPassword [string] Only used when PAPERLESS_ADMIN_USER is set. This will be the password of the automatically created superuser
     ##
-    adminPassword: "***REMOVED***"
+    adminPassword: "VAULT_SECRET_REFERENCE"  # Retrieve from Vault: vault kv get -field=admin_password secret/homelab/databases/paperless
     ## @param paperless.auth.existingSecret [string] Specify an existing secret with a `username` and `password` key
     ##
     existingSecret: ""

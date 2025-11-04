@@ -12,7 +12,7 @@ data:
         auth = {
           type = "basic"
           username = "elastic"
-          password = "***REMOVED***"
+          # Password is injected from Secret via environment variable
         }
       }
     ]
@@ -47,6 +47,12 @@ spec:
         ports:
         - containerPort: 9000
           protocol: TCP
+        env:
+        - name: ES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerebro-secret
+              key: password
         volumeMounts:
         - name: config
           mountPath: /opt/cerebro/conf
@@ -97,7 +103,7 @@ spec:
 #  namespace: elastic-stack
 #  annotations:
 #    nginx.ingress.kubernetes.io/rewrite-target: /
-#spec: 
+#spec:
 #  ingressClassName: nginx
 #  rules:
 #  - host: cerebro.lab.thewortmans.org

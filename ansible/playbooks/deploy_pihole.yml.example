@@ -10,7 +10,8 @@
     VAULT_SKIP_VERIFY: "true"
 
   vars:
-    # Retrieve Pi-hole password from Vault
+    # Retrieve password from Vault
+    # Vault path: secret/homelab/pihole/lab/credentials
     pihole_webpassword: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/homelab/pihole/lab/credentials:webpassword') }}"
     pihole_dns1: "1.1.1.1"
     pihole_dns2: "8.8.8.8"

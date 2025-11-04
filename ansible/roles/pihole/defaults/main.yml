@@ -1,6 +1,9 @@
 ---
 # Pi-hole role defaults
-pihole_webpassword: "***REMOVED***"
+# NOTE: pihole_webpassword should be retrieved from Vault in the playbook
+# Vault path: secret/homelab/pihole/lab/credentials:webpassword
+# This default is just a placeholder and should not be used in production
+pihole_webpassword: "VAULT_SECRET_REFERENCE"
 pihole_dns1: "1.1.1.1"
 pihole_dns2: "8.8.8.8"
 pihole_timezone: "America/New_York"
