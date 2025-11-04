@@ -1,0 +1,62 @@
+csiDriver:
+  # should be globally unique for a given cluster
+  name: "org.democratic-csi.nfs"
+
+storageClasses:
+- name: freenas-nfs-csi
+  defaultClass: false
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: true
+  parameters:
+    fsType: nfs
+
+  mountOptions:
+  - noatime
+  - nfsvers=4
+  secrets:
+    provisioner-secret:
+    controller-publish-secret:
+    node-stage-secret:
+    node-publish-secret:
+    controller-expand-secret:
+
+driver:
+  config:
+    driver: freenas-nfs
+    instance_id:
+    httpConnection:
+      protocol: https
+      host: 192.168.2.24
+      port: 443
+      username: root
+      # SECURITY: Retrieve from Vault
+      apiKey: "CHANGEME"  # vault kv get -field=api_key_nfs secret/homelab/freenas/credentials
+      allowInsecure: false
+    sshConnection:
+      host: 192.168.2.24
+      port: 22
+      username: root
+      # SECURITY: Use either password OR privateKey - retrieve from Vault
+      password: "CHANGEME"  # vault kv get -field=password secret/homelab/freenas/credentials
+      # Or use privateKey:
+      # privateKey: |
+      #   CHANGEME_SSH_PRIVATE_KEY
+      #   # Retrieve with: vault kv get -field=private_key secret/homelab/freenas/ssh
+    zfs:
+      datasetParentName: tank/k8s/nfs/vols
+      detachedSnapshotsDatasetParentName: tank/k8s/nfs/snaps
+      datasetEnableQuotas: true
+      datasetEnableReservation: false
+      datasetPermissionsMode: "0777"
+      datasetPermissionsUser: root
+      datasetPermissionsGroup: wheel
+    nfs:
+      shareHost: 192.168.2.24
+      shareAlldirs: false
+      shareAllowedHosts: []
+      shareAllowedNetworks: []
+      shareMaprootUser: root
+      shareMaprootGroup: wheel
+      shareMapallUser: ""
+      shareMapallGroup: ""
