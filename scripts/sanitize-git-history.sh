@@ -65,6 +65,7 @@ fi
 echo -e "${GREEN}✓ Git repository found: ${REPO_ROOT}${NC}\n"
 
 # List of files to remove from history
+# Only include files that contain actual secrets
 SENSITIVE_FILES=(
     "CCHS_PASSWORD"
     "makerspace_es_api_key"
@@ -73,13 +74,6 @@ SENSITIVE_FILES=(
     "MONITORING_PASSWORD"
     "k8s/helm/values/freenas-nfs.yaml"
     "k8s/helm/values/freenas-iscsi.yaml"
-    "vault/README.md"
-    "DEPLOYMENT-GUIDE.md"
-    "README.md"
-    "CLAUDE.md"
-    "deploy-and-setup.sh"
-    "elasticsearch/setup-commands.sh"
-    "tf-aliases.sh"
 )
 
 # Display what will be removed
