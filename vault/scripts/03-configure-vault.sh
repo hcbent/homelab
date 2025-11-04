@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-VAULT_ADDR="${VAULT_ADDR:-https://vault.lab.thewortmans.org:8200}"
+VAULT_ADDR="${VAULT_ADDR:-https://192.168.10.101:8200}"
 VAULT_SKIP_VERIFY="${VAULT_SKIP_VERIFY:-true}"
 
 export VAULT_ADDR

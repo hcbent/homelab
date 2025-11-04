@@ -1,0 +1,35 @@
+---
+# ServiceAccount for Vault authentication
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth
+  namespace: vault
+---
+# ClusterRoleBinding for Vault to authenticate with Kubernetes
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault-auth
+  namespace: vault
+---
+# ServiceAccount for democratic-csi to access Vault
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: democratic-csi-vault
+  namespace: democratic-csi
+---
+# ServiceAccount for other apps to access Vault
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-secrets-user
+  namespace: default
