@@ -82,9 +82,9 @@ pilot:
   enabled: false
 
 # Experimental features
-experimental:
-  plugins:
-    enabled: false
+# experimental:
+#   plugins:
+#     enabled: false
 
 # Logs configuration
 logs:
