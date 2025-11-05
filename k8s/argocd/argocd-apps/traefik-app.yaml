@@ -17,7 +17,7 @@ spec:
       helm:
         valueFiles:
           - $values/k8s/traefik/values.yaml
-    - repoURL: git@github.com/wortmanb/homelab.git
+    - repoURL: https://github.com/wortmanb/homelab.git
       path: k8s/traefik
       targetRevision: main
       ref: values
