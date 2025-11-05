@@ -17,7 +17,7 @@ spec:
       helm:
         valueFiles:
           - $values/k8s/democratic-csi/values-iscsi.yaml
-    - repoURL: git@github.com/wortmanb/homelab.git
+    - repoURL: https://github.com/wortmanb/homelab.git
       path: k8s/democratic-csi
       targetRevision: main
       ref: values

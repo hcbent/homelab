@@ -11,7 +11,7 @@ spec:
     namespace: cert-manager
     server: https://kubernetes.default.svc
   source:
-    repoURL: git@github.com/wortmanb/homelab.git
+    repoURL: https://github.com/wortmanb/homelab.git
     path: k8s/cert-manager
     targetRevision: main
   syncPolicy:

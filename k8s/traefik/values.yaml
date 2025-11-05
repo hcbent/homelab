@@ -26,14 +26,16 @@ ports:
   # HTTP traffic (port 80)
   web:
     port: 8000
-    expose: true
+    expose:
+      default: true
     exposedPort: 80
     protocol: TCP
 
   # HTTPS traffic (port 443)
   websecure:
     port: 8443
-    expose: true
+    expose:
+      default: true
     exposedPort: 443
     protocol: TCP
     # TLS configuration
@@ -45,7 +47,8 @@ ports:
   # Traefik dashboard (port 9000)
   traefik:
     port: 9000
-    expose: true
+    expose:
+      default: false
     exposedPort: 9000
     protocol: TCP
 
