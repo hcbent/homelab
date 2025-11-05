@@ -1,0 +1,89 @@
+---
+# Kubespray Pre-flight Checks
+#
+# Run this before deploying kubespray to verify prerequisites
+#
+# Usage:
+#   ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/kubespray_preflight.yml
+
+- name: Pre-flight checks before kubespray deployment
+  hosts: localhost
+  gather_facts: false
+  vars:
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://192.168.10.101:8200', true) }}"
+    vault_skip_verify: "{{ lookup('env', 'VAULT_SKIP_VERIFY') | default('true', true) }}"
+    kubespray_path: "{{ lookup('env', 'HOME') }}/git/kubespray"
+    kubespray_inventory: "/Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini"
+
+  tasks:
+    - name: Check if kubespray is installed
+      stat:
+        path: "{{ kubespray_path }}/cluster.yml"
+      register: kubespray_install
+      failed_when: not kubespray_install.stat.exists
+
+    - name: Display kubespray installation path
+      debug:
+        msg: "✓ Kubespray found at {{ kubespray_path }}"
+
+    - name: Check if inventory file exists
+      stat:
+        path: "{{ kubespray_inventory }}"
+      register: inventory_file
+      failed_when: not inventory_file.stat.exists
+
+    - name: Display inventory path
+      debug:
+        msg: "✓ Inventory found at {{ kubespray_inventory }}"
+
+    - name: Check Vault connectivity
+      uri:
+        url: "{{ vault_addr }}/v1/sys/health"
+        method: GET
+        validate_certs: "{{ vault_skip_verify | bool | ternary(false, true) }}"
+        status_code: [200, 429, 472, 473, 501, 503]
+      register: vault_health
+      failed_when: false
+
+    - name: Display Vault status
+      debug:
+        msg: "✓ Vault status: {{ 'Unsealed' if vault_health.status == 200 else 'Sealed or Unavailable' }}"
+
+    - name: Warn if Vault is sealed
+      debug:
+        msg: "⚠ WARNING: Vault is sealed or unavailable. Secret retrieval may fail during deployment."
+      when: vault_health.status != 200
+
+- name: Verify SSH connectivity to all cluster nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Test SSH connectivity
+      ping:
+
+    - name: Display node information
+      debug:
+        msg: "✓ Successfully connected to {{ inventory_hostname }} ({{ ansible_host }})"
+
+- name: Display deployment readiness
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show cluster deployment plan
+      debug:
+        msg:
+          - "========================================"
+          - "Pre-flight Checks Complete"
+          - "========================================"
+          - "Control Plane Nodes: {{ groups['kube_control_plane'] | join(', ') }}"
+          - "Worker Nodes: {{ groups['kube_node'] | join(', ') }}"
+          - "Etcd Nodes: {{ groups['etcd'] | join(', ') }}"
+          - ""
+          - "Ready to deploy Kubernetes cluster!"
+          - ""
+          - "To deploy, run:"
+          - "  cd ~/git/kubespray"
+          - "  ansible-playbook -i /Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini cluster.yml"
+          - ""
+          - "Estimated time: 30-60 minutes"
+          - "========================================"

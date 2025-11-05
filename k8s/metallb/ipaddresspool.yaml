@@ -1,0 +1,19 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default-pool
+  namespace: metallb-system
+spec:
+  # IP address range for LoadBalancer services
+  # IMPORTANT: Ensure this range is:
+  # 1. On the same L2 network as your Kubernetes nodes
+  # 2. NOT managed by your DHCP server
+  # 3. Free for MetalLB to use
+  addresses:
+    - 192.168.100.0/24
+
+  # Auto-assign IPs from this pool to LoadBalancer services
+  autoAssign: true
+
+  # Avoid assigning duplicate IPs
+  avoidBuggyIPs: true

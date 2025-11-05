@@ -1,0 +1,225 @@
+---
+# Kubespray Cluster Deployment Wrapper Playbook
+#
+# This playbook provides pre-flight checks and post-deployment verification
+# for kubespray cluster deployment.
+#
+# IMPORTANT: Due to role path resolution, you must run kubespray's cluster.yml
+# directly from the kubespray directory:
+#
+#   cd ~/git/kubespray
+#   ansible-playbook -i /Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini cluster.yml
+#
+# This wrapper playbook is kept for reference and for the pre-flight/post-flight
+# check playbooks that can be run separately.
+#
+# Environment Variables:
+#   VAULT_ADDR: HashiCorp Vault server URL (default: https://192.168.10.101:8200)
+#   VAULT_TOKEN: Vault authentication token
+#   VAULT_SKIP_VERIFY: Skip TLS verification for Vault (default: true for homelab)
+
+- name: Pre-flight checks before kubespray deployment
+  hosts: localhost
+  gather_facts: false
+  vars:
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://192.168.10.101:8200', true) }}"
+    vault_skip_verify: "{{ lookup('env', 'VAULT_SKIP_VERIFY') | default('true', true) }}"
+    kubespray_path: "{{ lookup('env', 'HOME') }}/git/kubespray"
+    kubespray_inventory: "/Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini"
+
+  tasks:
+    - name: Check if kubespray is installed
+      stat:
+        path: "{{ kubespray_path }}/cluster.yml"
+      register: kubespray_install
+      failed_when: not kubespray_install.stat.exists
+
+    - name: Display kubespray installation path
+      debug:
+        msg: "Kubespray found at {{ kubespray_path }}"
+
+    - name: Check if inventory file exists
+      stat:
+        path: "{{ kubespray_inventory }}"
+      register: inventory_file
+      failed_when: not inventory_file.stat.exists
+
+    - name: Display inventory path
+      debug:
+        msg: "Using inventory at {{ kubespray_inventory }}"
+
+    - name: Check Vault connectivity
+      uri:
+        url: "{{ vault_addr }}/v1/sys/health"
+        method: GET
+        validate_certs: "{{ vault_skip_verify | bool | ternary(false, true) }}"
+        status_code: [200, 429, 472, 473, 501, 503]
+      register: vault_health
+      failed_when: false
+
+    - name: Display Vault status
+      debug:
+        msg: "Vault status: {{ 'Unsealed' if vault_health.status == 200 else 'Sealed or Unavailable' }}"
+
+    - name: Warn if Vault is sealed
+      debug:
+        msg: "WARNING: Vault is sealed or unavailable. Secret retrieval may fail during deployment."
+      when: vault_health.status != 200
+
+- name: Verify SSH connectivity to all cluster nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Test SSH connectivity
+      ping:
+
+    - name: Display node information
+      debug:
+        msg: "Successfully connected to {{ inventory_hostname }} ({{ ansible_host }})"
+
+- name: Display deployment information
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show cluster deployment plan
+      debug:
+        msg:
+          - "========================================"
+          - "Kubespray Cluster Deployment"
+          - "========================================"
+          - "Control Plane Nodes: {{ groups['kube_control_plane'] | join(', ') }}"
+          - "Worker Nodes: {{ groups['kube_node'] | join(', ') }}"
+          - "Etcd Nodes: {{ groups['etcd'] | join(', ') }}"
+          - ""
+          - "This will deploy a production-grade Kubernetes cluster."
+          - "Estimated time: 30-60 minutes"
+          - "========================================"
+
+    - name: Pause for confirmation
+      pause:
+        prompt: "Press ENTER to continue with deployment, or Ctrl+C to abort"
+
+- name: Display kubespray execution instructions
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Instructions for running kubespray
+      debug:
+        msg:
+          - "========================================"
+          - "IMPORTANT: Kubespray Role Path Issue"
+          - "========================================"
+          - ""
+          - "Due to Ansible role path resolution, kubespray's cluster.yml must be"
+          - "executed from the kubespray directory itself."
+          - ""
+          - "Please run the following commands in a new terminal:"
+          - ""
+          - "  cd ~/git/kubespray"
+          - "  ansible-playbook -i /Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini cluster.yml"
+          - ""
+          - "After kubespray completes, you can run post-deployment verification:"
+          - ""
+          - "  cd /Users/bret/git/homelab/ansible"
+          - "  ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/kubespray_preflight.yml"
+          - ""
+          - "========================================"
+
+    - name: Fail with instructions
+      fail:
+        msg: "Please run kubespray cluster.yml manually as shown above. This wrapper handles only pre-flight checks."
+
+# Note: Post-deployment verification moved to separate playbook
+# Run playbooks/verify_kubespray_deployment.yml after cluster.yml completes
+
+- name: Post-deployment verification (PLACEHOLDER - Run verify_kubespray_deployment.yml instead)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: This section is disabled
+      debug:
+        msg: "Post-deployment verification has been moved to a separate playbook"
+
+# Keeping the original post-deployment tasks below for reference
+# To use them, create a new playbook: verify_kubespray_deployment.yml
+
+- name: Post-deployment verification (DISABLED)
+  hosts: "{{ groups['kube_control_plane'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_path: "/etc/kubernetes/admin.conf"
+
+  tasks:
+    - name: Wait for Kubernetes API to be available
+      command: kubectl --kubeconfig={{ kubeconfig_path }} cluster-info
+      register: cluster_info
+      retries: 30
+      delay: 10
+      until: cluster_info.rc == 0
+      changed_when: false
+
+    - name: Get cluster node status
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
+      register: node_status
+      changed_when: false
+
+    - name: Display node status
+      debug:
+        msg: "{{ node_status.stdout_lines }}"
+
+    - name: Get all pods status
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get pods --all-namespaces
+      register: pods_status
+      changed_when: false
+
+    - name: Display pods status
+      debug:
+        msg: "{{ pods_status.stdout_lines }}"
+
+    - name: Check etcd cluster health (if etcd members on this node)
+      shell: |
+        ETCDCTL_API=3 etcdctl \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert=/etc/ssl/etcd/ssl/ca.pem \
+          --cert=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}.pem \
+          --key=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}-key.pem \
+          endpoint health
+      register: etcd_health
+      when: inventory_hostname in groups['etcd']
+      changed_when: false
+      failed_when: false
+
+    - name: Display etcd health
+      debug:
+        msg: "{{ etcd_health.stdout_lines }}"
+      when:
+        - inventory_hostname in groups['etcd']
+        - etcd_health is defined
+
+- name: Display post-deployment instructions
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show next steps
+      debug:
+        msg:
+          - "========================================"
+          - "Kubespray Deployment Complete!"
+          - "========================================"
+          - ""
+          - "Next steps:"
+          - "1. Copy kubeconfig from control plane:"
+          - "   scp bret@{{ groups['kube_control_plane'][0] }}:~/.kube/config ~/.kube/config-kubespray"
+          - ""
+          - "2. Test cluster access:"
+          - "   kubectl --kubeconfig ~/.kube/config-kubespray get nodes"
+          - ""
+          - "3. Proceed with platform components deployment:"
+          - "   - Democratic CSI for storage"
+          - "   - MetalLB for load balancing"
+          - "   - Traefik for ingress"
+          - "   - ArgoCD for GitOps"
+          - ""
+          - "See docs/KUBESPRAY-DEPLOYMENT.md for detailed next steps."
+          - "========================================"

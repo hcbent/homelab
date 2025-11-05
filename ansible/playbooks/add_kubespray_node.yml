@@ -1,0 +1,164 @@
+---
+# Kubespray Add Node Wrapper Playbook
+#
+# This playbook adds new nodes (control plane or worker) to an existing kubespray cluster.
+# Before running this playbook:
+#   1. Provision the new VM via Terraform (if VM-based)
+#   2. Add the node to kubespray inventory at /Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini
+#   3. Add to appropriate groups: kube_control_plane, kube_node, and/or etcd
+#
+# Usage:
+#   ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/add_kubespray_node.yml
+#
+# Notes:
+#   - For control plane nodes, also add to 'etcd' group to maintain HA
+#   - This uses kubespray's scale.yml playbook for safe node addition
+#   - Nodes will be added without disrupting existing cluster operations
+
+- name: Pre-flight checks before adding nodes
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubespray_path: "{{ lookup('env', 'HOME') }}/git/kubespray"
+    kubespray_inventory: "/Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini"
+
+  tasks:
+    - name: Check if kubespray is installed
+      stat:
+        path: "{{ kubespray_path }}/scale.yml"
+      register: kubespray_install
+      failed_when: not kubespray_install.stat.exists
+
+    - name: Display kubespray installation path
+      debug:
+        msg: "Kubespray found at {{ kubespray_path }}"
+
+    - name: Check if inventory file exists
+      stat:
+        path: "{{ kubespray_inventory }}"
+      register: inventory_file
+      failed_when: not inventory_file.stat.exists
+
+    - name: Display inventory path
+      debug:
+        msg: "Using inventory at {{ kubespray_inventory }}"
+
+- name: Verify inventory configuration
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Display all cluster nodes
+      debug:
+        msg: "Node {{ inventory_hostname }} in groups: {{ group_names }}"
+      run_once: false
+
+- name: Verify SSH connectivity to new nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Test SSH connectivity
+      ping:
+
+    - name: Display node connectivity status
+      debug:
+        msg: "Successfully connected to {{ inventory_hostname }} ({{ ansible_host }})"
+
+- name: Display node addition plan
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show cluster configuration
+      debug:
+        msg:
+          - "========================================"
+          - "Kubespray Add Node Operation"
+          - "========================================"
+          - "Current Control Plane Nodes: {{ groups['kube_control_plane'] | join(', ') }}"
+          - "Current Worker Nodes: {{ groups['kube_node'] | join(', ') }}"
+          - "Current Etcd Nodes: {{ groups['etcd'] | join(', ') }}"
+          - ""
+          - "This will add new nodes to the existing cluster."
+          - "Existing workloads will not be disrupted."
+          - "========================================"
+
+    - name: Pause for confirmation
+      pause:
+        prompt: "Press ENTER to continue with node addition, or Ctrl+C to abort"
+
+- name: Add nodes to cluster using kubespray scale playbook
+  import_playbook: "{{ lookup('env', 'HOME') }}/git/kubespray/scale.yml"
+
+- name: Post-addition verification
+  hosts: "{{ groups['kube_control_plane'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_path: "/etc/kubernetes/admin.conf"
+
+  tasks:
+    - name: Wait for new nodes to join cluster
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
+      register: node_status
+      retries: 20
+      delay: 15
+      until: node_status.rc == 0
+      changed_when: false
+
+    - name: Display updated node status
+      debug:
+        msg: "{{ node_status.stdout_lines }}"
+
+    - name: Verify all nodes are Ready
+      shell: |
+        kubectl --kubeconfig={{ kubeconfig_path }} get nodes --no-headers | \
+        awk '{print $2}' | grep -v "Ready" || echo "All nodes Ready"
+      register: not_ready_nodes
+      changed_when: false
+
+    - name: Display node readiness status
+      debug:
+        msg: "{{ 'All nodes are Ready' if 'All nodes Ready' in not_ready_nodes.stdout else 'Some nodes are not Ready yet' }}"
+
+    - name: Check etcd cluster members (if etcd nodes added)
+      shell: |
+        ETCDCTL_API=3 etcdctl \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert=/etc/ssl/etcd/ssl/ca.pem \
+          --cert=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}.pem \
+          --key=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}-key.pem \
+          member list
+      register: etcd_members
+      changed_when: false
+      failed_when: false
+
+    - name: Display etcd cluster members
+      debug:
+        msg: "{{ etcd_members.stdout_lines }}"
+      when: etcd_members is defined and etcd_members.rc == 0
+
+- name: Display post-addition instructions
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show next steps
+      debug:
+        msg:
+          - "========================================"
+          - "Node Addition Complete!"
+          - "========================================"
+          - ""
+          - "Next steps:"
+          - "1. Verify all nodes are Ready:"
+          - "   kubectl get nodes"
+          - ""
+          - "2. Label new nodes appropriately:"
+          - "   kubectl label node <node-name> node-role.kubernetes.io/worker=\"\""
+          - ""
+          - "3. For control plane nodes, verify etcd quorum:"
+          - "   SSH to control plane and run etcd health checks"
+          - ""
+          - "4. Monitor pods distribution across new nodes:"
+          - "   kubectl get pods -A -o wide"
+          - ""
+          - "See docs/KUBESPRAY-OPERATIONS.md for detailed procedures."
+          - "========================================"

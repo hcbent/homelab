@@ -1,0 +1,74 @@
+# MetalLB Helm values for LoadBalancer service type
+# Reference: https://metallb.universe.tf/
+
+# Controller configuration
+controller:
+  enabled: true
+  image:
+    repository: quay.io/metallb/controller
+    tag: ""  # Uses chart appVersion if empty
+  serviceAccount:
+    create: true
+    name: ""
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+
+# Speaker configuration (runs as DaemonSet on all nodes)
+speaker:
+  enabled: true
+  image:
+    repository: quay.io/metallb/speaker
+    tag: ""  # Uses chart appVersion if empty
+  serviceAccount:
+    create: true
+    name: ""
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+  # Allow speaker to run on control plane nodes if needed
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+
+  nodeSelector: {}
+  affinity: {}
+  priorityClassName: ""
+
+  # FRR mode disabled (using Layer 2 mode)
+  frr:
+    enabled: false
+
+# Prometheus monitoring (disabled initially)
+prometheus:
+  scrapeAnnotations: false
+  metricsPort: 7472
+  serviceMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: false
+
+# PSP support (deprecated in K8s 1.25+)
+psp:
+  create: false
+
+# RBAC
+rbac:
+  create: true

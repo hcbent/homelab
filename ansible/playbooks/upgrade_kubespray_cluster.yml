@@ -1,0 +1,267 @@
+---
+# Kubespray Cluster Upgrade Wrapper Playbook
+#
+# This playbook upgrades a kubespray-deployed Kubernetes cluster to a new version.
+# The upgrade process includes:
+#   - Pre-upgrade etcd backup
+#   - Rolling upgrade of control plane nodes
+#   - Rolling upgrade of worker nodes
+#   - Post-upgrade cluster health verification
+#
+# Before running this playbook:
+#   1. Review kubespray release notes for the target version
+#   2. Update kube_version in /Users/bret/git/homelab/kubespray/inventory/homelab/group_vars/k8s_cluster/k8s-cluster.yml
+#   3. Update kubespray version: cd ~/git/kubespray && git pull && git checkout <version>
+#   4. Test the upgrade in a non-production environment if possible
+#
+# Usage:
+#   ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/upgrade_kubespray_cluster.yml
+#
+# IMPORTANT:
+#   - This is a rolling upgrade with minimal downtime
+#   - Ensure you have recent backups before proceeding
+#   - Allow 60-90 minutes for complete upgrade
+
+- name: Pre-upgrade checks and preparation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubespray_path: "{{ lookup('env', 'HOME') }}/git/kubespray"
+    kubespray_inventory: "/Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini"
+    backup_dir: "/tmp/kubespray-upgrade-backup-{{ ansible_date_time.date }}"
+
+  tasks:
+    - name: Check if kubespray is installed
+      stat:
+        path: "{{ kubespray_path }}/upgrade-cluster.yml"
+      register: kubespray_install
+      failed_when: not kubespray_install.stat.exists
+
+    - name: Display kubespray installation path
+      debug:
+        msg: "Kubespray found at {{ kubespray_path }}"
+
+    - name: Check if inventory file exists
+      stat:
+        path: "{{ kubespray_inventory }}"
+      register: inventory_file
+      failed_when: not inventory_file.stat.exists
+
+    - name: Read target Kubernetes version from inventory
+      shell: |
+        grep "kube_version:" /Users/bret/git/homelab/kubespray/inventory/homelab/group_vars/k8s_cluster/k8s-cluster.yml | \
+        awk '{print $2}' | tr -d '"'
+      register: target_version
+      changed_when: false
+
+    - name: Display target version
+      debug:
+        msg: "Target Kubernetes version: {{ target_version.stdout }}"
+
+    - name: Create local backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Display upgrade information
+      debug:
+        msg:
+          - "========================================"
+          - "Kubespray Cluster Upgrade"
+          - "========================================"
+          - "Target Kubernetes version: {{ target_version.stdout }}"
+          - "Backup directory: {{ backup_dir }}"
+          - ""
+          - "This upgrade will:"
+          - "1. Backup etcd cluster"
+          - "2. Upgrade control plane nodes (rolling)"
+          - "3. Upgrade worker nodes (rolling)"
+          - "4. Verify cluster health"
+          - ""
+          - "Estimated time: 60-90 minutes"
+          - "========================================"
+
+    - name: Pause for confirmation
+      pause:
+        prompt: "Press ENTER to continue with cluster upgrade, or Ctrl+C to abort"
+
+- name: Backup etcd before upgrade
+  hosts: "{{ groups['etcd'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    etcd_backup_dir: "/var/backups/etcd"
+    etcd_backup_file: "etcd-backup-{{ ansible_date_time.date }}-{{ ansible_date_time.time | replace(':', '') }}.db"
+
+  tasks:
+    - name: Create etcd backup directory
+      file:
+        path: "{{ etcd_backup_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Backup etcd cluster
+      shell: |
+        ETCDCTL_API=3 etcdctl snapshot save {{ etcd_backup_dir }}/{{ etcd_backup_file }} \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert=/etc/ssl/etcd/ssl/ca.pem \
+          --cert=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}.pem \
+          --key=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}-key.pem
+      register: etcd_backup
+      changed_when: true
+
+    - name: Verify etcd backup
+      shell: |
+        ETCDCTL_API=3 etcdctl snapshot status {{ etcd_backup_dir }}/{{ etcd_backup_file }} \
+          --write-out=table
+      register: backup_status
+      changed_when: false
+
+    - name: Display backup status
+      debug:
+        msg:
+          - "Etcd backup created successfully"
+          - "Location: {{ etcd_backup_dir }}/{{ etcd_backup_file }}"
+          - "{{ backup_status.stdout_lines }}"
+
+    - name: Set backup file permissions
+      file:
+        path: "{{ etcd_backup_dir }}/{{ etcd_backup_file }}"
+        mode: '0600'
+        owner: root
+        group: root
+
+- name: Record current cluster state
+  hosts: "{{ groups['kube_control_plane'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_path: "/etc/kubernetes/admin.conf"
+
+  tasks:
+    - name: Get current cluster version
+      command: kubectl --kubeconfig={{ kubeconfig_path }} version --short
+      register: current_version
+      changed_when: false
+
+    - name: Display current cluster version
+      debug:
+        msg: "{{ current_version.stdout_lines }}"
+
+    - name: Get current node versions
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes -o wide
+      register: node_versions
+      changed_when: false
+
+    - name: Display current node versions
+      debug:
+        msg: "{{ node_versions.stdout_lines }}"
+
+- name: Upgrade Kubernetes cluster using kubespray
+  import_playbook: "{{ lookup('env', 'HOME') }}/git/kubespray/upgrade-cluster.yml"
+
+- name: Post-upgrade verification
+  hosts: "{{ groups['kube_control_plane'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_path: "/etc/kubernetes/admin.conf"
+
+  tasks:
+    - name: Wait for Kubernetes API to be available
+      command: kubectl --kubeconfig={{ kubeconfig_path }} cluster-info
+      register: cluster_info
+      retries: 30
+      delay: 10
+      until: cluster_info.rc == 0
+      changed_when: false
+
+    - name: Get upgraded cluster version
+      command: kubectl --kubeconfig={{ kubeconfig_path }} version --short
+      register: upgraded_version
+      changed_when: false
+
+    - name: Display upgraded cluster version
+      debug:
+        msg: "{{ upgraded_version.stdout_lines }}"
+
+    - name: Verify all nodes are Ready
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
+      register: nodes_status
+      changed_when: false
+
+    - name: Display nodes status
+      debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+
+    - name: Check for NotReady nodes
+      shell: |
+        kubectl --kubeconfig={{ kubeconfig_path }} get nodes --no-headers | \
+        grep -v "Ready" || echo "All nodes Ready"
+      register: not_ready_check
+      changed_when: false
+
+    - name: Fail if nodes are not Ready
+      fail:
+        msg: "Some nodes are not in Ready state after upgrade. Please investigate."
+      when: "'All nodes Ready' not in not_ready_check.stdout"
+
+    - name: Verify system pods are running
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get pods -n kube-system
+      register: system_pods
+      changed_when: false
+
+    - name: Display system pods status
+      debug:
+        msg: "{{ system_pods.stdout_lines }}"
+
+    - name: Check etcd cluster health
+      shell: |
+        ETCDCTL_API=3 etcdctl \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert=/etc/ssl/etcd/ssl/ca.pem \
+          --cert=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}.pem \
+          --key=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}-key.pem \
+          endpoint health
+      register: etcd_health
+      when: inventory_hostname in groups['etcd']
+      changed_when: false
+
+    - name: Display etcd health
+      debug:
+        msg: "{{ etcd_health.stdout_lines }}"
+      when:
+        - inventory_hostname in groups['etcd']
+        - etcd_health is defined
+
+- name: Display post-upgrade instructions
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show upgrade summary
+      debug:
+        msg:
+          - "========================================"
+          - "Cluster Upgrade Complete!"
+          - "========================================"
+          - ""
+          - "Post-upgrade checklist:"
+          - "1. Verify all nodes are running the new version:"
+          - "   kubectl get nodes -o wide"
+          - ""
+          - "2. Check all pods are running correctly:"
+          - "   kubectl get pods -A"
+          - ""
+          - "3. Test application functionality"
+          - ""
+          - "4. Monitor cluster for any issues over the next 24 hours"
+          - ""
+          - "5. Document the upgrade in your change log"
+          - ""
+          - "Etcd backup location: /var/backups/etcd/ on first etcd node"
+          - ""
+          - "If issues occur, see docs/KUBESPRAY-OPERATIONS.md for rollback procedures."
+          - "========================================"

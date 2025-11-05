@@ -1,0 +1,95 @@
+---
+# Containerd Configuration for Homelab Kubernetes Cluster
+# Reference: ~/git/kubespray/inventory/sample/group_vars/all/containerd.yml
+#
+# Containerd is the container runtime for this Kubernetes cluster
+# It provides a lightweight, performant alternative to Docker
+
+# Container runtime selection
+# This ensures containerd is used across all nodes
+container_manager: containerd
+
+# Containerd directories
+containerd_storage_dir: /var/lib/containerd
+containerd_state_dir: /run/containerd
+
+# Containerd OOM score
+# Lower score means containerd is less likely to be killed by OOM killer
+# 0 is appropriate for critical infrastructure like container runtime
+containerd_oom_score: 0
+
+# Default runtime configuration
+# Using runc as the default OCI runtime
+containerd_default_runtime: "runc"
+
+# Snapshotter for managing container filesystem layers
+# 'overlayfs' is the modern, recommended option (may be set elsewhere)
+# containerd_snapshotter: "overlayfs"
+
+# Runc runtime configuration
+containerd_runc_runtime:
+  name: runc
+  type: "io.containerd.runc.v2"
+  engine: ""
+  root: ""
+  base_runtime_spec: cri-base.json
+  options:
+    SystemdCgroup: "true"
+    BinaryName: "{{ bin_dir }}/runc"
+
+# GRPC settings
+# Maximum message sizes for containerd API
+containerd_grpc_max_recv_message_size: 16777216  # 16MB
+containerd_grpc_max_send_message_size: 16777216  # 16MB
+
+# Debug and logging settings
+# Log level options: debug, info, warn, error, fatal, panic
+containerd_debug_level: "info"
+
+# Container log settings
+# Maximum line size for container logs (16KB prevents huge log lines)
+containerd_max_container_log_line_size: 16384
+
+# Container registry configuration
+# Default registries (Docker Hub, etc.)
+# containerd_registries_mirrors:
+#   - prefix: docker.io
+#     mirrors:
+#       - host: https://registry-1.docker.io
+#         capabilities: ["pull", "resolve"]
+#         skip_verify: false
+
+# Registry authentication (if needed for private registries)
+# containerd_registry_auth:
+#   - registry: registry.example.com
+#     username: user
+#     password: pass
+
+# Additional runtimes (e.g., Kata Containers, gVisor)
+# Not needed for homelab, but can be added if required
+# containerd_additional_runtimes:
+#   - name: kata
+#     type: "io.containerd.kata.v2"
+#     engine: ""
+#     root: ""
+
+# Metrics endpoint (for monitoring)
+# Uncomment to enable containerd metrics for Prometheus
+# containerd_metrics_address: "127.0.0.1:1338"
+# containerd_metrics_grpc_histogram: false
+
+# Kernel modules required for containerd
+# These will be loaded automatically by kubespray:
+# - overlay (for overlayfs storage driver)
+# - br_netfilter (for CNI bridge networking)
+# - nf_conntrack (for connection tracking)
+
+# Systemd cgroup driver
+# Ensures proper cgroup management with systemd
+# This is configured automatically by kubespray based on OS detection
+
+# Notes:
+# - Containerd is more lightweight than Docker, using less memory/CPU
+# - Supports CRI (Container Runtime Interface) natively
+# - Better integration with Kubernetes than dockershim (which is deprecated)
+# - No need for Docker daemon, reducing complexity

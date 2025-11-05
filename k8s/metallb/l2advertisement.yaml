@@ -1,0 +1,21 @@
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: default-l2advert
+  namespace: metallb-system
+spec:
+  # Advertise IPs from the default-pool
+  ipAddressPools:
+    - default-pool
+
+  # Advertise on all network interfaces (default)
+  # Uncomment and specify interfaces if you need to limit advertisement
+  # interfaces:
+  #   - eth0
+  #   - ens18
+
+  # Node selectors to limit which nodes can advertise
+  # Uncomment if you want to limit L2 advertisement to specific nodes
+  # nodeSelectors:
+  #   - matchLabels:
+  #       kubernetes.io/hostname: worker-node-1

@@ -1,0 +1,39 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-ca
+  namespace: cert-manager
+spec:
+  # This certificate will be our internal CA
+  isCA: true
+
+  # Common name for the CA
+  commonName: Homelab Internal CA
+
+  # Secret name where the CA certificate will be stored
+  secretName: internal-ca-secret
+
+  # Private key configuration
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 4096
+
+  # Certificate duration (10 years)
+  duration: 87600h  # 10 years
+  renewBefore: 8760h  # Renew 1 year before expiration
+
+  # Subject information
+  subject:
+    organizations:
+      - Homelab
+    organizationalUnits:
+      - Infrastructure
+    countries:
+      - US
+
+  # Use the self-signed issuer to bootstrap the CA
+  issuerRef:
+    name: selfsigned-cluster-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
