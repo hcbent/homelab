@@ -1,0 +1,221 @@
+# Traefik Helm values for Kubernetes Ingress Controller
+# Reference: https://doc.traefik.io/traefik/
+
+# Deployment configuration
+deployment:
+  enabled: true
+  kind: Deployment
+  replicas: 2
+  podAnnotations: {}
+  podLabels: {}
+
+# Traefik image
+image:
+  name: traefik
+  tag: ""  # Uses chart appVersion if empty
+  pullPolicy: IfNotPresent
+
+# Traefik command line arguments
+additionalArguments:
+  # Enable access logs for debugging (can be disabled in production)
+  - --accesslog=true
+  - --accesslog.format=json
+
+# Ports configuration
+ports:
+  # HTTP traffic (port 80)
+  web:
+    port: 8000
+    expose: true
+    exposedPort: 80
+    protocol: TCP
+
+  # HTTPS traffic (port 443)
+  websecure:
+    port: 8443
+    expose: true
+    exposedPort: 443
+    protocol: TCP
+    # TLS configuration
+    tls:
+      enabled: true
+      # Default certificate resolver (configure with cert-manager)
+      # certResolver: ""
+
+  # Traefik dashboard (port 9000)
+  traefik:
+    port: 9000
+    expose: true
+    exposedPort: 9000
+    protocol: TCP
+
+# Service configuration
+service:
+  enabled: true
+  type: LoadBalancer  # Uses MetalLB to assign external IP
+  annotations: {}
+  labels: {}
+  spec:
+    # Optionally reserve a specific IP from MetalLB pool
+    # loadBalancerIP: "192.168.100.10"
+  loadBalancerSourceRanges: []
+  externalIPs: []
+
+# Traefik dashboard configuration
+ingressRoute:
+  dashboard:
+    enabled: true
+    # Annotations for the dashboard IngressRoute
+    annotations: {}
+    # Labels for the dashboard IngressRoute
+    labels: {}
+    # Match rule for dashboard (accessible at /dashboard)
+    matchRule: PathPrefix(`/dashboard`) || PathPrefix(`/api`)
+    # Entry points for dashboard
+    entryPoints: ["traefik"]
+
+# Pilot telemetry (disabled)
+pilot:
+  enabled: false
+
+# Experimental features
+experimental:
+  plugins:
+    enabled: false
+
+# Logs configuration
+logs:
+  general:
+    level: INFO
+    format: json
+  access:
+    enabled: true
+    format: json
+    filters: {}
+    fields:
+      general:
+        defaultmode: keep
+      headers:
+        defaultmode: drop
+
+# Global arguments
+globalArguments:
+  - "--global.checknewversion"
+
+# Providers configuration
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+    allowExternalNameServices: true
+    namespaces: []
+
+  kubernetesIngress:
+    enabled: true
+    allowExternalNameServices: true
+    namespaces: []
+    publishedService:
+      enabled: true
+
+# Resources
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "1000m"
+    memory: "512Mi"
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Security context
+securityContext:
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsGroup: 65532
+  runAsNonRoot: true
+  runAsUser: 65532
+
+podSecurityContext:
+  fsGroup: 65532
+
+# Health checks
+livenessProbe:
+  failureThreshold: 3
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 2
+
+readinessProbe:
+  failureThreshold: 1
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 2
+
+# Persistence for certificates and other data
+persistence:
+  enabled: false
+  # If enabled, configure volume for ACME certificates
+  # storageClass: "freenas-iscsi-csi"
+  # accessMode: ReadWriteOnce
+  # size: 128Mi
+  # path: /data
+
+# cert-manager integration
+# Define TLS stores and default certificate
+# tlsStore: {}
+
+# Additional volumes (for custom configs, certificates, etc.)
+volumes: []
+volumeMounts: []
+
+# Environment variables
+env: []
+
+# Service account
+serviceAccount:
+  create: true
+  name: ""
+
+# RBAC
+rbac:
+  enabled: true
+  namespaced: false
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    enabled: false
+    # If enabled:
+    # entryPoint: metrics
+    # addEntryPointsLabels: true
+    # addServicesLabels: true
+    # serviceMonitor:
+    #   enabled: false
+
+# Tracing (disabled by default)
+tracing: {}

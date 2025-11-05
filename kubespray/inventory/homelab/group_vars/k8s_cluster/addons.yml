@@ -1,0 +1,78 @@
+---
+# Kubespray Addons Configuration for Homelab
+# This file controls which optional components are deployed by kubespray
+# Reference: ~/git/kubespray/inventory/sample/group_vars/k8s_cluster/addons.yml
+
+# Helm
+# Enable Helm for deploying additional applications
+# Required for managing Helm-based applications and charts
+helm_enabled: true
+
+# Metrics Server
+# Enable metrics-server for resource metrics (CPU, memory)
+# Required for Horizontal Pod Autoscaler (HPA) and kubectl top commands
+metrics_server_enabled: true
+metrics_server_kubelet_insecure_tls: true
+metrics_server_metric_resolution: 15s
+
+# Cert-manager
+# Enable cert-manager for certificate management
+# Provides automated TLS certificate issuance and renewal
+# Will be used for internal CA certificates
+cert_manager_enabled: true
+cert_manager_namespace: "cert-manager"
+
+# Ingress Controller
+# Disable ingress-nginx as we will deploy Traefik via ArgoCD instead
+# Traefik provides better integration with our existing infrastructure
+ingress_nginx_enabled: false
+
+# MetalLB Load Balancer
+# Disable MetalLB here as it will be deployed via ArgoCD
+# This allows GitOps-based management and configuration
+metallb_enabled: false
+
+# Storage Provisioners
+# Disable local storage provisioners as we will use Democratic CSI
+# Democratic CSI integrates with FreeNAS for iSCSI/NFS persistent storage
+local_path_provisioner_enabled: false
+local_volume_provisioner_enabled: false
+
+# Kubernetes Dashboard
+# Disable dashboard (using other tools like Skooner or k9s)
+dashboard_enabled: false
+
+# Registry
+# Disable built-in registry (using external registry if needed)
+registry_enabled: false
+
+# CSI Snapshot Controller
+# Disable for now, can enable later if CSI supports snapshots
+# Democratic CSI may support this in future configurations
+csi_snapshot_controller_enabled: false
+
+# Gateway API CRDs
+# Disable Gateway API for now (using traditional Ingress)
+gateway_api_enabled: false
+
+# ArgoCD
+# Disable ArgoCD here as it will be bootstrapped manually after cluster deployment
+# This allows for custom configuration and GitOps setup
+argocd_enabled: false
+
+# Kube-VIP
+# Disable kube-vip (not needed for homelab control plane HA)
+kube_vip_enabled: false
+
+# Node Feature Discovery
+# Disable NFD (not needed for homelab workloads currently)
+node_feature_discovery_enabled: false
+
+# Notes on disabled addons:
+# - ingress_nginx_enabled: false  → Using Traefik via ArgoCD
+# - metallb_enabled: false        → Deploying via ArgoCD for GitOps management
+# - local_path_provisioner: false → Using Democratic CSI with FreeNAS backend
+# - argocd_enabled: false         → Manual bootstrap for custom configuration
+#
+# These components will be deployed after cluster initialization using
+# ArgoCD Applications for GitOps-based lifecycle management.

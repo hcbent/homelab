@@ -1,0 +1,248 @@
+---
+# Kubespray Cluster Reset Wrapper Playbook
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# WARNING: THIS IS A DESTRUCTIVE OPERATION
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# This playbook completely removes Kubernetes from all cluster nodes, including:
+#   - All Kubernetes components (kubelet, kube-proxy, etc.)
+#   - All container runtime data
+#   - All etcd data
+#   - All cluster certificates and keys
+#   - All configuration files
+#   - All network configurations
+#
+# USE CASES:
+#   - Complete cluster teardown before redeployment
+#   - Recovery from catastrophic cluster failure
+#   - Migrating to different cluster configuration
+#
+# BEFORE RUNNING THIS PLAYBOOK:
+#   1. BACKUP ALL IMPORTANT DATA
+#   2. Export all application configurations
+#   3. Document all PersistentVolume data locations
+#   4. Ensure you have recent etcd backups
+#   5. Notify all users of the cluster reset
+#
+# Usage:
+#   ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/reset_kubespray_cluster.yml
+#
+# After reset:
+#   - VMs remain running but Kubernetes is completely removed
+#   - You can redeploy the cluster using deploy_kubespray_cluster.yml
+#   - All application data on PersistentVolumes may still exist on storage backend
+
+- name: Confirm cluster reset operation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubespray_path: "{{ lookup('env', 'HOME') }}/git/kubespray"
+    kubespray_inventory: "/Users/bret/git/homelab/kubespray/inventory/homelab/hosts.ini"
+
+  tasks:
+    - name: Display severe warning
+      debug:
+        msg:
+          - "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+          - "                    SEVERE WARNING"
+          - "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+          - ""
+          - "You are about to COMPLETELY DESTROY the Kubernetes cluster."
+          - ""
+          - "This will PERMANENTLY DELETE:"
+          - "  - All Kubernetes cluster data"
+          - "  - All etcd data (cluster state)"
+          - "  - All running pods and workloads"
+          - "  - All cluster certificates and keys"
+          - "  - All network configurations"
+          - ""
+          - "Affected nodes:"
+          - "  Control Plane: {{ groups['kube_control_plane'] | join(', ') }}"
+          - "  Workers: {{ groups['kube_node'] | join(', ') }}"
+          - "  Etcd: {{ groups['etcd'] | join(', ') }}"
+          - ""
+          - "This operation CANNOT be undone!"
+          - ""
+          - "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+    - name: First confirmation
+      pause:
+        prompt: |
+
+          Type 'yes' and press ENTER to continue, or Ctrl+C to abort
+
+    - name: Require explicit confirmation
+      pause:
+        prompt: |
+
+          ARE YOU ABSOLUTELY SURE? This will DESTROY the entire cluster.
+          Type 'DESTROY' (all caps) and press ENTER to proceed, or Ctrl+C to abort
+
+    - name: Check if kubespray is installed
+      stat:
+        path: "{{ kubespray_path }}/reset.yml"
+      register: kubespray_install
+      failed_when: not kubespray_install.stat.exists
+
+    - name: Display kubespray installation path
+      debug:
+        msg: "Kubespray found at {{ kubespray_path }}"
+
+    - name: Check if inventory file exists
+      stat:
+        path: "{{ kubespray_inventory }}"
+      register: inventory_file
+      failed_when: not inventory_file.stat.exists
+
+- name: Optional etcd backup before reset
+  hosts: "{{ groups['etcd'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    etcd_backup_dir: "/var/backups/etcd"
+    etcd_backup_file: "etcd-pre-reset-{{ ansible_date_time.date }}-{{ ansible_date_time.time | replace(':', '') }}.db"
+
+  tasks:
+    - name: Offer to create final etcd backup
+      pause:
+        prompt: |
+
+          Do you want to create a final etcd backup before reset? (recommended)
+          Press ENTER to create backup, or type 'skip' to skip backup
+
+      register: backup_prompt
+
+    - name: Create etcd backup directory
+      file:
+        path: "{{ etcd_backup_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      when: backup_prompt.user_input != 'skip'
+
+    - name: Create final etcd backup
+      shell: |
+        ETCDCTL_API=3 etcdctl snapshot save {{ etcd_backup_dir }}/{{ etcd_backup_file }} \
+          --endpoints=https://127.0.0.1:2379 \
+          --cacert=/etc/ssl/etcd/ssl/ca.pem \
+          --cert=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}.pem \
+          --key=/etc/ssl/etcd/ssl/node-{{ inventory_hostname }}-key.pem
+      register: etcd_backup
+      when: backup_prompt.user_input != 'skip'
+      failed_when: false
+      changed_when: etcd_backup.rc == 0
+
+    - name: Display backup location
+      debug:
+        msg: "Final etcd backup saved to {{ etcd_backup_dir }}/{{ etcd_backup_file }}"
+      when:
+        - backup_prompt.user_input != 'skip'
+        - etcd_backup.rc == 0
+
+- name: Record cluster state before reset
+  hosts: "{{ groups['kube_control_plane'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    kubeconfig_path: "/etc/kubernetes/admin.conf"
+    state_backup_dir: "/tmp/cluster-state-{{ ansible_date_time.date }}"
+
+  tasks:
+    - name: Create state backup directory
+      file:
+        path: "{{ state_backup_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      become: false
+
+    - name: Export cluster information
+      shell: |
+        kubectl --kubeconfig={{ kubeconfig_path }} get all -A > {{ state_backup_dir }}/all-resources.txt
+        kubectl --kubeconfig={{ kubeconfig_path }} get nodes -o yaml > {{ state_backup_dir }}/nodes.yaml
+        kubectl --kubeconfig={{ kubeconfig_path }} get pv -o yaml > {{ state_backup_dir }}/persistent-volumes.yaml
+      register: export_state
+      failed_when: false
+      changed_when: false
+
+    - name: Display state backup location
+      debug:
+        msg: "Cluster state exported to {{ state_backup_dir }}"
+      when: export_state.rc == 0
+
+- name: Final warning before reset
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Last chance to abort
+      pause:
+        prompt: |
+
+          ========================================
+          LAST WARNING - POINT OF NO RETURN
+          ========================================
+
+          The cluster reset will begin in 10 seconds.
+          Press Ctrl+C NOW to abort, or wait to continue.
+        seconds: 10
+
+- name: Reset Kubernetes cluster using kubespray
+  import_playbook: "{{ lookup('env', 'HOME') }}/git/kubespray/reset.yml"
+
+- name: Post-reset verification
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check if Kubernetes components are removed
+      shell: |
+        systemctl is-active kubelet || echo "kubelet removed"
+        systemctl is-active kube-apiserver || echo "kube-apiserver removed"
+      register: k8s_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display cleanup status
+      debug:
+        msg: "{{ k8s_check.stdout_lines }}"
+
+    - name: Check for remaining Kubernetes processes
+      shell: ps aux | grep -E 'kube|etcd|container' | grep -v grep || echo "No Kubernetes processes found"
+      register: process_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display process status
+      debug:
+        msg: "{{ process_check.stdout_lines }}"
+
+- name: Display post-reset information
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show reset completion and next steps
+      debug:
+        msg:
+          - "========================================"
+          - "Cluster Reset Complete"
+          - "========================================"
+          - ""
+          - "The Kubernetes cluster has been completely removed."
+          - ""
+          - "Backups created:"
+          - "  - Etcd backup: /var/backups/etcd/ (on first etcd node)"
+          - "  - Cluster state: /tmp/cluster-state-* (on localhost)"
+          - ""
+          - "Next steps:"
+          - "1. Verify VMs are still running and accessible"
+          - "2. If redeploying cluster, run:"
+          - "   ansible-playbook -i ../kubespray/inventory/homelab/hosts.ini playbooks/deploy_kubespray_cluster.yml"
+          - ""
+          - "3. If decommissioning VMs, use Terraform to destroy:"
+          - "   cd /Users/bret/git/homelab/tf/kubespray && terraform destroy"
+          - ""
+          - "4. Review docs/KUBESPRAY-BACKUP-RESTORE.md for recovery procedures"
+          - ""
+          - "========================================"

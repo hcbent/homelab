@@ -1,0 +1,105 @@
+---
+# Common Variables for All Homelab Kubernetes Nodes
+# Reference: ~/git/kubespray/inventory/sample/group_vars/all/all.yml
+#
+# This file contains variables that apply to all nodes in the cluster
+# (control plane nodes: km01, km02, km03 and worker nodes: kube01, kube02, kube03)
+
+# Operating System
+# All VMs and bare metal use Ubuntu 25.04
+bootstrap_os: ubuntu
+
+# Ansible connection settings
+# These are also defined in inventory but can be overridden here
+ansible_user: bret
+ansible_ssh_private_key_file: /Users/bret/.ssh/github_rsa
+ansible_python_interpreter: /usr/bin/python3
+
+# Binary installation directory
+bin_dir: /usr/local/bin
+
+# Upstream DNS servers
+# Using local gateway/DNS server for resolution
+# This should point to your network's DNS server (likely Pi-hole or router)
+upstream_dns_servers:
+  - 192.168.10.1
+
+# Download optimization
+# Download binaries/images directly on each node (no localhost caching)
+# This avoids requiring sudo on the local machine
+download_run_once: false
+download_localhost: false
+
+# Force downloads to happen on remote nodes, not localhost
+download_force_cache: false
+download_keep_remote_cache: false
+
+# Container image download settings
+download_container: true
+
+# Validate SSL certificates when downloading
+download_validate_certs: true
+
+# Prevent any localhost operations during downloads
+download_delegate_localhost: false
+
+# Deploy container engine via kubespray
+deploy_container_engine: true
+
+# API Server loadbalancer configuration
+# Using local loadbalancer on each node (nginx or haproxy)
+# This provides HA access to control plane API servers
+loadbalancer_apiserver_localhost: true
+loadbalancer_apiserver_type: nginx
+loadbalancer_apiserver_port: 6443
+loadbalancer_apiserver_healthcheck_port: 8081
+
+# Retry configuration for failed operations
+retry_stagger: 5
+
+# Certificate management
+# Kubespray will generate all required certificates
+cert_management: script
+
+# Ignore assertion errors (set to false for strict validation)
+ignore_assert_errors: false
+
+# Proxy settings (if needed for outbound internet access)
+# Uncomment and configure if your homelab requires proxy for internet access
+# http_proxy: ""
+# https_proxy: ""
+# no_proxy: ""
+
+# Additional no_proxy entries
+# Uncomment to add custom no_proxy entries
+# additional_no_proxy: ""
+
+# Exclude workers from no_proxy (for faster worker node changes)
+no_proxy_exclude_workers: false
+
+# Kubernetes read-only kubelet port (disabled by default for security)
+# kube_read_only_port: 10255
+
+# Node labels and taints
+# Custom labels can be added in host_vars or applied post-deployment
+
+# Cloud provider settings
+# Not using cloud provider in homelab bare metal/VM setup
+# cloud_provider: ""
+
+# Checksum overrides
+# Override incorrect checksums in kubespray defaults
+# The Calico 3.30.3 checksum in kubespray is incorrect/outdated
+# Actual checksum verified: sha256:36c50905b9b62a78638bcfb9d1c4faf1efa08e2013265dcd694ec4e370b78dd7
+calico_crds_archive_checksums:
+  no_arch:
+    3.30.3: sha256:36c50905b9b62a78638bcfb9d1c4faf1efa08e2013265dcd694ec4e370b78dd7
+
+# Notes on network architecture:
+# - Physical network: 192.168.10.0/24
+# - Gateway: 192.168.10.1
+# - DNS: 192.168.10.1 (likely Pi-hole)
+# - Node IPs: 192.168.10.234-239
+# - Pod network: 10.233.64.0/18 (defined in k8s-cluster.yml)
+# - Service network: 10.233.0.0/18 (defined in k8s-cluster.yml)
+# - MetalLB pool: 192.168.100.0/24 (deployed via ArgoCD)

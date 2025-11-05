@@ -1,0 +1,196 @@
+# Democratic CSI Helm values for FreeNAS iSCSI driver
+# Reference: https://github.com/democratic-csi/charts
+
+nameOverride: ""
+fullnameOverride: "freenas-iscsi"
+
+csiDriver:
+  name: "org.democratic-csi.iscsi"
+  version: 1.5.0
+  enabled: true
+  attachRequired: true
+  podInfoOnMount: true
+  fsGroupPolicy: ReadWriteOnceWithFSType
+
+controller:
+  enabled: true
+  replicaCount: 1
+  strategy: deployment
+  priorityClassName: "system-cluster-critical"
+
+  externalAttacher:
+    enabled: true
+    image:
+      registry: registry.k8s.io/sig-storage/csi-attacher
+      tag: v4.4.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  externalProvisioner:
+    enabled: true
+    image:
+      registry: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v3.6.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  externalResizer:
+    enabled: true
+    image:
+      registry: registry.k8s.io/sig-storage/csi-resizer
+      tag: v1.9.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  externalSnapshotter:
+    enabled: true
+    image:
+      registry: registry.k8s.io/sig-storage/csi-snapshotter
+      tag: v8.2.1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  driver:
+    enabled: true
+    image:
+      registry: docker.io/democraticcsi/democratic-csi
+      tag: latest
+    logLevel: info
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+node:
+  enabled: true
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  hostIPC: true
+  priorityClassName: "system-node-critical"
+
+  driver:
+    enabled: true
+    image:
+      registry: docker.io/democraticcsi/democratic-csi
+      tag: latest
+    logLevel: info
+    localtimeHostPath: /etc/localtime
+    iscsiDirHostPath: /etc/iscsi
+    iscsiDirHostPathType: Directory
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  driverRegistrar:
+    enabled: true
+    image:
+      registry: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      tag: v2.9.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+csiProxy:
+  enabled: true
+  image:
+    registry: docker.io/democraticcsi/csi-grpc-proxy
+    tag: v0.5.6
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+driver:
+  # This configuration should be customized with actual FreeNAS details
+  # Retrieve credentials from Vault: secret/homelab/freenas/credentials
+  config:
+    driver: freenas-iscsi
+
+    instance_id:
+    httpConnection:
+      protocol: http
+      host: <FREENAS_IP>
+      port: 80
+      apiKey: <RETRIEVE_FROM_VAULT>
+      allowInsecure: true
+      apiVersion: 2
+
+    sshConnection:
+      host: <FREENAS_IP>
+      port: 22
+      username: root
+      privateKey: <RETRIEVE_FROM_VAULT>
+
+    zfs:
+      # Storage pool configuration
+      datasetParentName: tank/k8s/volumes
+      detachedSnapshotsDatasetParentName: tank/k8s/snapshots
+      datasetEnableQuotas: true
+      datasetEnableReservation: false
+      datasetPermissionsMode: "0770"
+      datasetPermissionsUser: 0
+      datasetPermissionsGroup: 0
+
+    iscsi:
+      targetPortal: "<FREENAS_IP>:3260"
+      targetPortals: []
+      interface:
+      namePrefix: csi-
+      nameSuffix: "-cluster"
+      targetGroups:
+        - targetGroupPortalGroup: 1
+          targetGroupInitiatorGroup: 1
+          targetGroupAuthType: None
+      extentInsecureTpc: true
+      extentXenCompat: false
+      extentDisablePhysicalBlocksize: true
+      extentBlocksize: 512
+      extentRpm: "SSD"
+      extentAvailThreshold: 0
+
+storageClasses:
+  - name: freenas-iscsi-csi
+    defaultClass: true
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+    parameters:
+      fsType: ext4
+    mountOptions: []
+    secrets:
+      provisioner-secret:
+      controller-publish-secret:
+      node-stage-secret:
+      node-publish-secret:
+      controller-expand-secret:
+
+volumeSnapshotClasses:
+  - name: freenas-iscsi-snapshots
+    deletionPolicy: Delete
+    parameters: {}

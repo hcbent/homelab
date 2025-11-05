@@ -1,0 +1,125 @@
+---
+# Kubespray Kubernetes Cluster Configuration for Homelab
+# This file contains cluster-wide settings for the homelab Kubernetes cluster
+# Reference: ~/git/kubespray/inventory/sample/group_vars/k8s_cluster/k8s-cluster.yml
+
+# Kubernetes version
+# Using kubespray's default version (auto-detected from kubelet_checksums)
+# To override, uncomment and set specific version:
+# kube_version: v1.30.0
+
+# Cluster identification
+cluster_name: homelab-kubespray
+
+# Container runtime
+# Using containerd for modern container management
+container_manager: containerd
+
+# Network plugin configuration
+# Using Calico for novice-friendly, feature-rich CNI
+# Calico provides:
+# - Easy troubleshooting and management
+# - NetworkPolicy support
+# - Good documentation and community support
+kube_network_plugin: calico
+
+# Kube-proxy configuration
+# Using iptables mode (reliable and well-tested)
+# Note: Set kube_proxy_strict_arp to true when using MetalLB
+kube_proxy_mode: iptables
+kube_proxy_strict_arp: true  # Required for MetalLB Layer 2 mode
+
+# Network addressing
+# Internal network for Kubernetes services (ClusterIP)
+kube_service_addresses: 10.233.0.0/18
+
+# Internal network for pod IP addresses
+# This network must be unused in your network infrastructure
+kube_pods_subnet: 10.233.64.0/18
+
+# Pod subnet size per node (allows ~254 pods per node)
+kube_network_node_prefix: 24
+
+# Dual stack networking (IPv4 only for homelab)
+# enable_dual_stack_networks: false  # Not needed, defaults to false
+
+# DNS configuration
+# Using CoreDNS for cluster DNS resolution
+dns_mode: coredns
+
+# Enable NodeLocalDNS cache for improved DNS performance
+# This reduces DNS query latency and load on CoreDNS
+enable_nodelocaldns: true
+nodelocaldns_ip: 169.254.25.10
+nodelocaldns_health_port: 9254
+
+# DNS settings
+ndots: 2
+
+# API server configuration
+kube_apiserver_port: 6443
+
+# Kubernetes logging level (0-4, higher is more verbose)
+kube_log_level: 2
+
+# Kubeconfig settings
+# Make a copy of kubeconfig on the Ansible host for convenience
+kubeconfig_localhost: true
+kubectl_localhost: true
+
+# Authentication settings
+kube_api_anonymous_auth: true
+
+# Certificate management
+# Automatically renew K8S control plane certificates
+auto_renew_certificates: false
+
+# Image pull policy
+k8s_image_pull_policy: IfNotPresent
+
+# Audit logging (disabled for homelab to reduce overhead)
+kubernetes_audit: false
+
+# Encrypting Secret Data at Rest (disabled for homelab simplicity)
+kube_encrypt_secret_data: false
+
+# Kubelet configuration
+# Max pods per node (default: 110)
+# kubelet_max_pods: 110
+
+# Graceful node shutdown configuration (Kubernetes >= 1.21.0)
+# Allows pods to terminate gracefully during node shutdown
+kubelet_shutdown_grace_period: 60s
+kubelet_shutdown_grace_period_critical_pods: 20s
+
+# Directory configuration
+kube_config_dir: /etc/kubernetes
+kube_cert_dir: "{{ kube_config_dir }}/ssl"
+kube_token_dir: "{{ kube_config_dir }}/tokens"
+
+# Local release directory for binaries
+local_release_dir: "/tmp/releases"
+
+# Credentials directory
+credentials_dir: "{{ inventory_dir }}/credentials"
+
+# Remove anonymous access for security
+remove_anonymous_access: false
+
+# Deploy netchecker for DNS verification (disabled for homelab)
+deploy_netchecker: false
+
+# Container runtime settings are in separate containerd configuration file
+
+# Kubeconfig handling
+# Disable automatic kubeconfig copy to localhost to avoid sudo issues
+# We'll manually copy kubeconfig after deployment
+kubeconfig_localhost: false
+kubeconfig_localhost_ansible_host: false
+
+# Checksum overrides for downloads
+# The Calico 3.30.3 checksum in kubespray role vars is incorrect
+# We must override the actual download URL checksum because role vars/ has higher precedence than group_vars/
+# Verified: curl -sL https://github.com/projectcalico/calico/archive/v3.30.3.tar.gz | sha256sum
+# Actual checksum: sha256:36c50905b9b62a78638bcfb9d1c4faf1efa08e2013265dcd694ec4e370b78dd7
+calico_crds_download_url_checksum: "sha256:36c50905b9b62a78638bcfb9d1c4faf1efa08e2013265dcd694ec4e370b78dd7"

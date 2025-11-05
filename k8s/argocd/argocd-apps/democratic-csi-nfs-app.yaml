@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: democratic-csi-nfs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  destination:
+    namespace: democratic-csi
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: https://democratic-csi.github.io/charts/
+      targetRevision: 0.14.6
+      chart: democratic-csi
+      helm:
+        valueFiles:
+          - $values/k8s/democratic-csi/values-nfs.yaml
+    - repoURL: git@github.com/wortmanb/homelab.git
+      path: k8s/democratic-csi
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true

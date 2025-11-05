@@ -1,0 +1,58 @@
+---
+# Etcd Configuration for Homelab Kubernetes Cluster
+# Reference: ~/git/kubespray/inventory/sample/group_vars/all/etcd.yml
+#
+# Etcd Topology:
+# - Stacked etcd (runs on control plane nodes)
+# - 3 members for high availability: km01, km02, km03
+# - Provides quorum tolerance (can survive 1 node failure)
+
+# Directory where etcd data is stored
+# This directory will contain the etcd database and WAL files
+etcd_data_dir: /var/lib/etcd
+
+# Etcd deployment type
+# Options: host (systemd service) or docker/kubeadm (containerized)
+# Using 'host' for better performance and stability
+etcd_deployment_type: host
+
+# Container manager for etcd
+# Inherits from k8s_cluster settings, but can be overridden
+# Using containerd for consistency with the cluster
+container_manager: containerd
+
+# Etcd resource limits
+# Memory limit for etcd process (important for stability)
+# 2GB is appropriate for homelab with 8-16GB RAM control plane nodes
+etcd_memory_limit: 2048M
+
+# Etcd quota backend bytes
+# Maximum etcd database size before triggering compaction
+# 2GB allows for extensive cluster state storage
+etcd_quota_backend_bytes: 2147483648  # 2GB
+
+# Etcd compaction settings
+# Automatic compaction helps maintain database performance
+# etcd_compaction_retention: "8"  # Keep last 8 hours of history
+
+# Etcd snapshot settings
+# Regular snapshots are critical for disaster recovery
+# Note: Manual backup procedures are documented in operational runbooks
+# See: docs/KUBESPRAY-BACKUP-RESTORE.md for backup/restore procedures
+
+# Etcd heartbeat and election timeouts
+# These control cluster consensus behavior
+# Defaults are generally fine for homelab network latency
+# etcd_heartbeat_interval: "100"
+# etcd_election_timeout: "1000"
+
+# Etcd metrics
+# Enable metrics for monitoring (can be scraped by Prometheus)
+# etcd_metrics: "basic"  # Options: basic, extensive
+
+# Notes on etcd HA:
+# - 3-member cluster provides N=3, Quorum=2 (can tolerate 1 failure)
+# - All 3 control plane nodes (km01, km02, km03) host etcd members
+# - Etcd member names set in inventory: etcd1, etcd2, etcd3
+# - For backup procedures, see docs/KUBESPRAY-BACKUP-RESTORE.md
+# - For adding/removing etcd members, see docs/KUBESPRAY-OPERATIONS.md
