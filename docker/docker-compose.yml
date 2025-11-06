@@ -27,6 +27,7 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - ./qbittorrent/config:/config
+      - downloads-storage:/downloads
       - media-storage:/data
     ports:
       - "8080:8080"
