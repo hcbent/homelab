@@ -16,7 +16,7 @@ spec:
       helm:
         valueFiles:
           - $values/k8s/home-apps/actualbudget-values.yaml
-    # Secondary source: Local values repository
+    # Secondary source: Local values repository (HTTPS instead of SSH)
     - repoURL: https://github.com/wortmanb/homelab.git
       path: k8s/home-apps
       targetRevision: main

@@ -1,0 +1,82 @@
+# Mealie Helm Values Configuration
+# Chart: bjw-s/app-template
+# Reference: https://github.com/bjw-s/helm-charts/tree/main/charts/library/common
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/mealie-recipes/mealie
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        env:
+          TZ: America/New_York
+          ALLOW_SIGNUP: "true"
+          PUID: "1000"
+          PGID: "1000"
+          MAX_WORKERS: "1"
+          WEB_CONCURRENCY: "1"
+          BASE_URL: "http://localhost:9925"
+
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/app/about
+                port: 9000
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/app/about
+                port: 9000
+              initialDelaySeconds: 15
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 3
+
+# Service configuration - NodePort type per project requirements
+service:
+  main:
+    type: NodePort
+    ports:
+      http:
+        port: 9000
+        nodePort: 30925
+        protocol: TCP
+
+# Persistent volume configuration
+persistence:
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    storageClass: freenas-iscsi-csi
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    globalMounts:
+      - path: /app/data
+
+# Security context
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Resource limits
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

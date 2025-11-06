@@ -2,24 +2,28 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: mealie
-  namespace: argocd # Ensure this matches your ArgoCD namespace
+  namespace: argocd
 spec:
   project: default
   destination:
-    namespace: mealie
+    namespace: home-apps
     server: https://kubernetes.default.svc
   sources:
-    - repoURL: 'https://k8s-at-home.com/charts/'
-      targetRevision: '5.1.2'
-      chart: 'mealie'
+    # Primary source: bjw-s chart for Mealie
+    - repoURL: 'https://bjw-s-labs.github.io/helm-charts'
+      targetRevision: '3.5.1'
+      chart: 'app-template'
       helm:
         valueFiles:
-          - $values/k8s/mealie/values.yaml
-    - repoURL: git@github.com/wortmanb/homelab.git
-      path: k8s/mealie
+          - $values/k8s/home-apps/mealie-values.yaml
+    # Secondary source: Local values repository
+    - repoURL: https://github.com/wortmanb/homelab.git
+      path: k8s/home-apps
       targetRevision: main
       ref: values
   syncPolicy:
-#    syncOptions:
-#      - CreateNamespace=true
-    automated: {} # Optional: enable auto-sync
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true
