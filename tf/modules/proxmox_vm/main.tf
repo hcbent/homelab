@@ -72,14 +72,6 @@ resource "proxmox_vm_qemu" "vm" {
       # Runtime and computed attributes
       boot,
       bootdisk,
-      current_node,
-      default_ipv4_address,
-      default_ipv6_address,
-      ssh_host,
-      ssh_port,
-      linked_vmid,
-      unused_disk,
-      reboot_required,
 
       # Network changes that might occur during runtime
       network,

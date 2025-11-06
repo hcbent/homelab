@@ -1,0 +1,328 @@
+---
+# Playbook: Regenerate Kubernetes API Server Certificates with Load Balancer VIP
+#
+# Purpose: Regenerates API server certificates to include the load balancer VIP
+#          in the Subject Alternative Names (SANs) to allow secure kubectl access
+#          through the nginx load balancer
+#
+# Target: Kubernetes control plane nodes
+# Dependencies: Kubespray-deployed cluster
+# Spec: agent-os/specs/2025-11-05-nginx-lb-ha
+#
+# IMPORTANT: This playbook will:
+# 1. Backup existing certificates
+# 2. Delete old API server certificates
+# 3. Regenerate certificates with VIP in SANs
+# 4. Restart API server pods
+#
+# Usage:
+#   ansible-playbook -i inventory/lab regenerate_k8s_api_certs.yml
+#
+# Safety: Old certificates are backed up before deletion
+
+- name: Regenerate Kubernetes API Server Certificates with VIP
+  hosts: kube_control_plane
+  become: yes
+  gather_facts: yes
+  serial: 1  # Process one node at a time for safety
+
+  vars:
+    # Load balancer VIP to add to certificate SANs
+    lb_vip: "192.168.10.250"
+
+    # Certificate paths
+    cert_dir: "/etc/kubernetes/ssl"
+    apiserver_cert: "{{ cert_dir }}/apiserver.crt"
+    apiserver_key: "{{ cert_dir }}/apiserver.key"
+
+    # Backup directory
+    backup_dir: "/root/k8s-cert-backup"
+    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    # Kubeadm config file
+    kubeadm_config: "/etc/kubernetes/kubeadm-config.yaml"
+
+  tasks:
+    - name: Regenerate certificates with error handling
+      block:
+        - name: Display playbook information
+          debug:
+        msg:
+          - "=============================================="
+          - "Regenerating API Server Certificates"
+          - "=============================================="
+          - "Node: {{ inventory_hostname }}"
+          - "Adding VIP to SANs: {{ lb_vip }}"
+          - "Backup timestamp: {{ backup_timestamp }}"
+          - "=============================================="
+
+    # Pre-flight checks
+    - name: Check if running on control plane node
+      stat:
+        path: "{{ cert_dir }}"
+      register: cert_dir_check
+      failed_when: not cert_dir_check.stat.exists
+
+    - name: Check if API server certificate exists
+      stat:
+        path: "{{ apiserver_cert }}"
+      register: cert_check
+
+    - name: Display current certificate SANs
+      shell: |
+        openssl x509 -in {{ apiserver_cert }} -noout -text | grep -A 2 "Subject Alternative Name"
+      register: current_sans
+      when: cert_check.stat.exists
+      changed_when: false
+
+    - name: Show current SANs
+      debug:
+        msg: "{{ current_sans.stdout_lines }}"
+      when: cert_check.stat.exists
+
+    - name: Check if VIP already in certificate
+      shell: |
+        openssl x509 -in {{ apiserver_cert }} -noout -text | grep "{{ lb_vip }}"
+      register: vip_in_cert
+      failed_when: false
+      changed_when: false
+      when: cert_check.stat.exists
+
+    - name: Skip node if VIP already present
+      block:
+        - name: Display skip message
+          debug:
+            msg: "VIP {{ lb_vip }} already present in certificate on {{ inventory_hostname }}. Skipping."
+
+        - meta: end_host
+      when:
+        - cert_check.stat.exists
+        - vip_in_cert.rc == 0
+
+    # Backup phase
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}/{{ backup_timestamp }}"
+        state: directory
+        mode: '0700'
+
+    - name: Backup existing certificates
+      copy:
+        src: "{{ item }}"
+        dest: "{{ backup_dir }}/{{ backup_timestamp }}/{{ item | basename }}"
+        remote_src: yes
+        mode: preserve
+      loop:
+        - "{{ apiserver_cert }}"
+        - "{{ apiserver_key }}"
+      when: cert_check.stat.exists
+
+    - name: Backup kubeadm config
+      copy:
+        src: "{{ kubeadm_config }}"
+        dest: "{{ backup_dir }}/{{ backup_timestamp }}/kubeadm-config.yaml"
+        remote_src: yes
+        mode: preserve
+      when: cert_check.stat.exists
+
+    # Certificate regeneration
+    - name: Get cluster name from kubeadm config
+      shell: |
+        grep "clusterName:" {{ kubeadm_config }} | awk '{print $2}'
+      register: cluster_name_result
+      changed_when: false
+
+    - name: Set cluster name
+      set_fact:
+        cluster_name: "{{ cluster_name_result.stdout }}"
+
+    - name: Get service subnet from kubeadm config
+      shell: |
+        grep "serviceSubnet:" {{ kubeadm_config }} | awk '{print $2}'
+      register: service_subnet_result
+      changed_when: false
+
+    - name: Set service subnet
+      set_fact:
+        service_subnet: "{{ service_subnet_result.stdout }}"
+
+    - name: Get pod subnet from kubeadm config
+      shell: |
+        grep "podSubnet:" {{ kubeadm_config }} | awk '{print $2}'
+      register: pod_subnet_result
+      changed_when: false
+      failed_when: false
+
+    - name: Set pod subnet
+      set_fact:
+        pod_subnet: "{{ pod_subnet_result.stdout | default('') }}"
+
+    - name: Get all control plane IPs
+      set_fact:
+        control_plane_ips: "{{ groups['kube_control_plane'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | list }}"
+
+    - name: Build cert extra SANs list
+      set_fact:
+        cert_extra_sans: "{{ control_plane_ips + [lb_vip] }}"
+
+    - name: Display cert SANs to be added
+      debug:
+        msg: "Certificate will include SANs: {{ cert_extra_sans | join(', ') }}"
+
+    - name: Delete old API server certificates
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ apiserver_cert }}"
+        - "{{ apiserver_key }}"
+
+    - name: Create kubeadm certificate config
+      copy:
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: ClusterConfiguration
+          apiServer:
+            certSANs:
+            - localhost
+            - 127.0.0.1
+            - {{ ansible_hostname }}
+            - {{ ansible_fqdn }}
+            - {{ ansible_default_ipv4.address }}
+            {% for ip in cert_extra_sans %}
+            - {{ ip }}
+            {% endfor %}
+            - kubernetes
+            - kubernetes.default
+            - kubernetes.default.svc
+            - kubernetes.default.svc.{{ cluster_name }}
+          clusterName: {{ cluster_name }}
+          networking:
+            serviceSubnet: {{ service_subnet }}
+            {% if pod_subnet %}
+            podSubnet: {{ pod_subnet }}
+            {% endif %}
+        dest: /tmp/kubeadm-cert-config.yaml
+        mode: '0600'
+
+    - name: Generate new API server certificate
+      shell: |
+        kubeadm init phase certs apiserver --config=/tmp/kubeadm-cert-config.yaml
+      register: cert_generation
+      changed_when: true
+
+    - name: Display certificate generation result
+      debug:
+        msg: "{{ cert_generation.stdout_lines }}"
+
+    - name: Verify new certificate was created
+      stat:
+        path: "{{ apiserver_cert }}"
+      register: new_cert_check
+      failed_when: not new_cert_check.stat.exists
+
+    - name: Display new certificate SANs
+      shell: |
+        openssl x509 -in {{ apiserver_cert }} -noout -text | grep -A 10 "Subject Alternative Name"
+      register: new_sans
+      changed_when: false
+
+    - name: Show new SANs
+      debug:
+        msg: "{{ new_sans.stdout_lines }}"
+
+    - name: Verify VIP is in new certificate
+      shell: |
+        openssl x509 -in {{ apiserver_cert }} -noout -text | grep "{{ lb_vip }}"
+      register: vip_verify
+      changed_when: false
+      failed_when: vip_verify.rc != 0
+
+    # Restart API server
+    - name: Get API server container ID
+      shell: |
+        crictl ps --name kube-apiserver -q
+      register: apiserver_container
+      changed_when: false
+
+    - name: Delete API server pod to force restart with new cert
+      shell: |
+        crictl stopp {{ apiserver_container.stdout }} && crictl rmp {{ apiserver_container.stdout }}
+      when: apiserver_container.stdout | length > 0
+      changed_when: true
+
+    - name: Wait for API server to restart
+      wait_for:
+        host: "{{ ansible_default_ipv4.address }}"
+        port: 6443
+        delay: 5
+        timeout: 120
+        state: started
+
+    - name: Verify API server is responding
+      uri:
+        url: "https://{{ ansible_default_ipv4.address }}:6443/healthz"
+        validate_certs: no
+        return_content: yes
+      register: healthz
+      until: healthz.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Display success message
+      debug:
+        msg:
+          - "=============================================="
+          - "Certificate Regeneration Complete"
+          - "=============================================="
+          - "Node: {{ inventory_hostname }}"
+          - "VIP {{ lb_vip }} added to certificate SANs"
+          - "API server restarted and healthy"
+          - "Backup location: {{ backup_dir }}/{{ backup_timestamp }}"
+          - "=============================================="
+
+    - name: Clean up temporary files
+      file:
+        path: /tmp/kubeadm-cert-config.yaml
+        state: absent
+
+  # Error handling
+  rescue:
+    - name: Display error message
+      debug:
+        msg:
+          - "=============================================="
+          - "ERROR on {{ inventory_hostname }}"
+          - "=============================================="
+          - "Certificate regeneration failed"
+          - "Backup available at: {{ backup_dir }}/{{ backup_timestamp }}"
+          - "=============================================="
+
+    - name: Provide rollback instructions
+      debug:
+        msg:
+          - "To rollback certificates on {{ inventory_hostname }}:"
+          - "  sudo cp {{ backup_dir }}/{{ backup_timestamp }}/apiserver.crt {{ apiserver_cert }}"
+          - "  sudo cp {{ backup_dir }}/{{ backup_timestamp }}/apiserver.key {{ apiserver_key }}"
+          - "  sudo crictl stopp $(sudo crictl ps --name kube-apiserver -q)"
+          - "  sudo crictl rmp $(sudo crictl ps --name kube-apiserver -q)"
+
+    - name: Fail the playbook
+      fail:
+        msg: "Certificate regeneration failed on {{ inventory_hostname }}"
+
+# Final summary
+- name: Display overall summary
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Final summary
+      debug:
+        msg:
+          - "=============================================="
+          - "API Server Certificate Regeneration Complete"
+          - "=============================================="
+          - "All control plane nodes have been updated"
+          - "VIP 192.168.10.250 added to certificate SANs"
+          - "You can now use kubectl through the load balancer"
+          - "=============================================="

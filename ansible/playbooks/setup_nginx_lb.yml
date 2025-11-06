@@ -1,0 +1,303 @@
+---
+# Ansible playbook to install and configure nginx load balancer with HA
+# This nginx instance provides dual-purpose load balancing:
+# 1. Layer 4 (TCP Stream) - Kubernetes API Server (port 6443) to control plane nodes
+# 2. Layer 7 (HTTP/HTTPS) - NodePort services to worker nodes
+#
+# HA is provided by Corosync/Pacemaker with VIP failover
+
+- name: Setup nginx Load Balancer with HA
+  hosts: nginx_lb
+  become: true
+
+  tasks:
+    # ============================================
+    # SECTION 1: Package Installation
+    # ============================================
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install nginx and stream module
+      apt:
+        name:
+          - nginx
+          - libnginx-mod-stream
+          - ssl-cert
+        state: present
+
+    - name: Install Corosync and Pacemaker packages
+      apt:
+        name:
+          - corosync
+          - pacemaker
+          - pcs
+          - crmsh
+        state: present
+
+    # ============================================
+    # SECTION 2: Nginx Configuration
+    # ============================================
+
+    - name: Ensure nginx is enabled and started
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started
+
+    - name: Create nginx upstream configuration directory
+      file:
+        path: /etc/nginx/conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Create stream configuration directory
+      file:
+        path: /etc/nginx/stream.d
+        state: directory
+        mode: '0755'
+
+    - name: Remove misplaced include from events block
+      lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: '^\s*include /etc/nginx/stream.d/\*\.conf;'
+        state: absent
+
+    - name: Remove old stream block if exists
+      blockinfile:
+        path: /etc/nginx/nginx.conf
+        marker: "# {mark} ANSIBLE MANAGED STREAM BLOCK"
+        state: absent
+
+    - name: Add stream block to main nginx.conf (at end of file)
+      blockinfile:
+        path: /etc/nginx/nginx.conf
+        marker: "# {mark} ANSIBLE MANAGED STREAM BLOCK"
+        insertafter: EOF
+        block: |
+          stream {
+              include /etc/nginx/stream.d/*.conf;
+          }
+
+    - name: Generate nginx stream configuration (K8s API)
+      template:
+        src: ../templates/nginx-lb-stream.conf.j2
+        dest: /etc/nginx/stream.d/k8s-api.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Generate nginx HTTP configuration (NodePort services)
+      template:
+        src: ../templates/nginx-lb-http.conf.j2
+        dest: /etc/nginx/conf.d/k8s-loadbalancer.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Remove default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Test nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+
+    - name: Display nginx test result
+      debug:
+        var: nginx_test.stderr_lines
+
+    - name: Fail if nginx test failed
+      fail:
+        msg: "Nginx configuration test failed"
+      when: nginx_test.rc != 0
+
+    # ============================================
+    # SECTION 3: Corosync Cluster Configuration
+    # ============================================
+
+    - name: Enable pcsd service
+      systemd:
+        name: pcsd
+        enabled: yes
+        state: started
+
+    - name: Set hacluster user password
+      user:
+        name: hacluster
+        password: "{{ 'hacluster' | password_hash('sha512') }}"
+      no_log: true
+
+    - name: Generate corosync configuration
+      template:
+        src: ../templates/corosync.conf.j2
+        dest: /etc/corosync/corosync.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - Restart corosync
+        - Restart pacemaker
+
+    - name: Generate corosync authentication key on first node
+      command: corosync-keygen -l
+      args:
+        creates: /etc/corosync/authkey
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Fetch authkey from first node
+      fetch:
+        src: /etc/corosync/authkey
+        dest: /tmp/corosync-authkey
+        flat: yes
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Copy authkey to secondary node
+      copy:
+        src: /tmp/corosync-authkey
+        dest: /etc/corosync/authkey
+        owner: root
+        group: root
+        mode: '0400'
+      when: inventory_hostname != groups['nginx_lb'][0]
+
+    - name: Ensure corosync is enabled and started
+      systemd:
+        name: corosync
+        enabled: yes
+        state: started
+
+    - name: Wait for corosync to be fully started
+      pause:
+        seconds: 10
+
+    # ============================================
+    # SECTION 4: Pacemaker Cluster Configuration
+    # ============================================
+
+    - name: Ensure pacemaker is enabled and started
+      systemd:
+        name: pacemaker
+        enabled: yes
+        state: started
+
+    - name: Wait for pacemaker to be fully started
+      pause:
+        seconds: 10
+
+    # Wait for cluster to form
+    - name: Wait for cluster to be ready
+      shell: crm status 2>&1 | grep -q "Online:"
+      register: cluster_ready
+      until: cluster_ready.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    # ============================================
+    # SECTION 5: Cluster Properties Configuration
+    # ============================================
+
+    - name: Configure cluster properties
+      shell: |
+        crm configure property stonith-enabled={{ corosync_config.stonith_enabled | lower }}
+        crm configure property no-quorum-policy=ignore
+        crm configure rsc_defaults resource-stickiness=100
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+      changed_when: false
+
+    # ============================================
+    # SECTION 6: VIP Resource Configuration
+    # ============================================
+
+    - name: Check if VIP resource already exists
+      shell: crm resource status cluster-vip
+      register: vip_exists
+      failed_when: false
+      changed_when: false
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Create VIP resource
+      shell: |
+        crm configure primitive cluster-vip ocf:heartbeat:IPaddr2 \
+          params ip={{ cluster_vip }} cidr_netmask=24 \
+          op monitor interval=10s
+      when:
+        - inventory_hostname == groups['nginx_lb'][0]
+        - vip_exists.rc != 0
+      run_once: true
+      changed_when: true
+
+    - name: Check if location constraint exists
+      shell: crm configure show | grep -q "location prefer-nginx-lb01"
+      register: constraint_exists
+      failed_when: false
+      changed_when: false
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Configure location constraint for preferred primary node
+      shell: |
+        crm configure location prefer-nginx-lb01 cluster-vip 50: nginx-lb01
+      when:
+        - inventory_hostname == groups['nginx_lb'][0]
+        - constraint_exists.rc != 0
+      run_once: true
+      changed_when: true
+
+    # ============================================
+    # SECTION 7: Verification
+    # ============================================
+
+    - name: Display cluster status
+      shell: crm status
+      register: cluster_status
+      changed_when: false
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Show cluster status
+      debug:
+        var: cluster_status.stdout_lines
+      when: inventory_hostname == groups['nginx_lb'][0]
+      run_once: true
+
+    - name: Verify VIP is configured
+      shell: ip addr show | grep {{ cluster_vip }}
+      register: vip_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display VIP status
+      debug:
+        msg: "VIP {{ cluster_vip }} is {{ 'ACTIVE' if vip_check.rc == 0 else 'not active' }} on {{ inventory_hostname }}"
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Restart corosync
+      systemd:
+        name: corosync
+        state: restarted
+
+    - name: Restart pacemaker
+      systemd:
+        name: pacemaker
+        state: restarted

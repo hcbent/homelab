@@ -1,0 +1,80 @@
+---
+# Group variables for nginx load balancer cluster
+# Used by ansible/playbooks/setup_nginx_lb.yml
+
+# HA Cluster Configuration
+cluster_vip: 192.168.10.250
+cluster_name: nginx-lb-cluster
+
+# Corosync/Pacemaker Configuration
+corosync_config:
+  two_node: 1
+  expected_votes: 2
+  stonith_enabled: false
+  token_timeout: 1000
+  transport: udpu
+
+# Kubernetes Control Plane Nodes (for K8s API load balancing)
+# These nodes will be targeted by the nginx stream block on port 6443
+k8s_control_plane:
+  - name: "km01"
+    ip: "192.168.10.234"
+  - name: "km02"
+    ip: "192.168.10.235"
+  - name: "km03"
+    ip: "192.168.10.236"
+
+# Kubernetes Worker Nodes (for NodePort service load balancing)
+# These nodes will be targeted by the nginx HTTP block for NodePort services
+k8s_workers:
+  - name: "kube01"
+    ip: "192.168.10.237"
+  - name: "kube02"
+    ip: "192.168.10.238"
+  - name: "kube03"
+    ip: "192.168.10.239"
+
+# NodePort Services to Load Balance
+# Each service will have an nginx server block listening on listen_port
+# and proxying to node_port on all k8s_workers
+services:
+  - name: "argocd"
+    listen_port: 8080
+    node_port: 31160
+    description: "ArgoCD UI (HTTP)"
+  - name: "argocd-https"
+    listen_port: 8443
+    node_port: 32442
+    description: "ArgoCD UI (HTTPS)"
+  - name: "traefik"
+    listen_port: 80
+    node_port: 31469
+    description: "Traefik Ingress (HTTP)"
+  - name: "traefik-https"
+    listen_port: 443
+    node_port: 31685
+    description: "Traefik Ingress (HTTPS)"
+
+# Nginx Configuration Parameters
+nginx_config:
+  # K8s API stream configuration
+  k8s_api_port: 6443
+  k8s_api_proxy_timeout: "10m"
+  k8s_api_proxy_connect_timeout: "10s"
+
+  # NodePort service HTTP configuration
+  proxy_timeout: "90s"
+  proxy_connect_timeout: "10s"
+  proxy_read_timeout: "90s"
+  proxy_send_timeout: "90s"
+
+  # Health check parameters
+  max_fails: 2
+  fail_timeout: "30s"
+
+  # Load balancing algorithm
+  lb_method: "least_conn"
+
+  # Health check endpoint
+  health_check_port: 8888
+  health_check_path: "/health"

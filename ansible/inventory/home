@@ -3,6 +3,10 @@ plex
 docker
 lidarr
 
+[nginx_lb]
+nginx-lb01
+nginx-lb02
+
 [k8s_cp]
 kube01
 kube02

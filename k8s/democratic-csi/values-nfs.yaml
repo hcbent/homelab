@@ -122,21 +122,30 @@ driver:
     driver: freenas-nfs
 
     instance_id:
+    # Credentials are injected via Helm --set flags from Vault
+    # See deploy-democratic-csi.sh script
     httpConnection:
       protocol: http
-      host: <FREENAS_IP>
+      host: ""  # Set via --set from Vault
       port: 80
-      apiKey: <RETRIEVE_FROM_VAULT>
+      apiKey: ""  # Set via --set from Vault
       allowInsecure: true
       apiVersion: 2
 
     sshConnection:
-      host: <FREENAS_IP>
+      host: ""  # Set via --set from Vault
       port: 22
-      username: root
-      privateKey: <RETRIEVE_FROM_VAULT>
+      username: ""  # Set via --set from Vault
+      privateKey: ""  # Set via --set from Vault
 
     zfs:
+      cli:
+        sudoEnabled: false
+        paths:
+          zfs: /usr/sbin/zfs
+          zpool: /usr/sbin/zpool
+          sudo: /usr/bin/sudo
+          chroot: /usr/sbin/chroot
       # Storage pool configuration
       datasetParentName: tank/k8s/nfs
       detachedSnapshotsDatasetParentName: tank/k8s/nfs-snapshots
@@ -147,7 +156,7 @@ driver:
       datasetPermissionsGroup: 0
 
     nfs:
-      shareHost: "<FREENAS_IP>"
+      shareHost: "truenas.lab.thewortmans.org"
       shareAlldirs: false
       shareAllowedHosts: []
       shareAllowedNetworks: []
