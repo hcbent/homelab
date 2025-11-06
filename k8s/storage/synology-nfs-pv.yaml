@@ -1,0 +1,58 @@
+# Synology NFS PersistentVolumes for Media Storage
+# These PVs provide ReadWriteMany access to existing media files on Synology Diskstation
+# NFS Server: 192.168.1.230 (Synology Diskstation)
+# Note: Called "tank" per project conventions, not "truenas-nfs"
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-storage
+  labels:
+    storage-type: nfs
+    storage-class: synology-nfs
+    purpose: media-library
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""  # Static PV, not managed by dynamic provisioner
+  mountOptions:
+    - nfsvers=4
+    - hard
+    - intr
+    - rsize=1048576
+    - wsize=1048576
+  nfs:
+    server: 192.168.1.230
+    path: /volume1/video
+    readOnly: false
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: downloads-storage
+  labels:
+    storage-type: nfs
+    storage-class: synology-nfs
+    purpose: downloads
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""  # Static PV, not managed by dynamic provisioner
+  mountOptions:
+    - nfsvers=4
+    - hard
+    - intr
+    - rsize=1048576
+    - wsize=1048576
+  nfs:
+    server: 192.168.1.230
+    path: /volume1/video/downloads
+    readOnly: false

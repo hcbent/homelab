@@ -74,6 +74,11 @@ kube_api_anonymous_auth: true
 # Automatically renew K8S control plane certificates
 auto_renew_certificates: false
 
+# Add load balancer VIP to API server certificate SANs
+# This allows kubectl to connect through the nginx load balancer
+supplementary_addresses_in_ssl_keys:
+  - 192.168.10.250
+
 # Image pull policy
 k8s_image_pull_policy: IfNotPresent
 

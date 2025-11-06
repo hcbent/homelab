@@ -1,0 +1,44 @@
+# Actualbudget Helm Values Configuration
+# Using community-charts/actualbudget Helm chart
+# Chart: https://community-charts.github.io/helm-charts
+
+# Image settings for the Actual Budget container
+image:
+  repository: actualbudget/actual-server
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Number of pod replicas
+replicaCount: 1
+
+# Kubernetes Service settings - NodePort per project guidelines
+service:
+  type: NodePort
+  port: 5006
+  nodePort: 30006
+
+# Ingress disabled - external routing handled by NGINX Proxy Manager
+ingress:
+  enabled: false
+
+# Persistent storage settings for data
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: "freenas-iscsi-csi"
+  existingClaim: ""
+
+# Resource requests and limits
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# Security context for proper file permissions
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000

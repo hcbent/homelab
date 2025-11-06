@@ -16,7 +16,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Providers:**
   - `telmate/proxmox` - Proxmox VM provisioning
   - `hashicorp/vault` v4.0+ - Secret management integration
-- **State Management:** Local state files per environment (lab, kubernetes, home-apps, vault)
+- **State Management:** Local state files per environment (lab, kubernetes, home-apps, vault, nginx-lb)
 - **Module Structure:** Reusable proxmox_vm module for standardized VM creation
 
 ### Ansible
@@ -30,13 +30,22 @@ This document defines the complete technical stack for the Homelab Infrastructur
 ## Container Orchestration
 
 ### Kubernetes
-- **Distribution:** K3s (lightweight Kubernetes)
-- **Version:** Latest stable
+- **Distribution:** Kubernetes (deployed via Kubespray)
+- **Version:** Latest stable supported by Kubespray
 - **Cluster Architecture:**
   - 3 control plane nodes (kube01-03)
   - 3 worker nodes (kube04-06)
-- **Container Runtime:** containerd (embedded in K3s)
-- **Network Plugin:** Flannel (default K3s CNI)
+- **Container Runtime:** containerd
+- **Network Plugin:** Calico CNI (Kubespray default)
+- **Deployment Tool:** Kubespray (ansible-based K8s deployment)
+
+### High Availability Load Balancer
+- **Load Balancer:** Nginx with Corosync/Pacemaker
+- **Architecture:** HA cluster with automatic failover
+- **Virtual IP:** 192.168.10.250 (floating VIP managed by Pacemaker)
+- **Backend:** Load balances to all 3 K8s control plane nodes (kube01-03:6443)
+- **Health Checks:** Nginx active health monitoring of API servers
+- **Failover:** Automatic VIP migration on primary node failure
 
 ### GitOps & Continuous Deployment
 - **GitOps Tool:** ArgoCD
@@ -90,9 +99,10 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Gateway:** 192.168.10.1
 - **DNS Server:** 192.168.10.1 (internal) + Pi-hole
 - **Domain:** lab.thewortmans.org (internal)
+- **K8s API VIP:** 192.168.10.250 (Nginx HA load balancer)
 
 ### Kubernetes Networking
-- **CNI:** Flannel (default K3s)
+- **CNI:** Calico (Kubespray default)
 - **Load Balancer:** MetalLB (bare metal LoadBalancer services)
 - **Ingress Controller:** Traefik
 - **Service Mesh:** None (Istio/Linkerd in roadmap)
@@ -101,6 +111,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Internal CA:** step-certificates
 - **Certificate Manager:** cert-manager (roadmap)
 - **TLS Termination:** Traefik ingress controller
+- **K8s API Certificates:** Include LB VIP in SANs for seamless failover
 
 ## Observability & Monitoring
 
@@ -116,7 +127,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Log Shipping:** Fleet + Elastic Agent
 - **Cluster Architecture:**
   - 6 data nodes (es01-es06)
-  - 3 master nodes (es07-es09)
+  - 3 master nodes (es07-09)
 
 ### Distributed Tracing
 - **Current:** None
@@ -157,6 +168,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
   - `/k8s` - Kubernetes manifests and ArgoCD apps
   - `/vault` - Vault setup and rotation scripts
   - `/docs` - Documentation
+  - `/kubespray` - Kubespray deployment documentation
 
 ### Security & Compliance
 - **Secret Scanning:** gitleaks
@@ -167,11 +179,12 @@ This document defines the complete technical stack for the Homelab Infrastructur
 ### Deployment Automation
 - **VM Provisioning:** Terraform apply workflows
 - **Configuration:** Ansible playbooks (sequential for clusters)
+- **K8s Cluster Deployment:** Kubespray ansible playbooks
 - **Application Deployment:** ArgoCD automated sync
 - **Helper Scripts:**
   - `add-vm.sh` - VM configuration generation
-  - `setup_initial_cluster.sh` - K3s bootstrap
-  - `add_node_to_cluster.sh` - Node joining
+  - `ansible/playbooks/bootstrap_argocd.yml` - ArgoCD bootstrap
+  - `ansible/playbooks/setup_nginx_lb.yml` - Nginx HA LB setup
   - Vault scripts (initialize, unseal, configure, rotate)
 
 ### Testing & Validation
@@ -196,6 +209,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
   - `tf/kubernetes/` - Kubernetes infrastructure
   - `tf/home-apps/` - Application infrastructure
   - `tf/vault/` - Vault server infrastructure
+  - `tf/nginx-lb/` - Nginx HA load balancer infrastructure
 - **Kubernetes Namespaces:**
   - `argocd` - GitOps management
   - `prometheus` - Monitoring stack
@@ -214,6 +228,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Elasticsearch Master Nodes:** 2 cores, 4GB RAM, 100GB storage
 - **Plex Media Server:** 4 cores, 32GB RAM, high storage allocation
 - **Vault Server:** 2 cores, 4GB RAM, 50GB storage
+- **Nginx Load Balancer:** 1 core, 1GB RAM, 20GB storage (HA pair)
 
 ### Kubernetes Resource Management
 - **LLM Workloads:** 8-16Gi memory, 1 GPU, persistent model storage
@@ -241,6 +256,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Internal Services:** step-certificates internal CA
 - **External Services:** Let's Encrypt via cert-manager (roadmap)
 - **Vault TLS:** Self-signed (VAULT_SKIP_VERIFY=true for dev)
+- **K8s API:** Certificates include LB VIP for HA support
 
 ## Backup & Disaster Recovery
 
@@ -248,6 +264,7 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **Vault Data:** Manual tar backup procedures documented
 - **TrueNAS Data:** ZFS snapshots
 - **Infrastructure Code:** Git version control
+- **etcd Backups:** Kubernetes cluster state backups
 
 ### Roadmap
 - **Kubernetes Applications:** Velero backup operator
@@ -263,6 +280,8 @@ This document defines the complete technical stack for the Homelab Infrastructur
 - **SECURITY.md:** Security policies and secret management
 - **CLAUDE.md:** AI assistant guidance files
 - **README-VAULT.md:** Terraform and Ansible Vault integration
+- **kubespray/BOOTSTRAP-PLATFORM.md:** Kubespray deployment guide
+- **kubespray/DEPLOYMENT-COMPLETE.md:** Post-deployment validation
 
 ### Code Documentation
 - **Terraform:** Variable descriptions, output documentation

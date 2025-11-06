@@ -1,0 +1,215 @@
+---
+- name: Bootstrap ArgoCD for GitOps
+  hosts: km01
+  become: false
+  gather_facts: true
+
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
+    argocd_namespace: "argocd"
+    argocd_chart_version: "5.51.6"  # Stable version
+    metallb_namespace: "metallb-system"
+    metallb_chart_version: "0.13.12"  # Stable version
+    remote_config_dir: "/tmp/k8s-bootstrap"
+
+  tasks:
+    - name: Create temporary directory for config files
+      file:
+        path: "{{ remote_config_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy MetalLB configuration files to remote host
+      copy:
+        src: "{{ item }}"
+        dest: "{{ remote_config_dir }}/"
+        mode: '0644'
+      loop:
+        - /Users/bret/git/homelab/k8s/metallb/values.yaml
+        - /Users/bret/git/homelab/k8s/metallb/ipaddresspool.yaml
+        - /Users/bret/git/homelab/k8s/metallb/l2advertisement.yaml
+
+    - name: Copy ArgoCD configuration files to remote host
+      copy:
+        src: /Users/bret/git/homelab/k8s/argocd/values.yaml
+        dest: "{{ remote_config_dir }}/"
+        mode: '0644'
+    - name: Verify kubectl is available
+      command: kubectl version --client
+      changed_when: false
+
+    - name: Verify Helm is installed
+      command: helm version
+      changed_when: false
+      register: helm_check
+      failed_when: false
+
+    - name: Install Helm if not present
+      block:
+        - name: Download Helm install script
+          get_url:
+            url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            dest: /tmp/get_helm.sh
+            mode: '0700'
+
+        - name: Install Helm
+          command: /tmp/get_helm.sh
+          become: true
+      when: helm_check.rc != 0
+
+    # Deploy MetalLB first (required for ArgoCD LoadBalancer service)
+    - name: Create MetalLB namespace
+      command: kubectl create namespace {{ metallb_namespace }}
+      register: metallb_ns_result
+      failed_when:
+        - metallb_ns_result.rc != 0
+        - "'AlreadyExists' not in metallb_ns_result.stderr"
+      changed_when: metallb_ns_result.rc == 0
+
+    - name: Add MetalLB Helm repository
+      command: helm repo add metallb https://metallb.github.io/metallb
+      changed_when: false
+
+    - name: Update Helm repositories
+      command: helm repo update
+      changed_when: false
+
+    - name: Deploy MetalLB via Helm
+      command: >
+        helm upgrade --install metallb metallb/metallb
+        --namespace {{ metallb_namespace }}
+        --version {{ metallb_chart_version }}
+        --values {{ remote_config_dir }}/values.yaml
+        --wait
+        --timeout 5m
+      register: metallb_deploy
+      changed_when: "'has been upgraded' in metallb_deploy.stdout or 'has been installed' in metallb_deploy.stdout"
+
+    - name: Wait for MetalLB controller to be ready
+      command: >
+        kubectl wait --for=condition=ready pod
+        -l app.kubernetes.io/component=controller
+        -n {{ metallb_namespace }}
+        --timeout=300s
+      changed_when: false
+
+    - name: Apply MetalLB IPAddressPool
+      command: kubectl apply -f {{ remote_config_dir }}/ipaddresspool.yaml
+      register: ippool_result
+      changed_when: "'configured' in ippool_result.stdout or 'created' in ippool_result.stdout"
+
+    - name: Apply MetalLB L2Advertisement
+      command: kubectl apply -f {{ remote_config_dir }}/l2advertisement.yaml
+      register: l2advert_result
+      changed_when: "'configured' in l2advert_result.stdout or 'created' in l2advert_result.stdout"
+
+    # Deploy ArgoCD
+    - name: Create ArgoCD namespace
+      command: kubectl create namespace {{ argocd_namespace }}
+      register: argocd_ns_result
+      failed_when:
+        - argocd_ns_result.rc != 0
+        - "'AlreadyExists' not in argocd_ns_result.stderr"
+      changed_when: argocd_ns_result.rc == 0
+
+    - name: Add ArgoCD Helm repository
+      command: helm repo add argo https://argoproj.github.io/argo-helm
+      changed_when: false
+
+    - name: Update Helm repositories
+      command: helm repo update
+      changed_when: false
+
+    - name: Deploy ArgoCD via Helm
+      command: >
+        helm upgrade --install argocd argo/argo-cd
+        --namespace {{ argocd_namespace }}
+        --version {{ argocd_chart_version }}
+        --values {{ remote_config_dir }}/values.yaml
+        --wait
+        --timeout 10m
+      register: argocd_deploy
+      changed_when: "'has been upgraded' in argocd_deploy.stdout or 'has been installed' in argocd_deploy.stdout"
+
+    - name: Wait for ArgoCD server to be ready
+      command: >
+        kubectl wait --for=condition=ready pod
+        -l app.kubernetes.io/name=argocd-server
+        -n {{ argocd_namespace }}
+        --timeout=600s
+      changed_when: false
+
+    - name: Get ArgoCD server LoadBalancer IP
+      command: >
+        kubectl get service argocd-server
+        -n {{ argocd_namespace }}
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      register: argocd_ip
+      changed_when: false
+      retries: 10
+      delay: 10
+      until: argocd_ip.stdout != ""
+
+    - name: Get ArgoCD admin password
+      command: >
+        kubectl get secret argocd-initial-admin-secret
+        -n {{ argocd_namespace }}
+        -o jsonpath='{.data.password}'
+      register: argocd_password_b64
+      changed_when: false
+
+    - name: Decode ArgoCD admin password
+      set_fact:
+        argocd_password: "{{ argocd_password_b64.stdout | b64decode }}"
+
+    - name: Display ArgoCD access information
+      debug:
+        msg:
+          - "ArgoCD has been successfully deployed!"
+          - ""
+          - "Access ArgoCD UI at: http://{{ argocd_ip.stdout }}"
+          - "Username: admin"
+          - "Password: {{ argocd_password }}"
+          - ""
+          - "To deploy platform applications via ArgoCD, run:"
+          - "  kubectl apply -f /Users/bret/git/homelab/k8s/argocd/platform-apps.yaml"
+          - ""
+          - "Or use ArgoCD CLI:"
+          - "  argocd login {{ argocd_ip.stdout }} --username admin --password {{ argocd_password }} --insecure"
+
+    - name: Save ArgoCD credentials to local file
+      become: false
+      delegate_to: localhost
+      copy:
+        content: |
+          ArgoCD Access Information
+          =========================
+
+          URL: http://{{ argocd_ip.stdout }}
+          Username: admin
+          Password: {{ argocd_password }}
+
+          Deploy platform apps:
+            kubectl --kubeconfig ~/.kube/config-kubespray apply -f /Users/bret/git/homelab/k8s/argocd/platform-apps.yaml
+        dest: /tmp/argocd-access.txt
+        mode: '0600'
+
+    - name: Display next steps
+      debug:
+        msg:
+          - ""
+          - "========================================================================================"
+          - "NEXT STEPS:"
+          - "========================================================================================"
+          - ""
+          - "1. ArgoCD credentials saved to: /tmp/argocd-access.txt"
+          - ""
+          - "2. Deploy platform applications via ArgoCD App of Apps:"
+          - "   kubectl --kubeconfig ~/.kube/config-kubespray apply -f /Users/bret/git/homelab/k8s/argocd/platform-apps.yaml"
+          - ""
+          - "3. Monitor ArgoCD applications:"
+          - "   kubectl --kubeconfig ~/.kube/config-kubespray get applications -n argocd"
+          - ""
+          - "4. Access ArgoCD UI at: http://{{ argocd_ip.stdout }}"
+          - ""
+          - "========================================================================================"

@@ -133,21 +133,30 @@ driver:
     driver: freenas-iscsi
 
     instance_id:
+    # Credentials are injected via Helm --set flags from Vault
+    # See deploy-democratic-csi.sh script
     httpConnection:
       protocol: http
-      host: <FREENAS_IP>
+      host: ""  # Set via --set from Vault
       port: 80
-      apiKey: <RETRIEVE_FROM_VAULT>
+      apiKey: ""  # Set via --set from Vault
       allowInsecure: true
       apiVersion: 2
 
     sshConnection:
-      host: <FREENAS_IP>
+      host: ""  # Set via --set from Vault
       port: 22
-      username: root
-      privateKey: <RETRIEVE_FROM_VAULT>
+      username: ""  # Set via --set from Vault
+      privateKey: ""  # Set via --set from Vault
 
     zfs:
+      cli:
+        sudoEnabled: false
+        paths:
+          zfs: /usr/sbin/zfs
+          zpool: /usr/sbin/zpool
+          sudo: /usr/bin/sudo
+          chroot: /usr/sbin/chroot
       # Storage pool configuration
       datasetParentName: tank/k8s/volumes
       detachedSnapshotsDatasetParentName: tank/k8s/snapshots
@@ -158,13 +167,13 @@ driver:
       datasetPermissionsGroup: 0
 
     iscsi:
-      targetPortal: "<FREENAS_IP>:3260"
+      targetPortal: "truenas.lab.thewortmans.org:3260"
       targetPortals: []
       interface:
       namePrefix: csi-
       nameSuffix: "-cluster"
       targetGroups:
-        - targetGroupPortalGroup: 1
+        - targetGroupPortalGroup: 2
           targetGroupInitiatorGroup: 1
           targetGroupAuthType: None
       extentInsecureTpc: true

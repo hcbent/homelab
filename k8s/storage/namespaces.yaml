@@ -1,0 +1,24 @@
+# Kubernetes Namespaces for Docker-Compose to ArgoCD Migration
+# This file creates logical groupings for application deployments
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: home-apps
+  labels:
+    name: home-apps
+    type: productivity
+    migration-phase: phase-1
+spec: {}
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+  labels:
+    name: media
+    type: entertainment
+    migration-phase: phase-2
+spec: {}

@@ -59,17 +59,17 @@ Traditional homelab setups store credentials, API keys, and passwords directly i
 ### Infrastructure Fragility
 Many homelabs are built through manual configuration, creating "snowflake" systems that cannot be reliably rebuilt after failures. Documentation becomes outdated, configuration drift accumulates, and disaster recovery is uncertain or impossible.
 
-**Our Solution:** Complete infrastructure-as-code approach using Terraform for VM provisioning, Ansible for configuration management, and GitOps for Kubernetes applications. Every component is defined in version-controlled code that serves as living documentation and enables one-command rebuilds.
+**Our Solution:** Complete infrastructure-as-code approach using Terraform for VM provisioning, Ansible for configuration management, Kubespray for production-grade Kubernetes deployment, and GitOps for Kubernetes applications. Every component is defined in version-controlled code that serves as living documentation and enables one-command rebuilds.
 
 ### Manual Provisioning Overhead
 Creating and managing virtual machines, configuring clusters, and deploying applications manually is time-consuming and error-prone. Multi-node deployments (Kubernetes clusters, Elasticsearch clusters) require extensive coordination and are particularly challenging.
 
-**Our Solution:** Automated provisioning pipelines with modular Terraform configurations, reusable Ansible playbooks, and ArgoCD-based GitOps for continuous deployment. Infrastructure changes are version-controlled, reviewed, and applied consistently.
+**Our Solution:** Automated provisioning pipelines with modular Terraform configurations, reusable Ansible playbooks, Kubespray-based Kubernetes deployment, and ArgoCD-based GitOps for continuous deployment. Infrastructure changes are version-controlled, reviewed, and applied consistently.
 
 ### Lack of Production Best Practices
 Homelab infrastructure often lacks enterprise-grade features like monitoring, logging, high availability, proper networking, and storage management. This results in unreliable services and limited learning opportunities for production technologies.
 
-**Our Solution:** Production-ready stack including Prometheus/Grafana monitoring, Elasticsearch/Kibana logging, Democratic CSI storage orchestration, MetalLB load balancing, and multi-node Kubernetes with separate control plane and worker nodes.
+**Our Solution:** Production-ready stack including Prometheus/Grafana monitoring, Elasticsearch/Kibana logging, Democratic CSI storage orchestration, MetalLB load balancing, Nginx HA load balancer with automatic failover for Kubernetes API, and multi-node Kubernetes with separate control plane and worker nodes.
 
 ## Differentiators
 
@@ -80,17 +80,22 @@ Unlike typical homelab setups that scatter secrets across configuration files, w
 While most homelab projects focus on a single layer (either VMs, configuration, or applications), we provide end-to-end automation from bare metal to running applications. This results in reproducible infrastructure that can be rebuilt in hours instead of days or weeks.
 
 ### GitOps-First Architecture
-Unlike manual configuration approaches, every infrastructure component is defined in version-controlled code with clear separation of concerns (Terraform for infrastructure, Ansible for configuration, ArgoCD for applications). This results in auditable changes, easy rollbacks, and infrastructure that serves as its own documentation.
+Unlike manual configuration approaches, every infrastructure component is defined in version-controlled code with clear separation of concerns (Terraform for infrastructure, Ansible for configuration, Kubespray for Kubernetes deployment, ArgoCD for applications). This results in auditable changes, easy rollbacks, and infrastructure that serves as its own documentation.
 
 ### Production Patterns at Home Scale
-Unlike enterprise solutions that are too complex/expensive or simple tutorials that skip critical features, we implement production best practices (multi-node clusters, monitoring, logging, storage orchestration) at homelab scale. This results in valuable learning opportunities while maintaining manageable complexity and cost.
+Unlike enterprise solutions that are too complex/expensive or simple tutorials that skip critical features, we implement production best practices (multi-node clusters with HA load balancing, automated failover, monitoring, logging, storage orchestration) at homelab scale. This results in valuable learning opportunities while maintaining manageable complexity and cost.
 
 ## Key Features
 
 ### Infrastructure Provisioning
-- **Terraform VM Management:** Modular, reusable Terraform configurations for Proxmox VM provisioning with separate state management for different environments (Kubernetes, Elasticsearch, applications)
-- **Multi-Environment Support:** Independent infrastructure stacks for Kubernetes clusters, Elasticsearch clusters, and home applications with isolated state files preventing cross-environment interference
+- **Terraform VM Management:** Modular, reusable Terraform configurations for Proxmox VM provisioning with separate state management for different environments (Kubernetes, Elasticsearch, applications, load balancers)
+- **Multi-Environment Support:** Independent infrastructure stacks for Kubernetes clusters, Elasticsearch clusters, home applications, and HA load balancers with isolated state files preventing cross-environment interference
 - **Cloud-Init Automation:** Standardized Ubuntu VM templates with automated SSH key deployment, network configuration, and initial user setup
+
+### High Availability & Load Balancing
+- **Nginx HA Load Balancer:** Corosync/Pacemaker-managed floating VIP (192.168.10.250) with automatic failover for Kubernetes API server access
+- **Health Monitoring:** Active health checks of all control plane nodes with automatic backend removal on failure
+- **Certificate Management:** Kubernetes API certificates include load balancer VIP in SANs for seamless failover without certificate warnings
 
 ### Secret Management & Security
 - **HashiCorp Vault Integration:** Standalone Vault server with complete secret lifecycle management, automated unsealing scripts, and credential rotation workflows
@@ -100,11 +105,11 @@ Unlike enterprise solutions that are too complex/expensive or simple tutorials t
 
 ### Configuration Management
 - **Ansible Automation:** Comprehensive playbooks for host configuration, Kubernetes cluster setup (control plane and workers), Elasticsearch deployment, and service management
-- **Sequential Cluster Deployment:** Orchestrated playbooks for building multi-node Kubernetes clusters with proper control plane initialization and worker node joining
+- **Kubespray Integration:** Production-grade Kubernetes deployment using Kubespray with customizable cluster parameters, CNI selection (Calico), and high availability configurations
 - **Rolling Updates:** Safe upgrade procedures for Elasticsearch clusters with health checks and gradual node updates
 
 ### Kubernetes Platform
-- **Multi-Node K3s Cluster:** Production-grade Kubernetes with separate control plane (kube01-03) and worker nodes (kube04-06) for high availability and workload separation
+- **Production-Grade Kubernetes:** Full Kubernetes cluster deployed via Kubespray with separate control plane (kube01-03) and worker nodes (kube04-06) for high availability and workload separation
 - **ArgoCD GitOps:** Declarative application deployment with automated syncing from git repositories, multi-source Helm deployments, and namespace management
 - **Storage Orchestration:** Democratic CSI with FreeNAS iSCSI and NFS backends providing persistent volume provisioning for stateful applications
 
@@ -127,5 +132,5 @@ Unlike enterprise solutions that are too complex/expensive or simple tutorials t
 
 ### Developer Experience
 - **Helper Scripts:** Automated tools for adding VMs, generating configurations, extracting Kubernetes tokens, and managing clusters
-- **Comprehensive Documentation:** Detailed deployment guides, security policies, Vault integration examples, and troubleshooting procedures
+- **Comprehensive Documentation:** Detailed deployment guides, security policies, Vault integration examples, Kubespray procedures, and troubleshooting procedures
 - **Modular Architecture:** Reusable Terraform modules, Ansible roles, and Helm values enabling easy customization and extension
