@@ -84,14 +84,38 @@ ansible/**/*.backup
 *.env
 !*.env.example
 
-# Password and key files
-*_PASSWORD
-*_TOKEN
-*_API_KEY
-*_SECRET
+# Password and key files (broader patterns)
+*PASSWORD*
+*password*
+*TOKEN*
+*token*
+*API_KEY*
+*api_key*
+*SECRET*
+*secret*
 *.pem
 *.key
 !*.pub
+!*.key.example
+
+# Ansible inventory files with credentials
+ansible/inventory/cchs
+ansible/inventory/cchstest
+ansible/inventory/deepfreeze
+ansible/inventory/lab
+!ansible/inventory/*.example
+
+# AWS credentials
+k8s/**/aws*.yaml
+k8s/**/aws*.yml
+!k8s/**/aws*.yaml.example
+!k8s/**/aws*.yml.example
+
+# FreeNAS/TrueNAS configs
+k8s/**/freenas*.yaml
+k8s/**/freenas*.yml
+!k8s/**/freenas*.yaml.example
+!k8s/**/freenas*.yml.example
 
 # Backup files that may contain secrets
 *.backup
