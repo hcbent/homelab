@@ -15,6 +15,7 @@ kube06
 
 [infrastructure]
 infra
+kali
 proxy
 torrent
 #homeassistant
