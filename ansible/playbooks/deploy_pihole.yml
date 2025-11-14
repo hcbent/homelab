@@ -4,7 +4,7 @@
   become: true
   gather_facts: true
   vars:
-    pihole_webpassword: "***REMOVED***"
+    pihole_webpassword: "CHANGEME_PIHOLE_PASSWORD"
     pihole_dns1: "1.1.1.1"
     pihole_dns2: "8.8.8.8"
     pihole_timezone: "America/New_York"

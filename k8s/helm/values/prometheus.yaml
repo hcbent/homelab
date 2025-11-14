@@ -1,2 +1,2 @@
 grafana:
-  adminPassword: ***REMOVED***
+  adminPassword: CHANGEME_ADMIN_PASSWORD

@@ -14,7 +14,7 @@ kubePlex:
     pullPolicy: Always
 
 # Override this with the plex claim token from plex.tv/claim
-claimToken: "***REMOVED***"
+claimToken: "CHANGEME_PLEX_CLAIM_TOKEN"
 
 # Set the timezone of the plex server
 timezone: America/New_York

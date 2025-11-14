@@ -7,7 +7,7 @@ metadata:
   namespace: media
 type: Opaque
 data:
-  plex-claim: ***REMOVED*** # ***REMOVED***
+  plex-claim: CHANGEME_PLEX_CLAIM_TOKEN_BASE64 # Base64 encoded Plex claim token
 ---
 # PVC for Plex configuration (RWO for SQLite compatibility)
 apiVersion: v1

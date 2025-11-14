@@ -30,8 +30,8 @@ driver:
       host: truenas.lab.thewortmans.org
       port: 443
       username: root
-      password: ***REMOVED***
-        #apiKey: ***REMOVED***
+      password: CHANGEME_FREENAS_PASSWORD
+        #apiKey: CHANGEME_FREENAS_API_KEY
       allowInsecure: true
       apiVersion: 2
     sshConnection:

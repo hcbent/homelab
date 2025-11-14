@@ -123,10 +123,10 @@ echo -e "${RED}⚠️  WARNING: Your Vault unseal keys and root token were expos
 echo -e "${RED}⚠️  You MUST re-initialize Vault with new keys!${NC}\n"
 
 echo -e "${YELLOW}Exposed keys that need rotation:${NC}"
-echo -e "  Unseal Key 1: ***REMOVED***"
-echo -e "  Unseal Key 2: ***REMOVED***"
+echo -e "  Unseal Key 1: <REDACTED - Was exposed in git history>"
+echo -e "  Unseal Key 2: <REDACTED - Was exposed in git history>"
 echo -e "  ... (and 3 more keys)"
-echo -e "  Root Token: ***REMOVED***\n"
+echo -e "  Root Token: <REDACTED - Was exposed in git history>\n"
 
 echo -e "${RED}This requires:${NC}"
 echo -e "  1. Exporting all current secrets from Vault"

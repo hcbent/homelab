@@ -30,15 +30,15 @@ driver:
       host: 192.168.2.24
       port: 443
       username: root
-        #password: ***REMOVED***
+        #password: CHANGEME_FREENAS_PASSWORD
       allowInsecure: false
-      apiKey: ***REMOVED***
+      apiKey: CHANGEME_FREENAS_API_KEY
     sshConnection:
       host: 192.168.2.24
       port: 22
       username: root
       # use either password or key
-      password: "***REMOVED***"
+      password: "CHANGEME_FREENAS_PASSWORD"
         #      privateKey: |
         #        -----BEGIN RSA PRIVATE KEY-----
         #        ...

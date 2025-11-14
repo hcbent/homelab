@@ -29,7 +29,7 @@ vault secrets enable -version=2 kv 2>/dev/null || echo "KV v2 engine already ena
 echo "Storing Proxmox credentials..."
 vault kv put secret/proxmox \
     username="root@pve" \
-    password="***REMOVED***"
+    password="CHANGEME_PROXMOX_PASSWORD"
 
 # Store VM default credentials
 echo "Storing VM default credentials..."
