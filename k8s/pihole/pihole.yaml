@@ -5,7 +5,7 @@ metadata:
   namespace: pihole
 type: Opaque
 data:
-  WEBPASSWORD: ***REMOVED***
+  WEBPASSWORD: CHANGEME_BASE64_ENCODED_PASSWORD
 ---
 apiVersion: v1
 kind: ConfigMap

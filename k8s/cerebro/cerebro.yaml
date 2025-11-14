@@ -11,12 +11,12 @@ data:
         name = "Homelab Cluster"
         auth = {
           type = "basic"
-          username = "elastic"
-          password = "***REMOVED***"
+          username = "CHANGEME_ES_USERNAME"
+          password = "CHANGEME_ES_PASSWORD"
         }
       }
     ]
-    play.http.secret.key = "***REMOVED***"
+    play.http.secret.key = "CHANGEME_SESSION_SECRET_KEY"
     slick.dbs.default.profile = "slick.jdbc.H2Profile$"
     slick.dbs.default.db.driver = "org.h2.Driver"
     slick.dbs.default.db.url = "jdbc:h2:mem:cerebro;DB_CLOSE_DELAY=-1"

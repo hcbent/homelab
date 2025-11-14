@@ -80,6 +80,7 @@ FILES_TO_DELETE=(
     "ansible/inventory/cchstest"
     "ansible/inventory/deepfreeze"
     "ansible/inventory/lab"
+    "ansible/inventory/monitoring"
     "k8s/lab-cluster/aws_secret.yaml"
     "k8s/freenas-storageclass.yaml"
 )
@@ -103,6 +104,10 @@ echo -e "${BLUE}═════════════════════�
 
 # Create a text file with sensitive patterns to replace
 cat > /tmp/secrets-to-replace.txt <<'EOF'
+***REMOVED***
+***REMOVED***
+***REMOVED***
+***REMOVED***
 ***REMOVED***
 ***REMOVED***
 ***REMOVED***

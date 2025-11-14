@@ -103,6 +103,7 @@ ansible/inventory/cchs
 ansible/inventory/cchstest
 ansible/inventory/deepfreeze
 ansible/inventory/lab
+ansible/inventory/monitoring
 !ansible/inventory/*.example
 
 # AWS credentials
