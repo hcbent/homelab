@@ -1,0 +1,12 @@
+# Gitleaks Ignore File
+# Add false positives here (use fingerprints from gitleaks output)
+
+# Documentation about the security incident (references to deactivated keys)
+check-cloudtrail.sh:aws-access-token:6
+AWS-SECURITY-RESPONSE.md:aws-access-token:12
+AWS-SECURITY-RESPONSE.md:aws-access-token:36
+AWS-SECURITY-RESPONSE.md:aws-access-token:108
+AWS-SECURITY-RESPONSE.md:aws-access-token:114
+
+# Note: These files document a deactivated AWS key for security incident response
+# The key was deactivated on 2025-11-14 and is safe to reference in documentation
