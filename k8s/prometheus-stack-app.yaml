@@ -22,4 +22,5 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=false
+      - ServerSideApply=true  # Use server-side apply to avoid annotation size limits
     automated: {} # Optional: enable auto-sync

@@ -1,0 +1,62 @@
+# Tailscale Organization Information
+#
+# This file documents the Tailscale organization and tailnet configuration
+# Fill in the values after accessing the Tailscale Admin Console
+#
+# Created: [DATE]
+# Last Updated: [DATE]
+
+Organization Name: [YOUR_ORGANIZATION_NAME]
+
+Tailnet Name: [YOUR_TAILNET_NAME].ts.net
+
+Admin Console URL: https://login.tailscale.com/admin
+
+Configured By: [YOUR_NAME]
+
+Date Configured: [YYYY-MM-DD]
+
+# Auth Key Information
+# Note: Actual auth key is stored in Vault, not in this file
+
+Auth Key Description: homelab-kubernetes-cluster
+Auth Key Type: Reusable, Non-Ephemeral
+Auth Key Tags: tag:kubernetes, tag:homelab
+Auth Key Expiration: [YYYY-MM-DD] (1 year from generation)
+Auth Key Created: [YYYY-MM-DD]
+Vault Path: secret/tailscale/auth-keys
+
+# MagicDNS Configuration
+
+MagicDNS Enabled: Yes
+Internal Domain: *.home.lab
+Override Local DNS: Yes
+
+# ACL Policy
+
+ACL Policy File: /Users/bret/git/homelab/tailscale/acl-policy-permissive.json
+ACL Policy Type: Permissive (all users can access all services)
+ACL Policy Applied: [YYYY-MM-DD]
+Future Tightening Planned: Yes (after 2-week validation period)
+
+# Kubernetes Integration
+
+Kubernetes Cluster: 3-node cluster (km01, km02, km03)
+Deployment Method: Tailscale Kubernetes Operator
+Service Type: NodePort
+Namespace: tailscale
+
+# Services to be Exposed
+
+Total Services: 18
+Private Services: 16 (*.home.lab only)
+Public Services: 2 (via Tailscale Funnel)
+  - kibana.bwortman.us
+  - cchs.makerspace.hcbent.com
+
+# Notes
+
+- Auth key should be rotated annually
+- ACL policy will be tightened after 2-week validation
+- All configuration changes are version-controlled in git
+- Vault provides secure storage for sensitive credentials

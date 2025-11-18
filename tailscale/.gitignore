@@ -1,0 +1,27 @@
+# Tailscale .gitignore
+#
+# Exclude sensitive files from version control
+
+# Organization info may contain sensitive details
+organization-info.txt
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Auth keys (should never be here, but just in case)
+*auth-key*
+*.key
+
+# Vault tokens
+.vault-token
+vault-token.txt
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

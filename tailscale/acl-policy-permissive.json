@@ -1,0 +1,83 @@
+{
+  // Tailscale ACL Policy - Permissive Initial Configuration
+  // This is a permissive policy that allows all users to access all services
+  // After 2-week validation period, this will be tightened with granular controls
+
+  // Define who owns which tags
+  // Tags are used to identify device types and apply policies
+  "tagOwners": {
+    "tag:kubernetes": ["autogroup:admin"],
+    "tag:homelab": ["autogroup:admin"]
+  },
+
+  // Access Control Rules
+  "acls": [
+    // PERMISSIVE RULE: Allow all authenticated users to access all devices
+    // This is a temporary configuration for initial migration and validation
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["*:*"]
+    },
+
+    // Allow Kubernetes tagged devices to communicate with each other
+    {
+      "action": "accept",
+      "src": ["tag:kubernetes"],
+      "dst": ["tag:kubernetes:*"]
+    },
+
+    // Allow homelab tagged devices to communicate
+    {
+      "action": "accept",
+      "src": ["tag:homelab"],
+      "dst": ["*:*"]
+    },
+
+    // Allow admins full access to everything
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["*:*"]
+    }
+  ],
+
+  // SSH access rules
+  "ssh": [
+    // Allow admins to SSH to any device
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["tag:kubernetes", "tag:homelab"],
+      "users": ["autogroup:nonroot", "root"]
+    },
+
+    // Allow members to SSH to homelab devices (non-root)
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["tag:homelab"],
+      "users": ["autogroup:nonroot"]
+    }
+  ]
+}
+
+// NOTES FOR FUTURE ACL TIGHTENING (after 2-week validation):
+//
+// 1. Per-User Access Control:
+//    - Create specific user groups with actual email addresses
+//    - Define which groups can access which service categories
+//    - Remove the permissive "autogroup:member" -> "*:*" rule
+//
+// 2. Example of custom groups (for future use):
+//    "groups": {
+//      "group:family": ["user1@example.com", "user2@example.com"],
+//      "group:admins": ["admin@example.com"]
+//    }
+//
+// 3. Service-Specific Rules:
+//    - Media apps: Allow specific users/groups
+//    - Home apps: Restrict to primary users
+//    - Makerspace: Public access via Funnel, internal access controlled
+//    - Elasticsearch: Admin-only access except Kibana
+//    - ArgoCD: Admin-only access
