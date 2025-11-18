@@ -1,0 +1,131 @@
+# qBittorrent Helm Values Configuration
+# Using bjw-s app-template chart
+# Chart: https://bjw-s-labs.github.io/helm-charts/
+
+# Default controller configuration
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/qbittorrent
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
+          WEBUI_PORT: "8080"
+
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              httpGet:
+                path: /
+                port: 8080
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+          readiness:
+            enabled: true
+            spec:
+              httpGet:
+                path: /
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 5
+
+        # Lifecycle hooks to configure qBittorrent WebUI settings
+        lifecycle:
+          postStart:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Wait for qBittorrent to create config file
+                  while [ ! -f /config/qBittorrent/qBittorrent.conf ]; do sleep 1; done
+                  # Add WebUI bypass settings if not already present
+                  if ! grep -q "WebUI\\\\CSRFProtection" /config/qBittorrent/qBittorrent.conf; then
+                    cat >> /config/qBittorrent/qBittorrent.conf << 'EOF'
+WebUI\CSRFProtection=false
+WebUI\HostHeaderValidation=false
+WebUI\AuthSubnetWhitelistEnabled=true
+WebUI\AuthSubnetWhitelist=0.0.0.0/0
+EOF
+                  fi
+
+# Service configuration - NodePort per project guidelines
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 8080
+        targetPort: 8080
+        protocol: TCP
+      bittorrent-tcp:
+        enabled: true
+        port: 6881
+        targetPort: 6881
+        protocol: TCP
+      bittorrent-udp:
+        enabled: true
+        port: 6881
+        targetPort: 6881
+        protocol: UDP
+
+# Ingress disabled - external routing handled by NGINX Proxy Manager
+ingress:
+  main:
+    enabled: false
+    hosts: []
+
+# Persistent storage configuration
+persistence:
+  # Config storage on iSCSI (RWO)
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
+    globalMounts:
+      - path: /config
+
+  # Downloads storage on Synology NFS (RWX) - references existing PV
+  downloads:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: downloads-storage-pvc
+    globalMounts:
+      - path: /downloads
+
+  # Media storage on Synology NFS (RWX) - references existing PV
+  media:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: media-storage-pvc
+    globalMounts:
+      - path: /data
+
+# Resource limits
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "200m"
+  limits:
+    memory: "2Gi"
+    cpu: "2000m"
+
+# Security context for LinuxServer.io container
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
