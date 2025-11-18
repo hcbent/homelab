@@ -45,7 +45,12 @@ server {
 	client_max_body_size 50M;
 {% endif %}
         proxy_pass http://{{ service.name }};
+{% if 'qbittorrent' in service.name %}
+        # qBittorrent requires localhost for Host header validation
+        proxy_set_header Host localhost:8080;
+{% else %}
         proxy_set_header Host $host:$server_port;
+{% endif %}
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto {% if 'https' in service.name %}https{% else %}$scheme{% endif %};
