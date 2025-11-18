@@ -7,7 +7,10 @@
   // Tags are used to identify device types and apply policies
   "tagOwners": {
     "tag:kubernetes": ["autogroup:admin"],
-    "tag:homelab": ["autogroup:admin"]
+    "tag:homelab": ["autogroup:admin"],
+    // Operator tags required for Tailscale Kubernetes operator
+    "tag:k8s-operator": ["autogroup:admin"],
+    "tag:k8s": ["tag:k8s-operator"]
   },
 
   // Access Control Rules
@@ -20,11 +23,25 @@
       "dst": ["*:*"]
     },
 
+    // Allow Kubernetes operator to manage all Kubernetes resources
+    {
+      "action": "accept",
+      "src": ["tag:k8s-operator"],
+      "dst": ["tag:k8s:*", "tag:kubernetes:*"]
+    },
+
     // Allow Kubernetes tagged devices to communicate with each other
     {
       "action": "accept",
       "src": ["tag:kubernetes"],
       "dst": ["tag:kubernetes:*"]
+    },
+
+    // Allow k8s tagged services to communicate
+    {
+      "action": "accept",
+      "src": ["tag:k8s"],
+      "dst": ["*:*"]
     },
 
     // Allow homelab tagged devices to communicate
@@ -48,7 +65,7 @@
     {
       "action": "accept",
       "src": ["autogroup:admin"],
-      "dst": ["tag:kubernetes", "tag:homelab"],
+      "dst": ["tag:kubernetes", "tag:homelab", "tag:k8s-operator", "tag:k8s"],
       "users": ["autogroup:nonroot", "root"]
     },
 
@@ -81,3 +98,8 @@
 //    - Makerspace: Public access via Funnel, internal access controlled
 //    - Elasticsearch: Admin-only access except Kibana
 //    - ArgoCD: Admin-only access
+//
+// 4. Operator Tags:
+//    - tag:k8s-operator: Identifies the Tailscale Kubernetes operator
+//    - tag:k8s: Applied to services managed by the operator
+//    - The operator (tag:k8s-operator) owns tag:k8s resources

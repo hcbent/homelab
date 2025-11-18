@@ -1,0 +1,107 @@
+---
+# Tailscale Operator Deployment
+# Follows patterns from nginx-ingress.yaml and vault-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-operator
+  namespace: tailscale-system
+  labels:
+    app.kubernetes.io/name: tailscale-operator
+    app.kubernetes.io/component: operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tailscale-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tailscale-operator
+    spec:
+      serviceAccountName: tailscale-operator
+      # Security context following vault-deployment.yaml pattern
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: operator
+          # Using latest stable operator image
+          image: tailscale/k8s-operator:stable
+          imagePullPolicy: IfNotPresent
+          env:
+            # OAuth credentials from Kubernetes secret
+            # Secret must be created manually with OAuth client ID and secret
+            - name: OPERATOR_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-operator-oauth
+                  key: client-id
+            - name: OPERATOR_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-operator-oauth
+                  key: client-secret
+            # Operator hostname for Tailscale network
+            - name: OPERATOR_HOSTNAME
+              value: "tailscale-operator"
+            # Tags to apply to operator device
+            - name: OPERATOR_TAGS
+              value: "tag:k8s-operator"
+            # Logging configuration
+            - name: OPERATOR_LOGGING
+              value: "info"
+            # Enable all operator features
+            - name: OPERATOR_ENABLE_CONNECTOR
+              value: "true"
+            - name: OPERATOR_ENABLE_INGRESS
+              value: "true"
+            - name: OPERATOR_ENABLE_EGRESS
+              value: "true"
+            # Namespace where operator runs
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: metrics
+              containerPort: 9001
+              protocol: TCP
+          # Resource requests and limits following project patterns
+          # Based on nginx-ingress.yaml and vault-deployment.yaml
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          # Liveness probe to check operator health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe to check operator is ready
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Security context for container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
