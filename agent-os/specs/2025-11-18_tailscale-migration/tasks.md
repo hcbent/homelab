@@ -64,32 +64,36 @@
 ### PHASE 1: TAILSCALE FOUNDATION & VAULT INTEGRATION
 
 #### Task Group 1: Tailscale Account Setup
-**Dependencies:** Task Group 0 complete (✓ COMPLETED)
-**Status:** READY FOR USER EXECUTION
+**Dependencies:** Task Group 0 complete (COMPLETED)
+**Status:** COMPLETED
 
-- [ ] 1.0 Configure Tailscale account and generate auth keys
-  - [ ] 1.1 Create/verify Tailscale account organization
+- [x] 1.0 Configure Tailscale account and generate auth keys
+  - [x] 1.1 Create/verify Tailscale account organization
     - Access Tailscale admin console: https://login.tailscale.com/admin
     - Verify organization settings
     - Document organization name and tailnet name
     - Instructions: See `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-1-instructions.md`
-  - [ ] 1.2 Generate reusable, tagged auth keys
+    - RESULT: Organization configured as thewortmans.org, tailnet: shire-pangolin.ts.net
+  - [x] 1.2 Generate reusable, tagged auth keys
     - Create auth key with tags: kubernetes, homelab
     - Set auth key as reusable
     - Set appropriate expiration (1 year+)
     - Copy auth key to secure temporary location
     - Instructions: See Task Group 1 instructions document
-  - [ ] 1.3 Store auth keys in Vault
+    - RESULT: Auth key created, expires 2026-02-16
+  - [x] 1.3 Store auth keys in Vault
     - Path: `secret/tailscale/auth-keys`
     - Store auth key value using provided script
     - Verify Vault policies allow Kubernetes access
     - Test retrieval from Vault
     - Script: `/Users/bret/git/homelab/tailscale/scripts/store-auth-key.sh`
-  - [ ] 1.4 Configure Tailscale ACL policy (permissive initial state)
+    - RESULT: Stored in Vault at secret/tailscale/auth-keys
+  - [x] 1.4 Configure Tailscale ACL policy (permissive initial state)
     - Apply permissive "all users can access all services" policy
     - Policy file: `/Users/bret/git/homelab/tailscale/acl-policy-permissive.json`
     - Save ACL configuration to git repository (already done)
     - Apply ACL in Tailscale admin console: https://login.tailscale.com/admin/acls
+    - RESULT: Permissive ACL applied
 
 **Implementation Files Created:**
 - [x] `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-1-instructions.md` - Detailed step-by-step instructions
@@ -101,26 +105,19 @@
 - [x] `/Users/bret/git/homelab/tailscale/.gitignore` - Exclude sensitive files from git
 
 **Acceptance Criteria:**
-- [ ] Tailscale organization configured and documented
-- [ ] Reusable auth keys generated with correct tags and stored in Vault
-- [ ] Vault policy `tailscale-k8s` created and verified
-- [ ] Permissive ACL policy applied in Tailscale admin console
-- [ ] All configuration files committed to git (except sensitive data)
-
-**User Action Required:**
-Follow the instructions in the files listed above to complete the manual steps:
-1. Access Tailscale admin console and document organization details
-2. Generate auth key with appropriate tags and settings
-3. Run the Vault storage script to store the auth key
-4. Apply the ACL policy in Tailscale admin console
+- [x] Tailscale organization configured and documented
+- [x] Reusable auth keys generated with correct tags and stored in Vault
+- [x] Vault policy `tailscale-k8s` created and verified
+- [x] Permissive ACL policy applied in Tailscale admin console
+- [x] All configuration files committed to git (except sensitive data)
 
 ---
 
 ### PHASE 1 (continued): TAILSCALE FOUNDATION & VAULT INTEGRATION
 
 #### Task Group 2: Tailscale Kubernetes Operator Deployment
-**Dependencies:** Task Group 1 complete
-**Status:** IMPLEMENTATION COMPLETE - READY FOR USER EXECUTION
+**Dependencies:** Task Group 1 complete (COMPLETED)
+**Status:** COMPLETED
 
 - [x] 2.0 Deploy Tailscale Kubernetes operator
   - [x] 2.1 Create Tailscale namespace
@@ -163,7 +160,7 @@ Follow the instructions in the files listed above to complete the manual steps:
     - Added tag:k8s-operator and tag:k8s definitions
     - Added ACL rules for operator-managed resources
     - User must apply this updated policy in Tailscale admin console
-  - [ ] 2.7 USER ACTION: Deploy operator to Kubernetes
+  - [x] 2.7 Deploy operator to Kubernetes
     - Follow instructions in task-group-2-instructions.md
     - Create OAuth credentials in Tailscale admin console
     - Apply updated ACL policy
@@ -171,12 +168,14 @@ Follow the instructions in the files listed above to complete the manual steps:
     - Verify operator pod is running: `kubectl get pods -n tailscale-system`
     - Check operator logs for successful startup
     - Verify no error messages in logs
-  - [ ] 2.8 USER ACTION: Verify operator appears in tailnet
+    - RESULT: Operator deployed and running
+  - [x] 2.8 Verify operator appears in tailnet
     - Access Tailscale admin console: https://login.tailscale.com/admin/machines
     - Verify "tailscale-operator" device appears as connected
     - Verify proper hostname is set
     - Verify tag:k8s-operator is applied correctly
     - Note: Individual nodes (km01, km02, km03) will NOT appear yet - only the operator
+    - RESULT: k8s-operator-homelab appears in tailnet at 100.111.93.96
 
 **Implementation Files Created:**
 - [x] `/Users/bret/git/homelab/k8s/tailscale/namespace.yaml` - Namespace definition
@@ -191,53 +190,77 @@ Follow the instructions in the files listed above to complete the manual steps:
 
 **Acceptance Criteria:**
 - [x] Implementation complete: All manifests and scripts created
-- [ ] USER EXECUTION REQUIRED: Operator running in Kubernetes
-- [ ] USER EXECUTION REQUIRED: Operator device appears in tailnet with proper tags (tag:k8s-operator)
-- [ ] USER EXECUTION REQUIRED: Operator successfully authenticated with Tailscale via OAuth
-- [ ] USER EXECUTION REQUIRED: Health probes passing
-
-**User Action Required:**
-Follow the comprehensive instructions at:
-`/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-2-instructions.md`
-
-**Key Steps:**
-1. Update ACL policy in Tailscale admin console (add operator tags)
-2. Create OAuth credentials in Tailscale admin console
-3. Run deployment scripts to create Kubernetes resources
-4. Verify operator is running and connected to Tailscale
-
-**Important Note:**
-The operator deployment uses OAuth credentials (NOT auth keys). The operator will automatically generate auth keys for managed resources as needed. Only the operator device will appear in the tailnet initially - individual Kubernetes nodes will be added later when services are exposed.
+- [x] Operator running in Kubernetes
+- [x] Operator device appears in tailnet with proper tags (tag:k8s-operator)
+- [x] Operator successfully authenticated with Tailscale via OAuth
+- [x] Health probes passing
 
 ---
 
 #### Task Group 3: MagicDNS Configuration
-**Dependencies:** Task Group 2 complete
-**Status:** PENDING
+**Dependencies:** Task Group 2 complete (COMPLETED)
+**Status:** IMPLEMENTATION COMPLETE - READY FOR USER EXECUTION
 
-- [ ] 3.0 Configure MagicDNS for *.home.lab
-  - [ ] 3.1 Enable MagicDNS globally in Tailscale console
-    - Navigate to DNS settings in admin console
-    - Enable MagicDNS feature
-    - Set override local DNS: Yes
-  - [ ] 3.2 Configure internal domain suffix
-    - Set custom domain to: home.lab
-    - Configure nameservers if needed
-  - [ ] 3.3 Test DNS resolution from Tailscale-connected device
-    - Install Tailscale on test device (laptop/phone)
-    - Connect to tailnet
-    - Test resolution of km01, km02, km03 by hostname
-    - Verify tailnet domain resolution
-  - [ ] 3.4 Document MagicDNS configuration
-    - DNS settings saved to git
-    - Resolution order documented
-    - Test results recorded
+- [ ] 3.0 Configure MagicDNS for service discovery
+  - [ ] 3.1 Enable MagicDNS globally in Tailscale admin console
+    - Navigate to DNS settings in Tailscale admin console: https://login.tailscale.com/admin/dns
+    - Enable MagicDNS feature (toggle to ON)
+    - Save configuration
+    - Instructions: `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-3-instructions.md`
+  - [ ] 3.2 Configure internal domain: *.home.lab
+    - Enable "Override local DNS" setting
+    - (Optional) Add custom split DNS for home.lab domain
+    - Configure split DNS settings if using local DNS server
+    - Set DNS resolution order: Tailscale first, then external DNS
+    - Note: Full home.lab routing will be completed with NGINX in Task Group 4
+  - [ ] 3.3 Add DNS records for Kubernetes nodes
+    - Note: Individual K8s nodes (km01, km02, km03) do NOT appear in tailnet
+    - The operator (k8s-operator-homelab) is the only K8s device in tailnet
+    - Operator DNS record: k8s-operator-homelab.shire-pangolin.ts.net (100.111.93.96)
+    - User device: brets-macbook-pro-2.shire-pangolin.ts.net (100.70.154.57)
+    - Verify records resolve to Tailscale IPs
+  - [ ] 3.4 Test MagicDNS resolution from Tailscale-connected device
+    - Connect laptop/workstation to Tailscale (MacBook needs reconnection)
+    - Run test script: `/Users/bret/git/homelab/tailscale/scripts/test-magicdns.sh`
+    - Test: `ping k8s-operator-homelab.shire-pangolin.ts.net`
+    - Test: `ping 100.111.93.96` (direct IP)
+    - Verify external DNS still works: `ping google.com`
+    - Verify: `tailscale status` shows both devices connected
+  - [ ] 3.5 Document MagicDNS configuration
+    - Document internal domain convention (*.home.lab)
+    - List all DNS records created
+    - Document DNS resolution order
+    - Configuration saved to: `/Users/bret/git/homelab/tailscale/magicdns-config.md`
+    - Save configuration to git repository
+
+**Implementation Files Created:**
+- [x] `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-3-instructions.md` - Detailed step-by-step instructions
+- [x] `/Users/bret/git/homelab/tailscale/magicdns-config.md` - MagicDNS configuration documentation
+- [x] `/Users/bret/git/homelab/tailscale/scripts/test-magicdns.sh` - Test script for DNS verification
+- [x] `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/TASK-GROUP-3-SUMMARY.md` - Task group summary
 
 **Acceptance Criteria:**
-- MagicDNS enabled globally
-- *.home.lab domain configured
-- DNS resolution working from Tailscale clients
-- Kubernetes nodes resolvable by hostname
+- [ ] MagicDNS enabled with *.home.lab domain
+- [ ] Kubernetes operator resolvable via MagicDNS (k8s-operator-homelab.shire-pangolin.ts.net)
+- [ ] External DNS resolution still functional
+- [ ] Test script passes all checks
+- [ ] Configuration documented in git
+
+**User Action Required:**
+Follow the instructions at:
+`/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-3-instructions.md`
+
+**Key Steps:**
+1. Connect MacBook to Tailscale (currently offline)
+2. Verify MagicDNS is enabled in Tailscale admin console
+3. Enable "Override local DNS" setting
+4. Run test script to verify DNS resolution
+5. Update documentation with test results
+
+**Important Notes:**
+- Individual K8s nodes do NOT appear in the tailnet - only the operator
+- The *.home.lab domain routing will be fully configured in Task Groups 4 & 5 with NGINX
+- MacBook (brets-macbook-pro-2) needs to connect to Tailscale to run tests
 
 ---
 
@@ -600,6 +623,6 @@ The operator deployment uses OAuth credentials (NOT auth keys). The operator wil
 **Rollback Window:** 90 days
 
 **Current Status:**
-- Phase 0: ✓ COMPLETE (Monitoring verified)
-- Phase 1: Task Group 1 ready for user execution, Task Group 2 implementation complete
+- Phase 0: COMPLETE (Monitoring verified)
+- Phase 1: Task Groups 1-2 COMPLETE, Task Group 3 ready for user execution
 - Phases 2-9: PENDING
