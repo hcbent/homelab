@@ -268,63 +268,65 @@ Follow the instructions at:
 
 #### Task Group 3.5: Fix Democratic-CSI Storage Provisioning (BLOCKER)
 **Dependencies:** None (infrastructure prerequisite)
-**Status:** PENDING - BLOCKING TASK GROUP 4
+**Status:** COMPLETED
 
-**Problem:** The democratic-csi driver is returning 404 errors when trying to provision iSCSI volumes. The TrueNAS SCALE API endpoint `/api/v2.0/iscsi/targetgroup` no longer exists, likely due to a TrueNAS SCALE update that changed the API structure.
+**Problem:** The democratic-csi driver was returning 404 errors when trying to provision iSCSI volumes. The TrueNAS SCALE API endpoint `/api/v2.0/iscsi/targetgroup` no longer exists due to a TrueNAS SCALE update that changed the API structure.
 
-**Diagnosis:**
-- PVCs remain in Pending state
-- Error: "error getting iscsi configuration - code: 404 body: 404: Not Found"
-- `/api/v2.0/iscsi/global` works (returns 200)
-- `/api/v2.0/iscsi/portal` works (returns portal id 2)
-- `/api/v2.0/iscsi/initiator` works (returns initiators)
-- `/api/v2.0/iscsi/targetgroup` returns 404 - **ROOT CAUSE**
+**Root Cause:**
+- TrueNAS SCALE version: 25.04.2.3
+- `/api/v2.0/iscsi/targetgroup` returns 404 - API endpoint removed in TrueNAS SCALE 25.04+
 
-**Current Configuration:**
-- democratic-csi image: `democraticcsi/democratic-csi:latest`
-- TrueNAS host: truenas.lab.thewortmans.org
-- API version: 2
-- targetGroupPortalGroup: 2
-- targetGroupInitiatorGroup: 1
+**Solution:**
+- Updated democratic-csi image from `latest` to `next` tag
+- The `next` image contains commits that add TrueNAS SCALE 25.04+ support
+- Created values file: `/Users/bret/git/homelab/k8s/democratic-csi/values-iscsi.yaml`
 
-- [ ] 3.5.0 Diagnose and fix democratic-csi storage provisioning
-  - [ ] 3.5.1 Check TrueNAS SCALE version
-    - Access TrueNAS UI → System Settings → General
-    - Document current version
-    - Check TrueNAS SCALE release notes for API changes
-  - [ ] 3.5.2 Research democratic-csi compatibility
-    - Check democratic-csi GitHub issues for TrueNAS SCALE API changes
-    - Identify compatible version for current TrueNAS SCALE
-    - URL: https://github.com/democratic-csi/democratic-csi/issues
-  - [ ] 3.5.3 Update democratic-csi deployment
-    - Option A: Pin to specific version that works with TrueNAS SCALE
-    - Option B: Update to newer version with TrueNAS SCALE support
-    - Update Helm values or deployment manifest
-  - [ ] 3.5.4 Verify iSCSI service configuration in TrueNAS
-    - Ensure iSCSI service is enabled and running
-    - Check portal, initiator, and target configurations
-    - Create any missing configurations if needed
-  - [ ] 3.5.5 Test PVC provisioning
-    - Create test PVC with freenas-iscsi-csi storage class
-    - Verify PVC becomes Bound
-    - Verify PV is created in TrueNAS
-    - Clean up test resources
-  - [ ] 3.5.6 Document fix for future reference
-    - Record TrueNAS SCALE version and democratic-csi version
-    - Note any configuration changes made
-    - Update democratic-csi deployment files in git
+- [x] 3.5.0 Diagnose and fix democratic-csi storage provisioning
+  - [x] 3.5.1 Check TrueNAS SCALE version
+    - TrueNAS SCALE version: 25.04.2.3
+    - Version confirmed via API call to /api/v2.0/system/version/
+    - API changes in 25.04 removed targetgroup endpoint
+  - [x] 3.5.2 Research democratic-csi compatibility
+    - GitHub Issue #509: TrueNAS REST API deprecation in 25.04
+    - Found commit "support TN 25.04, env vars in config, improved Dockerfiles" (Apr 5, 2025)
+    - `next` image tag contains TrueNAS SCALE 25.04+ support
+  - [x] 3.5.3 Update democratic-csi deployment
+    - Created values file: `/Users/bret/git/homelab/k8s/democratic-csi/values-iscsi.yaml`
+    - Updated image tag from `latest` to `next`
+    - Included full driver configuration inline
+    - Committed and pushed to git (commits: 694c225, 8ab307b)
+  - [x] 3.5.4 Verify iSCSI service configuration in TrueNAS
+    - Portal ID 2 working
+    - Initiator Group 1 configured
+    - iSCSI service running
+    - SSH connection working for ZFS operations
+  - [x] 3.5.5 Test PVC provisioning
+    - nginx-proxy-manager-data PVC: Bound
+    - nginx-proxy-manager-letsencrypt PVC: Bound
+    - Test PVC test-iscsi-pvc: Created and Bound successfully
+    - Test PVC cleaned up after verification
+  - [x] 3.5.6 Document fix for future reference
+    - Documentation: `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/democratic-csi-fix-documentation.md`
+    - TrueNAS SCALE version: 25.04.2.3
+    - democratic-csi package version: 1.9.0
+    - Image tag: next
+
+**Implementation Files Created:**
+- [x] `/Users/bret/git/homelab/k8s/democratic-csi/values-iscsi.yaml` - Helm values with next image tag
+- [x] `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/democratic-csi-fix-documentation.md` - Fix documentation
 
 **Acceptance Criteria:**
-- PVCs using freenas-iscsi-csi storage class successfully provision
-- No 404 errors in democratic-csi controller logs
-- Test PVC can be created, bound, and deleted
-- Fix documented for future reference
+- [x] PVCs using freenas-iscsi-csi storage class successfully provision
+- [x] No 404 errors in democratic-csi controller logs
+- [x] Test PVC can be created, bound, and deleted
+- [x] Fix documented for future reference
+- [x] BLOCKER STATUS CLEARED
 
 ---
 
 #### Task Group 4: NGINX Proxy Manager Deployment in Kubernetes
 **Dependencies:** Task Group 3 complete, Task Group 3.5 complete (storage fix)
-**Status:** BLOCKED - Waiting for democratic-csi fix
+**Status:** READY TO PROCEED
 
 **Rationale:** Deploy a new NGINX Proxy Manager instance in Kubernetes for *.home.lab domains, keeping the existing TrueNAS instance for *.bwortman.us until migration is complete. This avoids port conflicts on TrueNAS (where ports 80/443 are used by TrueNAS UI) and provides clean separation of concerns.
 
@@ -711,4 +713,5 @@ Follow the instructions at:
 **Current Status:**
 - Phase 0: COMPLETE (Monitoring verified)
 - Phase 1: Task Groups 1-2 COMPLETE, Task Group 3 ready for user execution
-- Phases 2-9: PENDING
+- Phase 2: Task Group 3.5 COMPLETE (democratic-csi fix), Task Group 4 ready to proceed
+- Phases 3-9: PENDING
