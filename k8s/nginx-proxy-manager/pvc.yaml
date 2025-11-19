@@ -10,7 +10,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: tank
+  storageClassName: freenas-nfs-csi
   resources:
     requests:
       storage: 1Gi
@@ -26,7 +26,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: tank
+  storageClassName: freenas-nfs-csi
   resources:
     requests:
       storage: 1Gi
