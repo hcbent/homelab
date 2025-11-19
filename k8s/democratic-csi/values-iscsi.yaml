@@ -1,0 +1,49 @@
+# Democratic-CSI iSCSI values for TrueNAS SCALE
+# Updated to use 'next' image tag for TrueNAS SCALE 24.04+ compatibility
+# Fixes: API 404 error for /api/v2.0/iscsi/targetgroup endpoint
+
+csiDriver:
+  # should be globally unique for a given cluster
+  name: "org.democratic-csi.iscsi"
+
+# Storage class configuration
+storageClasses:
+- name: freenas-iscsi-csi
+  defaultClass: false
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: true
+  parameters:
+    # for block-based storage can be ext3, ext4, xfs
+    fsType: xfs
+  mountOptions: []
+  secrets:
+    provisioner-secret:
+    controller-publish-secret:
+    node-stage-secret:
+    node-publish-secret:
+    controller-expand-secret:
+
+# Use existing config secret that's already deployed
+driver:
+  existingConfigSecret: freenas-iscsi-driver-config
+  config:
+    driver: freenas-iscsi
+
+# Controller configuration with updated image
+controller:
+  driver:
+    image:
+      registry: docker.io/democraticcsi/democratic-csi
+      tag: next
+      pullPolicy: Always
+    logLevel: debug
+
+# Node configuration with updated image
+node:
+  driver:
+    image:
+      registry: docker.io/democraticcsi/democratic-csi
+      tag: next
+      pullPolicy: Always
+    logLevel: debug
