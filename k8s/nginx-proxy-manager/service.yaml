@@ -1,0 +1,33 @@
+---
+# Service exposed via Tailscale operator
+# This gives NPM its own Tailscale IP accessible on standard ports
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy-manager
+  namespace: nginx-proxy-manager
+  labels:
+    app.kubernetes.io/name: nginx-proxy-manager
+    app.kubernetes.io/component: proxy
+  annotations:
+    # Tailscale operator will expose this service with its own IP
+    tailscale.com/expose: "true"
+    # Custom hostname in tailnet (optional - will appear as npm.shire-pangolin.ts.net)
+    tailscale.com/hostname: "npm"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nginx-proxy-manager
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+    - name: admin
+      port: 81
+      targetPort: 81
+      protocol: TCP

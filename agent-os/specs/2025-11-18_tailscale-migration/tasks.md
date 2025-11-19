@@ -264,47 +264,77 @@ Follow the instructions at:
 
 ---
 
-### PHASE 2: INTERNAL NGINX & SERVICE DISCOVERY
+### PHASE 2: NGINX PROXY MANAGER & SERVICE DISCOVERY
 
-#### Task Group 4: Internal NGINX Proxy Deployment
+#### Task Group 4: NGINX Proxy Manager Deployment in Kubernetes
 **Dependencies:** Task Group 3 complete
 **Status:** PENDING
 
-- [ ] 4.0 Deploy standard NGINX to Kubernetes
-  - [ ] 4.1 Create NGINX ConfigMap with 18 upstream definitions
-    - 4 direct IP upstreams (192.168.10.250:port)
-    - 2 Kubernetes LB upstreams (kube.lb.thewortmans.org:port)
-    - 12 dynamic DNS upstreams (bdwlb.myddns.me:port)
-    - Follow ConfigMap pattern from nginx-ingress.yaml
-  - [ ] 4.2 Configure 18 server blocks for *.home.lab
-    - Create server block for each service
-    - Configure proxy_pass to corresponding upstream
-    - Set proxy headers (Host, X-Real-IP, X-Forwarded-For, X-Forwarded-Proto)
-    - HTTP only (no SSL - handled by Tailscale)
-  - [ ] 4.3 Deploy NGINX as Deployment
-    - Use official nginx:latest or nginx:stable image
-    - Mount ConfigMap as nginx.conf
-    - Set resource requests/limits
+**Rationale:** Deploy a new NGINX Proxy Manager instance in Kubernetes for *.home.lab domains, keeping the existing TrueNAS instance for *.bwortman.us until migration is complete. This avoids port conflicts on TrueNAS (where ports 80/443 are used by TrueNAS UI) and provides clean separation of concerns.
+
+- [ ] 4.0 Deploy NGINX Proxy Manager to Kubernetes with Tailscale exposure
+  - [ ] 4.1 Create namespace and persistent storage
+    - Create namespace: nginx-proxy-manager
+    - Create PersistentVolumeClaim for SQLite database and config
+    - Use democratic-csi NFS provisioner (tank storage class)
+    - Size: 1Gi for data, 1Gi for letsencrypt (future use)
+  - [ ] 4.2 Create Helm values for NGINX Proxy Manager
+    - Use jc21/nginx-proxy-manager-helm chart or create custom deployment
+    - Configure persistence for /data and /etc/letsencrypt
+    - Set resource requests: cpu 100m, memory 256Mi
+    - Set resource limits: cpu 500m, memory 512Mi
     - Configure health probes
-  - [ ] 4.4 Create NodePort Service for NGINX
-    - Expose port 80 via NodePort
-    - Follow NodePort pattern from project standard
-  - [ ] 4.5 Verify NGINX deployment
-    - Check pod status: Running
-    - Test direct access to NodePort
-    - Verify nginx config syntax
-    - Check nginx access/error logs
-  - [ ] 4.6 Test service routing
-    - Test at least 3 services via NodePort
-    - Verify upstream connectivity
-    - Check proxy headers are set correctly
+  - [ ] 4.3 Configure Tailscale operator Service annotation
+    - Add annotation: `tailscale.com/expose: "true"`
+    - This gives NPM its own Tailscale IP accessible on ports 80/443
+    - Alternative: Use `tailscale.com/hostname: "npm"` for custom hostname
+    - NPM will be accessible at npm.shire-pangolin.ts.net
+  - [ ] 4.4 Create ArgoCD Application for NGINX Proxy Manager
+    - Follow existing ArgoCD application patterns
+    - Reference Helm chart or kustomize configuration
+    - Set sync policy for automated deployment
+  - [ ] 4.5 Deploy and verify NGINX Proxy Manager
+    - Apply ArgoCD application
+    - Wait for pods to be running
+    - Verify Tailscale device appears in admin console
+    - Note the Tailscale IP assigned to NPM
+    - Access admin UI at http://<tailscale-ip>:81
+  - [ ] 4.6 Configure initial admin credentials
+    - Default: admin@example.com / changeme
+    - Change to secure credentials
+    - Store credentials in Vault: secret/nginx-proxy-manager/admin
+  - [ ] 4.7 Configure Pi-hole DNS for *.home.lab
+    - Update Pi-hole dnsmasq_lines to point *.home.lab to NPM's Tailscale IP
+    - Command: Update pihole.toml with new IP address
+    - Restart Pi-hole DNS
+    - Test: `nslookup actual.home.lab` should return NPM's Tailscale IP
+  - [ ] 4.8 Add proxy hosts for all 17 services
+    - Configure each service in NPM admin UI
+    - Reference: `/Users/bret/git/homelab/tailscale/home-lab-proxy-hosts.md`
+    - Settings: http scheme, websockets ON, block exploits ON, no SSL
+    - Services include both K8s services and VM-hosted services (like kibana at 192.168.10.40:5601)
+  - [ ] 4.9 Test end-to-end access
+    - From Tailscale-connected device
+    - Test: `curl http://actual.home.lab`
+    - Test: `curl http://kibana.home.lab`
+    - Verify services load correctly through NPM
+
+**Implementation Files to Create:**
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/namespace.yaml` - Namespace definition
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/pvc.yaml` - Persistent volume claims
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/deployment.yaml` - NPM deployment with Tailscale annotation
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/service.yaml` - Service with Tailscale exposure
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/README.md` - Documentation
+- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager-app.yaml` - ArgoCD application
 
 **Acceptance Criteria:**
-- NGINX deployed and running in Kubernetes
-- All 18 upstream definitions configured
-- All 18 server blocks configured
-- NodePort service accessible
-- Basic routing working to backend services
+- NGINX Proxy Manager deployed and running in Kubernetes
+- NPM has dedicated Tailscale IP accessible on ports 80/443/81
+- NPM appears in Tailscale admin console
+- Pi-hole DNS updated to resolve *.home.lab to NPM's Tailscale IP
+- All 17 proxy hosts configured in NPM
+- Services accessible via *.home.lab URLs through Tailscale
+- Admin credentials stored securely in Vault
 
 ---
 
