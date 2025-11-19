@@ -9,7 +9,7 @@ spec:
     namespace: nginx-proxy-manager
     server: https://kubernetes.default.svc
   source:
-    repoURL: git@github.com/wortmanb/homelab.git
+    repoURL: https://github.com/wortmanb/homelab.git
     path: k8s/nginx-proxy-manager
     targetRevision: HEAD
   syncPolicy:
