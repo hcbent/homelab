@@ -8,5 +8,10 @@ AWS-SECURITY-RESPONSE.md:aws-access-token:36
 AWS-SECURITY-RESPONSE.md:aws-access-token:108
 AWS-SECURITY-RESPONSE.md:aws-access-token:114
 
+# Additional security incident documentation files
+cloudtrail-results.txt:aws-access-token:2
+AWS-SUPPORT-RESPONSE-TEMPLATE.txt:aws-access-token:1
+AWS-SUPPORT-RESPONSE-TEMPLATE.txt:aws-access-token:11
+
 # Note: These files document a deactivated AWS key for security incident response
 # The key was deactivated on 2025-11-14 and is safe to reference in documentation

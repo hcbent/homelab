@@ -1,0 +1,17 @@
+🔍 Checking CloudTrail for unauthorized activity...
+Looking for activity from exposed key: AKIAYW2UULNFAQFSSLXQ
+
+Time range: 2025-11-10T13:11:03 to 2025-11-17T13:11:03
+
+Checking for EC2 instances launched...
+
+Checking for IAM user/role creation...
+
+Checking for Lambda function creation...
+
+Checking for S3 bucket creation...
+
+✅ CloudTrail check complete!
+
+Review the output above for any suspicious activity.
+If you see any events you didn't initiate, document them immediately.

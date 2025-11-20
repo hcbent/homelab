@@ -32,7 +32,7 @@ elasticsearch_bootstrap
 elasticsearch_ml
 
 [elasticsearch_all:vars]
-elasticsearch_version=9.1.4
+elasticsearch_version=9.2.1
 cluster_name=lab
 discovery_seed_hosts=["es01","es02","es03"]
 cluster_initial_master_nodes=["es01","es02","es03"]
@@ -43,5 +43,5 @@ s3_secret_access_key=CHANGEME
 s3_bucket=bdw-lab-backups
 
 [kibana_nodes:vars]
-kibana_version=9.1.3
+kibana_version=9.2.1
 elasticsearch_hosts=["http://es01:9200","http://es02:9200","http://es03:9200"]
