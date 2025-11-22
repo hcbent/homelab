@@ -326,73 +326,97 @@ Follow the instructions at:
 
 #### Task Group 4: NGINX Proxy Manager Deployment in Kubernetes
 **Dependencies:** Task Group 3 complete, Task Group 3.5 complete (storage fix)
-**Status:** READY TO PROCEED
+**Status:** INFRASTRUCTURE DEPLOYED - USER ACTION REQUIRED FOR COMPLETION
 
 **Rationale:** Deploy a new NGINX Proxy Manager instance in Kubernetes for *.home.lab domains, keeping the existing TrueNAS instance for *.bwortman.us until migration is complete. This avoids port conflicts on TrueNAS (where ports 80/443 are used by TrueNAS UI) and provides clean separation of concerns.
 
-- [ ] 4.0 Deploy NGINX Proxy Manager to Kubernetes with Tailscale exposure
-  - [ ] 4.1 Create namespace and persistent storage
-    - Create namespace: nginx-proxy-manager
-    - Create PersistentVolumeClaim for SQLite database and config
-    - Use democratic-csi NFS provisioner (tank storage class)
-    - Size: 1Gi for data, 1Gi for letsencrypt (future use)
-  - [ ] 4.2 Create Helm values for NGINX Proxy Manager
-    - Use jc21/nginx-proxy-manager-helm chart or create custom deployment
-    - Configure persistence for /data and /etc/letsencrypt
+- [x] 4.0 Deploy NGINX Proxy Manager to Kubernetes with Tailscale exposure
+  - [x] 4.1 Create namespace and persistent storage
+    - Created namespace: nginx-proxy-manager
+    - Created PersistentVolumeClaims for SQLite database and config
+    - Used freenas-iscsi-csi storage class (iSCSI)
+    - Size: 1Gi for data, 1Gi for letsencrypt
+    - PVCs successfully bound
+  - [x] 4.2 Create Helm values for NGINX Proxy Manager
+    - Created custom deployment (not Helm chart)
+    - Configured persistence for /data and /etc/letsencrypt
     - Set resource requests: cpu 100m, memory 256Mi
     - Set resource limits: cpu 500m, memory 512Mi
-    - Configure health probes
-  - [ ] 4.3 Configure Tailscale operator Service annotation
-    - Add annotation: `tailscale.com/expose: "true"`
-    - This gives NPM its own Tailscale IP accessible on ports 80/443
-    - Alternative: Use `tailscale.com/hostname: "npm"` for custom hostname
-    - NPM will be accessible at npm.shire-pangolin.ts.net
-  - [ ] 4.4 Create ArgoCD Application for NGINX Proxy Manager
-    - Follow existing ArgoCD application patterns
-    - Reference Helm chart or kustomize configuration
-    - Set sync policy for automated deployment
-  - [ ] 4.5 Deploy and verify NGINX Proxy Manager
-    - Apply ArgoCD application
-    - Wait for pods to be running
-    - Verify Tailscale device appears in admin console
-    - Note the Tailscale IP assigned to NPM
-    - Access admin UI at http://<tailscale-ip>:81
+    - Configured health probes (liveness and readiness)
+  - [x] 4.3 Configure Tailscale operator Service annotation
+    - Added annotation: `tailscale.com/expose: "true"`
+    - Added annotation: `tailscale.com/hostname: "npm"`
+    - NPM accessible at npm.shire-pangolin.ts.net
+    - RESULT: Tailscale IP 100.123.46.74 assigned
+  - [x] 4.4 Create ArgoCD Application for NGINX Proxy Manager
+    - Created ArgoCD application manifest
+    - Application deployed and synced
+    - File: `/Users/bret/git/homelab/k8s/nginx-proxy-manager-app.yaml`
+  - [x] 4.5 Deploy and verify NGINX Proxy Manager
+    - Applied ArgoCD application
+    - Pod running successfully
+    - Tailscale device appears as "npm" in admin console
+    - Tailscale IP: 100.123.46.74
+    - Admin UI accessible at http://100.123.46.74:81 or http://npm.shire-pangolin.ts.net:81
   - [ ] 4.6 Configure initial admin credentials
     - Default: admin@example.com / changeme
-    - Change to secure credentials
-    - Store credentials in Vault: secret/nginx-proxy-manager/admin
-  - [ ] 4.7 Configure Pi-hole DNS for *.home.lab
-    - Update Pi-hole dnsmasq_lines to point *.home.lab to NPM's Tailscale IP
-    - Command: Update pihole.toml with new IP address
-    - Restart Pi-hole DNS
-    - Test: `nslookup actual.home.lab` should return NPM's Tailscale IP
+    - USER ACTION REQUIRED: Change to secure credentials
+    - USER ACTION REQUIRED: Store credentials in Vault: secret/nginx-proxy-manager/admin
+    - Instructions: `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-4-instructions.md`
+  - [x] 4.7 Configure Pi-hole DNS for *.home.lab
+    - Updated Pi-hole dnsmasq_lines to point *.home.lab to NPM's Tailscale IP
+    - Previous: address=/home.lab/100.106.169.106 (TrueNAS)
+    - Updated: address=/home.lab/100.123.46.74 (NPM Tailscale IP)
+    - Pi-hole DNS reloaded
+    - Verified: `nslookup actual.home.lab` returns 100.123.46.74
   - [ ] 4.8 Add proxy hosts for all 17 services
-    - Configure each service in NPM admin UI
+    - USER ACTION REQUIRED: Configure each service in NPM admin UI
     - Reference: `/Users/bret/git/homelab/tailscale/home-lab-proxy-hosts.md`
     - Settings: http scheme, websockets ON, block exploits ON, no SSL
-    - Services include both K8s services and VM-hosted services (like kibana at 192.168.10.40:5601)
+    - Instructions: `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-4-instructions.md`
   - [ ] 4.9 Test end-to-end access
-    - From Tailscale-connected device
+    - USER ACTION REQUIRED after configuring proxy hosts
     - Test: `curl http://actual.home.lab`
     - Test: `curl http://kibana.home.lab`
     - Verify services load correctly through NPM
 
-**Implementation Files to Create:**
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/namespace.yaml` - Namespace definition
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/pvc.yaml` - Persistent volume claims
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/deployment.yaml` - NPM deployment with Tailscale annotation
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/service.yaml` - Service with Tailscale exposure
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/README.md` - Documentation
-- [ ] `/Users/bret/git/homelab/k8s/nginx-proxy-manager-app.yaml` - ArgoCD application
+**Implementation Files Created:**
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/namespace.yaml` - Namespace definition
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/pvc.yaml` - Persistent volume claims
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/deployment.yaml` - NPM deployment
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/service.yaml` - Service with Tailscale exposure
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager/README.md` - Documentation
+- [x] `/Users/bret/git/homelab/k8s/nginx-proxy-manager-app.yaml` - ArgoCD application
+- [x] `/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-4-instructions.md` - Detailed manual steps
+
+**Deployment Results:**
+- NPM Tailscale IP: 100.123.46.74
+- NPM Hostname: npm.shire-pangolin.ts.net
+- Admin UI: http://npm.shire-pangolin.ts.net:81
+- HTTP Proxy: http://npm.shire-pangolin.ts.net:80
+- Pod Status: Running (1/1 ready)
+- PVCs: Bound (nginx-proxy-manager-data, nginx-proxy-manager-letsencrypt)
 
 **Acceptance Criteria:**
-- NGINX Proxy Manager deployed and running in Kubernetes
-- NPM has dedicated Tailscale IP accessible on ports 80/443/81
-- NPM appears in Tailscale admin console
-- Pi-hole DNS updated to resolve *.home.lab to NPM's Tailscale IP
-- All 17 proxy hosts configured in NPM
-- Services accessible via *.home.lab URLs through Tailscale
-- Admin credentials stored securely in Vault
+- [x] NGINX Proxy Manager deployed and running in Kubernetes
+- [x] NPM has dedicated Tailscale IP accessible on ports 80/443/81
+- [x] NPM appears in Tailscale admin console
+- [x] Pi-hole DNS updated to resolve *.home.lab to NPM's Tailscale IP
+- [ ] All 17 proxy hosts configured in NPM (USER ACTION REQUIRED)
+- [ ] Services accessible via *.home.lab URLs through Tailscale (USER ACTION REQUIRED)
+- [ ] Admin credentials stored securely in Vault (USER ACTION REQUIRED)
+
+**User Action Required:**
+Follow the instructions at:
+`/Users/bret/git/homelab/agent-os/specs/2025-11-18_tailscale-migration/implementation/task-group-4-instructions.md`
+
+**Key Manual Steps:**
+1. Access NPM Admin UI at http://npm.shire-pangolin.ts.net:81
+2. Login with default credentials (admin@example.com / changeme)
+3. Change admin password and email to secure values
+4. Store new credentials in Vault at secret/nginx-proxy-manager/admin
+5. Add all 17 proxy hosts (see instructions document for details)
+6. Test end-to-end access to services
 
 ---
 
@@ -713,5 +737,5 @@ Follow the instructions at:
 **Current Status:**
 - Phase 0: COMPLETE (Monitoring verified)
 - Phase 1: Task Groups 1-2 COMPLETE, Task Group 3 ready for user execution
-- Phase 2: Task Group 3.5 COMPLETE (democratic-csi fix), Task Group 4 ready to proceed
+- Phase 2: Task Group 3.5 COMPLETE (democratic-csi fix), Task Group 4 INFRASTRUCTURE DEPLOYED (user action required)
 - Phases 3-9: PENDING
