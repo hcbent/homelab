@@ -7,7 +7,6 @@
   gather_facts: no
   vars:
     elasticsearch_action: upgrade
-    elasticsearch_version: "{{ elasticsearch_version | default('9.1.4') }}"
     query_node: "{{ groups['elasticsearch_masters'][0] }}.{{ domain_suffix }}"
     required_cluster_status: green
 
@@ -52,6 +51,11 @@
       vars:
         shard_allocation_action: enable
 
+    - name: Wait for cluster to return to green
+      include_role:
+        name: elasticsearch
+        tasks_from: wait_for_green
+
 - name: Rolling upgrade of Elasticsearch cluster - Master nodes
   hosts: elasticsearch_masters
   become: yes
@@ -60,7 +64,6 @@
   gather_facts: no
   vars:
     elasticsearch_action: upgrade
-    elasticsearch_version: "{{ elasticsearch_version | default('9.1.4') }}"
     query_node: "{{ (groups['elasticsearch_all'] | difference(groups['elasticsearch_masters']))[0] }}.{{ domain_suffix }}"
     required_cluster_status: green
 
@@ -104,6 +107,11 @@
         tasks_from: shard_allocation
       vars:
         shard_allocation_action: enable
+
+    - name: Wait for cluster to return to green
+      include_role:
+        name: elasticsearch
+        tasks_from: wait_for_green
 
   post_tasks:
     - name: Verify final cluster health
