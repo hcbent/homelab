@@ -46,13 +46,25 @@ spec:
         - name: TZ
           value: "America/New_York" # Adjust to your timezone
         - name: UN_SONARR_0_URL
-          value: "http://sonarr:8989" # Service name for Sonarr
+          valueFrom:
+            secretKeyRef:
+              name: unpackerr-secrets
+              key: UN_SONARR_0_URL
         - name: UN_SONARR_0_API_KEY
-          value: "87f4cefa7ca14d66a3e7b0de27a17b34"
+          valueFrom:
+            secretKeyRef:
+              name: unpackerr-secrets
+              key: UN_SONARR_0_API_KEY
         - name: UN_RADARR_0_URL
-          value: "http://radarr:7878" # Service name for Radarr
+          valueFrom:
+            secretKeyRef:
+              name: unpackerr-secrets
+              key: UN_RADARR_0_URL
         - name: UN_RADARR_0_API_KEY
-          value: "3fde26fae26142c0952c7e2b65d9e6da"
+          valueFrom:
+            secretKeyRef:
+              name: unpackerr-secrets
+              key: UN_RADARR_0_API_KEY
         - name: UN_PATHS_0_PATH
           value: "/downloads"
         volumeMounts:
@@ -60,7 +72,6 @@ spec:
           mountPath: /config
         - name: video-pvc
           mountPath: /downloads
-          subPath: downloads
 #        livenessProbe:
 #          httpGet:
 #            path: /metrics
@@ -73,7 +84,7 @@ spec:
           claimName: unpackerr-config
       - name: video-pvc
         persistentVolumeClaim:
-          claimName: video-pvc
+          claimName: downloads-storage-pvc
 ---
 # Unpackerr Service
 apiVersion: v1
