@@ -1,0 +1,1 @@
+- Address pods using the nginx-lb instead of directly whenever possible
