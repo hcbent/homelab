@@ -66,12 +66,12 @@ spec:
               name: unpackerr-secrets
               key: UN_RADARR_0_API_KEY
         - name: UN_PATHS_0_PATH
-          value: "/downloads"
+          value: "/data/downloads"
         volumeMounts:
         - name: config
           mountPath: /config
-        - name: video-pvc
-          mountPath: /downloads
+        - name: media-pvc
+          mountPath: /data
 #        livenessProbe:
 #          httpGet:
 #            path: /metrics
@@ -82,9 +82,9 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: unpackerr-config
-      - name: video-pvc
+      - name: media-pvc
         persistentVolumeClaim:
-          claimName: downloads-storage-pvc
+          claimName: media-storage-pvc
 ---
 # Unpackerr Service
 apiVersion: v1
