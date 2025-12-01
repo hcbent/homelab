@@ -42,7 +42,8 @@ data:
   DNSMASQ_LISTENING: "all"
   FTLCONF_dns_listeningMode: "all"
   FTLCONF_dns_domain_name: "thewortmans.org"
-  FTLCONF_dns_upstreams: "8.8.8.8;8.8.4.4"
+  # Use cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
+  FTLCONF_dns_upstreams: "127.0.0.1#5053"
   FTLCONF_dns_blockESNI: "true"
   FTLCONF_dns_specialDomains_mozillaCanary: "true"
   FTLCONF_dns_specialDomains_iCloudPrivateRelay: "true"
@@ -172,6 +173,21 @@ spec:
             requests:
               cpu: "100m"
               memory: "256Mi"
+        # Cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - proxy-dns
+            - --port=5053
+            - --upstream=https://1.1.1.1/dns-query
+            - --upstream=https://1.0.0.1/dns-query
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
       volumes:
         - name: pihole-config-volume
           persistentVolumeClaim:
