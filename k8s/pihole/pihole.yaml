@@ -1,12 +1,37 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: pihole-secret
-  namespace: pihole
-type: Opaque
-data:
-  WEBPASSWORD: CHANGEME_BASE64_ENCODED_PASSWORD
 ---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pihole
+---
+# MetalLB IPAddressPool for Pi-hole specific IP
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: pihole-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.168.10.53/32
+  autoAssign: false
+---
+# L2Advertisement for Pi-hole pool
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: pihole-l2advert
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - pihole-pool
+---
+# Secret for Pi-hole web password - CREATE MANUALLY (not stored in git):
+# kubectl create namespace pihole
+# kubectl create secret generic pihole-secret -n pihole \
+#   --from-literal=WEBPASSWORD=$(vault kv get -field=webpassword secret/homelab/pihole/lab/credentials)
+---
+# ConfigMap for Pi-hole configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,7 +39,66 @@ metadata:
   namespace: pihole
 data:
   TZ: "America/New_York"
+  DNSMASQ_LISTENING: "all"
+  FTLCONF_dns_listeningMode: "all"
+  FTLCONF_dns_domain_name: "thewortmans.org"
+  FTLCONF_dns_upstreams: "8.8.8.8;8.8.4.4"
+  FTLCONF_dns_blockESNI: "true"
+  FTLCONF_dns_specialDomains_mozillaCanary: "true"
+  FTLCONF_dns_specialDomains_iCloudPrivateRelay: "true"
 ---
+# ConfigMap for adlists to import
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-adlists
+  namespace: pihole
+data:
+  adlists.list: |
+    https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts
+    https://nsfw.oisd.nl/domainswild
+    https://raw.githubusercontent.com/Sinfonietta/hostfiles/master/pornography-hosts
+---
+# ConfigMap for custom dnsmasq settings
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-dnsmasq-custom
+  namespace: pihole
+data:
+  99-custom.conf: |
+    dns-forward-max=500
+---
+# PVC for Pi-hole config
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-config-pvc
+  namespace: pihole
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: freenas-iscsi-csi
+---
+# PVC for dnsmasq config
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-dnsmasq-pvc
+  namespace: pihole
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: freenas-iscsi-csi
+---
+# Pi-hole Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,6 +108,8 @@ metadata:
     app: pihole
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: pihole
@@ -33,140 +119,117 @@ spec:
         app: pihole
     spec:
       containers:
-      - name: pihole
-        image: pihole/pihole:2024.07.0
-        securityContext:
-          capabilities:
-            add: ["NET_ADMIN","CAP_SYS_TIME"]
-        ports:
-        - containerPort: 53
-          name: dns-tcp
-          protocol: TCP
-        - containerPort: 53
-          name: dns-udp
-          protocol: UDP
-        - containerPort: 80
-          name: http
-          protocol: TCP
-        - containerPort: 443
-          name: https
-          protocol: TCP
-        envFrom:
-        - configMapRef:
-            name: pihole-config
-        - secretRef:
-            name: pihole-secret
-        env:
-        - name: DNSMASQ_LISTENING
-          value: "all"
-        - name: SERVER_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        volumeMounts:
-        - name: pihole-config-volume
-          mountPath: "/etc/pihole"
-        - name: dnsmasq-config-volume
-          mountPath: "/etc/dnsmasq.d"
-        livenessProbe:
-          httpGet:
-            path: /admin/
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /admin/
-            port: 80
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 5
-        resources:
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
+        - name: pihole
+          image: pihole/pihole:latest
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          ports:
+            - containerPort: 53
+              name: dns-tcp
+              protocol: TCP
+            - containerPort: 53
+              name: dns-udp
+              protocol: UDP
+            - containerPort: 80
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: pihole-config
+            - secretRef:
+                name: pihole-secret
+          volumeMounts:
+            - name: pihole-config-volume
+              mountPath: /etc/pihole
+            - name: dnsmasq-config-volume
+              mountPath: /etc/dnsmasq.d
+            - name: adlists
+              mountPath: /etc/pihole/adlists.list
+              subPath: adlists.list
+            - name: dnsmasq-custom
+              mountPath: /etc/dnsmasq.d/99-custom.conf
+              subPath: 99-custom.conf
+          livenessProbe:
+            httpGet:
+              path: /admin/
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /admin/
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
       volumes:
-      - name: pihole-config-volume
-        persistentVolumeClaim:
-          claimName: pihole-config-pvc # Create this PVC separately
-      - name: dnsmasq-config-volume
-        persistentVolumeClaim:
-          claimName: pihole-dnsmasq-pvc # Create this PVC separately
+        - name: pihole-config-volume
+          persistentVolumeClaim:
+            claimName: pihole-config-pvc
+        - name: dnsmasq-config-volume
+          persistentVolumeClaim:
+            claimName: pihole-dnsmasq-pvc
+        - name: adlists
+          configMap:
+            name: pihole-adlists
+        - name: dnsmasq-custom
+          configMap:
+            name: pihole-dnsmasq-custom
 ---
+# DNS Service (LoadBalancer with specific IP)
 apiVersion: v1
 kind: Service
 metadata:
-  name: pihole-service
+  name: pihole-dns
   namespace: pihole
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: "192.168.10.53"
+    metallb.universe.tf/address-pool: "pihole-pool"
 spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
   selector:
     app: pihole
   ports:
-  - name: dns-tcp
-    port: 53
-    targetPort: 53
-    protocol: TCP
-  - name: dns-udp
-    port: 53
-    targetPort: 53
-    protocol: UDP
-  - name: http
-    port: 80
-    targetPort: 80
-    protocol: TCP
-  type: ClusterIP
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+    - name: dns-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: pihole-ingress
-  namespace: pihole
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-spec:
-  tls:
-  - hosts:
-    - pihole.thewortmans.org
-    secretName: pihole-tls
-  rules:
-  - host: pihole.thewortmans.org
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: pihole-service
-            port:
-              number: 80
----
+# Web UI Service (NodePort for admin access - kept as backup)
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: pihole-config-pvc
+  name: pihole-web
   namespace: pihole
 spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: freenas-iscsi-csi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pihole-dnsmasq-pvc
-  namespace: pihole
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: freenas-iscsi-csi
+  type: NodePort
+  selector:
+    app: pihole
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
