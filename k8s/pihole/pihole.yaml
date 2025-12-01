@@ -43,7 +43,8 @@ data:
   FTLCONF_dns_listeningMode: "all"
   FTLCONF_dns_domain_name: "thewortmans.org"
   # Use cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
-  FTLCONF_dns_upstreams: "127.0.0.1#5053"
+  # Fallback to UDM (192.168.1.1) for local network queries
+  FTLCONF_dns_upstreams: "127.0.0.1#5053;192.168.1.1"
   FTLCONF_dns_blockESNI: "true"
   FTLCONF_dns_specialDomains_mozillaCanary: "true"
   FTLCONF_dns_specialDomains_iCloudPrivateRelay: "true"
