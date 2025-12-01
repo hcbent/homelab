@@ -55,6 +55,8 @@ spec:
             secretKeyRef:
               name: unpackerr-secrets
               key: UN_SONARR_0_API_KEY
+        - name: UN_SONARR_0_DELETE_ORIG
+          value: "true"
         - name: UN_RADARR_0_URL
           valueFrom:
             secretKeyRef:
@@ -65,6 +67,8 @@ spec:
             secretKeyRef:
               name: unpackerr-secrets
               key: UN_RADARR_0_API_KEY
+        - name: UN_RADARR_0_DELETE_ORIG
+          value: "true"
         - name: UN_PATHS_0_PATH
           value: "/data/downloads"
         volumeMounts:
