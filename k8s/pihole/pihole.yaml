@@ -47,6 +47,8 @@ data:
   FTLCONF_dns_blockESNI: "true"
   FTLCONF_dns_specialDomains_mozillaCanary: "true"
   FTLCONF_dns_specialDomains_iCloudPrivateRelay: "true"
+  # Enable reading custom dnsmasq configs from /etc/dnsmasq.d/
+  FTLCONF_misc_etc_dnsmasq_d: "true"
 ---
 # ConfigMap for adlists to import
 apiVersion: v1
@@ -70,6 +72,8 @@ metadata:
 data:
   99-custom.conf: |
     dns-forward-max=500
+    # Wildcard for home.lab -> nginx-proxy-manager (Tailscale IP)
+    address=/home.lab/100.123.46.74
 ---
 # PVC for Pi-hole config
 apiVersion: v1
