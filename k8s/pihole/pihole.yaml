@@ -41,7 +41,8 @@ data:
   TZ: "America/New_York"
   DNSMASQ_LISTENING: "all"
   FTLCONF_dns_listeningMode: "all"
-  FTLCONF_dns_domain_name: "thewortmans.org"
+  # Use 'lan' as local domain - thewortmans.org is managed by UDM
+  FTLCONF_dns_domain_name: "lan"
   # Use cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
   # Fallback to UDM (192.168.1.1) for local network queries
   FTLCONF_dns_upstreams: "127.0.0.1#5053;192.168.1.1"
@@ -75,6 +76,8 @@ data:
     dns-forward-max=500
     # Wildcard for home.lab -> nginx-proxy-manager (Tailscale IP)
     address=/home.lab/100.123.46.74
+    # Forward thewortmans.org to UDM for local DNS records
+    server=/thewortmans.org/192.168.1.1
 ---
 # PVC for Pi-hole config
 apiVersion: v1
