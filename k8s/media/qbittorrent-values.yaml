@@ -50,12 +50,10 @@ controllers:
                   while [ ! -f /config/qBittorrent/qBittorrent.conf ]; do sleep 1; done
                   # Add WebUI bypass settings if not already present
                   if ! grep -q "WebUI\\\\CSRFProtection" /config/qBittorrent/qBittorrent.conf; then
-                    cat >> /config/qBittorrent/qBittorrent.conf << 'EOF'
-WebUI\CSRFProtection=false
-WebUI\HostHeaderValidation=false
-WebUI\AuthSubnetWhitelistEnabled=true
-WebUI\AuthSubnetWhitelist=0.0.0.0/0
-EOF
+                    echo 'WebUI\CSRFProtection=false' >> /config/qBittorrent/qBittorrent.conf
+                    echo 'WebUI\HostHeaderValidation=false' >> /config/qBittorrent/qBittorrent.conf
+                    echo 'WebUI\AuthSubnetWhitelistEnabled=true' >> /config/qBittorrent/qBittorrent.conf
+                    echo 'WebUI\AuthSubnetWhitelist=0.0.0.0/0' >> /config/qBittorrent/qBittorrent.conf
                   fi
 
 # Service configuration - NodePort per project guidelines
