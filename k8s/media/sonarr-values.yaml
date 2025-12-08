@@ -64,7 +64,10 @@ persistence:
   config:
     enabled: true
     type: persistentVolumeClaim
-    existingClaim: sonarr-config
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
     globalMounts:
       - path: /config
 
