@@ -15,12 +15,10 @@ spec:
   # Day 0 = Sunday
   schedule: "0 3 * * 0"
 
-  # Time to live: 28 days (672 hours)
-  # Provides 4 weeks of weekly backup retention
-  ttl: 672h
-
   # Backup template configuration
   template:
+    # Time to live: 28 days (672 hours)
+    ttl: 672h
     # Include specific namespaces with important PVC data
     includedNamespaces:
       - media

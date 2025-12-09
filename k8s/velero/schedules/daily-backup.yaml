@@ -14,12 +14,10 @@ spec:
   # Schedule: 2:00 AM daily (cron format)
   schedule: "0 2 * * *"
 
-  # Time to live: 7 days (168 hours)
-  # Backups older than this will be automatically deleted
-  ttl: 168h
-
   # Backup template configuration
   template:
+    # Time to live: 7 days (168 hours)
+    ttl: 168h
     # Include specific namespaces with important PVC data
     includedNamespaces:
       - media
