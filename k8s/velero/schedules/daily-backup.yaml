@@ -1,0 +1,49 @@
+---
+# Daily Backup Schedule
+# Runs at 2:00 AM daily with 7-day retention
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    app.kubernetes.io/component: backup-schedule
+    backup-type: daily
+spec:
+  # Schedule: 2:00 AM daily (cron format)
+  schedule: "0 2 * * *"
+
+  # Time to live: 7 days (168 hours)
+  # Backups older than this will be automatically deleted
+  ttl: 168h
+
+  # Backup template configuration
+  template:
+    # Include specific namespaces with important PVC data
+    includedNamespaces:
+      - media
+      - pihole
+      - nginx-proxy-manager
+      - home-apps
+      - default  # Contains actualbudget
+
+    # Use file system backup (Restic/Kopia) for all volumes by default
+    # Required for iSCSI volumes from democratic-csi
+    defaultVolumesToFsBackup: true
+
+    # Include cluster-scoped resources
+    includeClusterResources: true
+
+    # Storage location reference
+    storageLocation: default
+
+    # Labels for backup identification
+    metadata:
+      labels:
+        backup-type: daily
+        schedule: daily-backup
+
+    # Hooks for pre/post backup operations (optional)
+    # hooks:
+    #   resources: []

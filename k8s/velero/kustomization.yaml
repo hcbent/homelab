@@ -1,0 +1,26 @@
+# Kustomization for Velero resources
+# This file is used by ArgoCD to apply all Velero-related manifests
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: velero
+
+resources:
+  # Namespace (created by ArgoCD CreateNamespace, but included for completeness)
+  - namespace.yaml
+
+  # Credentials (use placeholder or create manually)
+  # Note: Consider creating this secret manually for security
+  # - minio-credentials-secret.yaml
+
+  # Backup storage location
+  - backup-storage-location.yaml
+
+  # Backup schedules
+  - schedules/daily-backup.yaml
+  - schedules/weekly-backup.yaml
+
+# Labels applied to all resources
+commonLabels:
+  app.kubernetes.io/part-of: velero-backup
+  app.kubernetes.io/managed-by: argocd

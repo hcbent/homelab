@@ -1,0 +1,50 @@
+---
+# Weekly Backup Schedule
+# Runs at 3:00 AM on Sundays with 28-day retention
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    app.kubernetes.io/component: backup-schedule
+    backup-type: weekly
+spec:
+  # Schedule: 3:00 AM on Sundays (cron format)
+  # Day 0 = Sunday
+  schedule: "0 3 * * 0"
+
+  # Time to live: 28 days (672 hours)
+  # Provides 4 weeks of weekly backup retention
+  ttl: 672h
+
+  # Backup template configuration
+  template:
+    # Include specific namespaces with important PVC data
+    includedNamespaces:
+      - media
+      - pihole
+      - nginx-proxy-manager
+      - home-apps
+      - default  # Contains actualbudget
+
+    # Use file system backup (Restic/Kopia) for all volumes by default
+    # Required for iSCSI volumes from democratic-csi
+    defaultVolumesToFsBackup: true
+
+    # Include cluster-scoped resources
+    includeClusterResources: true
+
+    # Storage location reference
+    storageLocation: default
+
+    # Labels for backup identification
+    metadata:
+      labels:
+        backup-type: weekly
+        schedule: weekly-backup
+
+    # Hooks for pre/post backup operations (optional)
+    # hooks:
+    #   resources: []
