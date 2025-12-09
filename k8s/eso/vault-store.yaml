@@ -1,0 +1,38 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+---
+# ServiceAccount for External Secrets to authenticate with Vault
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets-vault
+  namespace: external-secrets
+---
+# ClusterSecretStore connecting to Vault
+# Uses Kubernetes auth method - Vault must be configured to trust this cluster
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: vault-backend
+spec:
+  provider:
+    vault:
+      server: "https://192.168.10.101:8200"
+      path: "secret"
+      version: "v2"
+      # Skip TLS verification for self-signed cert (adjust if you have proper certs)
+      caProvider:
+        type: ConfigMap
+        name: vault-ca
+        namespace: external-secrets
+        key: ca.crt
+      auth:
+        kubernetes:
+          mountPath: "kubernetes"
+          role: "external-secrets"
+          serviceAccountRef:
+            name: external-secrets-vault
+            namespace: external-secrets

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-secrets-config
+  namespace: argocd
+spec:
+  destination:
+    namespace: external-secrets
+    server: https://kubernetes.default.svc
+  source:
+    path: k8s/eso
+    repoURL: git@github.com:wortmanb/homelab
+    targetRevision: main
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

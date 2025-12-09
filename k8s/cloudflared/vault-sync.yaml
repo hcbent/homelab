@@ -1,0 +1,22 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cloudflared-tunnel
+  namespace: cloudflared
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: cloudflared-tunnel
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        tunnel_token: "{{ .tunnel_token }}"
+  data:
+    - secretKey: tunnel_token
+      remoteRef:
+        key: secret/homelab/cloudflared
+        property: tunnel_token
