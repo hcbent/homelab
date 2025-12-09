@@ -13,8 +13,8 @@ resources:
   # Note: Consider creating this secret manually for security
   # - minio-credentials-secret.yaml
 
-  # Backup storage location
-  - backup-storage-location.yaml
+  # Note: BackupStorageLocation is created by Helm chart via values
+  # Do not duplicate here
 
   # Backup schedules
   - schedules/daily-backup.yaml

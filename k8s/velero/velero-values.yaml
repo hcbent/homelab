@@ -2,6 +2,15 @@
 # Chart: vmware-tanzu/velero
 # Repository: https://vmware-tanzu.github.io/helm-charts
 
+# Fix kubectl image - 1.33 doesn't exist yet
+kubectl:
+  image:
+    tag: "1.31"
+
+# Disable upgrade job (uses same invalid kubectl image)
+upgradeJobResources: {}
+upgradeCRDs: false
+
 # Use Restic for file-level PVC backup (required for iSCSI volumes from democratic-csi)
 # Note: Restic is now called "File System Backup" in newer Velero versions
 deployNodeAgent: true
