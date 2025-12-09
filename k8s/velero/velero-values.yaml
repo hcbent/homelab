@@ -2,13 +2,13 @@
 # Chart: vmware-tanzu/velero
 # Repository: https://vmware-tanzu.github.io/helm-charts
 
-# Fix kubectl image - 1.33 doesn't exist yet
+# Fix kubectl image - chart defaults to cluster k8s version which may not exist
 kubectl:
   image:
-    tag: "1.31"
+    repository: docker.io/bitnami/kubectl
+    tag: "1.31.0"
 
-# Disable upgrade job (uses same invalid kubectl image)
-upgradeJobResources: {}
+# Disable CRD upgrade job completely
 upgradeCRDs: false
 
 # Use Restic for file-level PVC backup (required for iSCSI volumes from democratic-csi)
