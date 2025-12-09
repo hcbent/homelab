@@ -1,317 +1,207 @@
-# etcd Backup Guide for k3s
+# etcd Backup Guide for Kubespray Cluster
 
-This guide documents how to backup and restore the k3s cluster state using etcd snapshots. etcd stores all Kubernetes cluster data including deployments, configmaps, secrets, and other resources.
+This guide documents how to backup and restore the cluster's external etcd. etcd stores all Kubernetes cluster data including deployments, configmaps, secrets, and other resources.
 
-## Overview
+## Cluster Overview
 
-k3s uses SQLite by default for single-node clusters, or embedded etcd for HA clusters. This guide covers both scenarios.
+This cluster uses **external etcd** deployed by Kubespray:
 
-**Why backup etcd in addition to Velero?**
+| Component | Nodes | Endpoints |
+|-----------|-------|-----------|
+| etcd | km01, km02, km03 | https://192.168.10.234:2379, https://192.168.10.235:2379, https://192.168.10.236:2379 |
+
+**Certificates location:** `/etc/ssl/etcd/ssl/`
+
+## Why Backup etcd in Addition to Velero?
 
 | Backup Type | What It Captures | Use Case |
 |-------------|-----------------|----------|
 | Velero | Namespace resources, PVC data | Application recovery |
-| etcd | All cluster state, RBAC, CRDs | Cluster rebuild |
+| etcd | All cluster state, RBAC, CRDs, secrets | Full cluster rebuild |
 
-## k3s Storage Mode Detection
-
-Check which storage backend k3s is using:
+## Check etcd Health
 
 ```bash
-# Check k3s configuration
-sudo cat /etc/rancher/k3s/config.yaml
-
-# Or check the running process
-ps aux | grep k3s | grep -E "(etcd|datastore)"
-
-# Check if etcd is running
-sudo ls /var/lib/rancher/k3s/server/db/
-# If etcd/ directory exists, using embedded etcd
-# If state.db exists, using SQLite
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  endpoint health"
 ```
 
-## Automatic Snapshots (k3s Default)
-
-k3s automatically takes etcd snapshots. Configuration is in k3s server flags or config file.
-
-### Default Snapshot Settings
-
-- **Location:** `/var/lib/rancher/k3s/server/db/snapshots/`
-- **Frequency:** Every 12 hours (etcd) or on graceful shutdown (SQLite)
-- **Retention:** 5 snapshots
-
-### View Existing Snapshots
-
+Check cluster status:
 ```bash
-# List local snapshots
-sudo ls -la /var/lib/rancher/k3s/server/db/snapshots/
-
-# Example output:
-# etcd-snapshot-k3s-server-1709856000
-# etcd-snapshot-k3s-server-1709899200
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  endpoint status --write-out=table"
 ```
 
-## Configuring Snapshot Schedule
-
-### Option 1: k3s Config File
-
-Edit `/etc/rancher/k3s/config.yaml`:
-
-```yaml
-# etcd snapshot configuration
-etcd-snapshot-schedule-cron: "0 */6 * * *"  # Every 6 hours
-etcd-snapshot-retention: 10                  # Keep 10 snapshots
-etcd-snapshot-dir: /var/lib/rancher/k3s/server/db/snapshots
-```
-
-Restart k3s:
-```bash
-sudo systemctl restart k3s
-```
-
-### Option 2: Server Flags
-
-Start k3s with snapshot flags:
-
-```bash
-k3s server \
-  --etcd-snapshot-schedule-cron="0 */6 * * *" \
-  --etcd-snapshot-retention=10
-```
-
-### Option 3: S3-Compatible Backup (MinIO)
-
-Configure k3s to store snapshots directly on MinIO:
-
-```yaml
-# /etc/rancher/k3s/config.yaml
-etcd-s3: true
-etcd-s3-endpoint: "192.168.1.230:9000"
-etcd-s3-bucket: "k3s-etcd-snapshots"
-etcd-s3-access-key: "<MINIO_ACCESS_KEY>"
-etcd-s3-secret-key: "<MINIO_SECRET_KEY>"
-etcd-s3-skip-ssl-verify: true  # For HTTP endpoint
-etcd-snapshot-schedule-cron: "0 */6 * * *"
-etcd-snapshot-retention: 10
-```
-
-## Manual Snapshot Creation
+## Manual Backup
 
 ### Create On-Demand Snapshot
 
 ```bash
-# Take immediate snapshot (saved locally)
-sudo k3s etcd-snapshot save
-
-# Take snapshot with custom name
-sudo k3s etcd-snapshot save --name pre-upgrade-$(date +%Y%m%d)
-
-# Take snapshot and upload to S3
-sudo k3s etcd-snapshot save \
-  --s3 \
-  --s3-endpoint "192.168.1.230:9000" \
-  --s3-bucket "k3s-etcd-snapshots" \
-  --s3-access-key "<ACCESS_KEY>" \
-  --s3-secret-key "<SECRET_KEY>"
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  snapshot save /var/backups/etcd/snapshot-\$(date +%Y%m%d-%H%M%S).db"
 ```
 
-### List Available Snapshots
+### Verify Snapshot
 
 ```bash
-# List local snapshots
-sudo k3s etcd-snapshot ls
-
-# List S3 snapshots
-sudo k3s etcd-snapshot ls \
-  --s3 \
-  --s3-endpoint "192.168.1.230:9000" \
-  --s3-bucket "k3s-etcd-snapshots" \
-  --s3-access-key "<ACCESS_KEY>" \
-  --s3-secret-key "<SECRET_KEY>"
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --write-out=table \
+  snapshot status /var/backups/etcd/snapshot-YYYYMMDD-HHMMSS.db"
 ```
 
-### Delete Old Snapshots
+### List Backups
 
 ```bash
-# Delete specific snapshot
-sudo k3s etcd-snapshot delete <snapshot-name>
-
-# Prune to retention count
-sudo k3s etcd-snapshot prune --snapshot-retention 5
+ssh km01 "ls -la /var/backups/etcd/"
 ```
 
-## Restoring from etcd Snapshot
+## Automated Daily Backups
+
+A cron job runs daily at 1:30 AM on km01:
+- **Script:** `/usr/local/bin/etcd-backup.sh`
+- **Local backups:** `/var/backups/etcd/` (7 days retention)
+- **Remote backups:** `192.168.1.230:/volume1/backups/etcd/` (Synology NAS)
+
+### View Cron Job
+
+```bash
+ssh km01 "sudo crontab -l | grep etcd"
+```
+
+### Check Backup Logs
+
+```bash
+ssh km01 "sudo tail -50 /var/log/etcd-backup.log"
+```
+
+## Restoring from Snapshot
 
 ### Prerequisites
 
-1. k3s service must be stopped
-2. All worker nodes should be disconnected
-3. Have the snapshot file accessible
+1. **Stop kube-apiserver** on all control plane nodes
+2. **Stop etcd** on all nodes
+3. Have the snapshot file accessible on all etcd nodes
 
 ### Restore Procedure
 
-**Step 1: Stop k3s on all nodes**
+**Step 1: Stop Kubernetes control plane**
 
 ```bash
-# On server node
-sudo systemctl stop k3s
-
-# On worker nodes
-sudo systemctl stop k3s-agent
+# On each control plane node (km01, km02, km03)
+sudo systemctl stop kube-apiserver
+sudo systemctl stop kube-controller-manager
+sudo systemctl stop kube-scheduler
 ```
 
-**Step 2: Identify snapshot to restore**
+**Step 2: Stop etcd on all nodes**
 
 ```bash
-# List snapshots
-ls -la /var/lib/rancher/k3s/server/db/snapshots/
-
-# Or find most recent
-ls -t /var/lib/rancher/k3s/server/db/snapshots/ | head -1
+# On each etcd node (km01, km02, km03)
+sudo systemctl stop etcd
 ```
 
-**Step 3: Restore from snapshot**
+**Step 3: Backup current etcd data (safety)**
 
 ```bash
-# Restore from local snapshot
-sudo k3s server \
-  --cluster-reset \
-  --cluster-reset-restore-path=/var/lib/rancher/k3s/server/db/snapshots/<snapshot-name>
-
-# Restore from S3 snapshot
-sudo k3s server \
-  --cluster-reset \
-  --etcd-s3 \
-  --etcd-s3-endpoint "192.168.1.230:9000" \
-  --etcd-s3-bucket "k3s-etcd-snapshots" \
-  --etcd-s3-access-key "<ACCESS_KEY>" \
-  --etcd-s3-secret-key "<SECRET_KEY>" \
-  --cluster-reset-restore-path=<snapshot-name>
+# On each etcd node
+sudo mv /var/lib/etcd /var/lib/etcd.backup.$(date +%Y%m%d)
 ```
 
-**Step 4: Start k3s normally**
+**Step 4: Restore snapshot on each node**
+
+Copy the snapshot to all etcd nodes, then restore:
 
 ```bash
-# The restore command will exit after completion
-# Start k3s normally
-sudo systemctl start k3s
+# On km01
+sudo ETCDCTL_API=3 etcdctl snapshot restore /var/backups/etcd/snapshot-YYYYMMDD-HHMMSS.db \
+  --name km01 \
+  --initial-cluster km01=https://192.168.10.234:2380,km02=https://192.168.10.235:2380,km03=https://192.168.10.236:2380 \
+  --initial-cluster-token etcd-cluster-1 \
+  --initial-advertise-peer-urls https://192.168.10.234:2380 \
+  --data-dir=/var/lib/etcd
 
-# Verify cluster is running
-sudo k3s kubectl get nodes
+# On km02
+sudo ETCDCTL_API=3 etcdctl snapshot restore /var/backups/etcd/snapshot-YYYYMMDD-HHMMSS.db \
+  --name km02 \
+  --initial-cluster km01=https://192.168.10.234:2380,km02=https://192.168.10.235:2380,km03=https://192.168.10.236:2380 \
+  --initial-cluster-token etcd-cluster-1 \
+  --initial-advertise-peer-urls https://192.168.10.235:2380 \
+  --data-dir=/var/lib/etcd
+
+# On km03
+sudo ETCDCTL_API=3 etcdctl snapshot restore /var/backups/etcd/snapshot-YYYYMMDD-HHMMSS.db \
+  --name km03 \
+  --initial-cluster km01=https://192.168.10.234:2380,km02=https://192.168.10.235:2380,km03=https://192.168.10.236:2380 \
+  --initial-cluster-token etcd-cluster-1 \
+  --initial-advertise-peer-urls https://192.168.10.236:2380 \
+  --data-dir=/var/lib/etcd
 ```
 
-**Step 5: Rejoin worker nodes**
+**Step 5: Fix permissions**
 
 ```bash
-# Get new token (token may have changed)
-sudo cat /var/lib/rancher/k3s/server/node-token
-
-# On worker nodes, restart with new token if needed
-sudo systemctl restart k3s-agent
+# On each etcd node
+sudo chown -R etcd:etcd /var/lib/etcd
 ```
 
-## SQLite Backup (Non-HA Clusters)
-
-If using SQLite instead of etcd:
-
-### Backup SQLite Database
+**Step 6: Start etcd**
 
 ```bash
-# Stop k3s to ensure consistent backup
-sudo systemctl stop k3s
-
-# Copy SQLite database
-sudo cp /var/lib/rancher/k3s/server/db/state.db \
-  /backup/k3s-state-$(date +%Y%m%d).db
-
-# Start k3s
-sudo systemctl start k3s
+# On each etcd node
+sudo systemctl start etcd
 ```
 
-### Restore SQLite Database
+**Step 7: Verify etcd cluster**
 
 ```bash
-# Stop k3s
-sudo systemctl stop k3s
-
-# Replace database
-sudo cp /backup/k3s-state-YYYYMMDD.db \
-  /var/lib/rancher/k3s/server/db/state.db
-
-# Fix permissions
-sudo chown root:root /var/lib/rancher/k3s/server/db/state.db
-
-# Start k3s
-sudo systemctl start k3s
+sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  member list
 ```
 
-## Backup Best Practices
-
-### Recommended Backup Schedule
-
-```yaml
-# /etc/rancher/k3s/config.yaml
-
-# Take snapshots every 6 hours
-etcd-snapshot-schedule-cron: "0 */6 * * *"
-
-# Keep 2 days of snapshots locally (8 snapshots at 6-hour intervals)
-etcd-snapshot-retention: 8
-
-# Also backup to S3 for off-server protection
-etcd-s3: true
-etcd-s3-endpoint: "192.168.1.230:9000"
-etcd-s3-bucket: "k3s-etcd-snapshots"
-etcd-s3-access-key: "<ACCESS_KEY>"
-etcd-s3-secret-key: "<SECRET_KEY>"
-```
-
-### Pre-Upgrade Backup
-
-Always create a snapshot before k3s upgrades:
+**Step 8: Start Kubernetes control plane**
 
 ```bash
-# Take named snapshot
-sudo k3s etcd-snapshot save --name pre-upgrade-$(date +%Y%m%d)
-
-# Verify it was created
-sudo k3s etcd-snapshot ls | grep pre-upgrade
+# On each control plane node
+sudo systemctl start kube-apiserver
+sudo systemctl start kube-controller-manager
+sudo systemctl start kube-scheduler
 ```
 
-### Copy Snapshots Off-Server
-
-Even without S3 integration, copy snapshots to external storage:
+**Step 9: Verify cluster**
 
 ```bash
-# Copy to NFS/backup location
-sudo cp /var/lib/rancher/k3s/server/db/snapshots/* \
-  /mnt/backup/k3s-snapshots/
-
-# Or rsync to remote server
-sudo rsync -av /var/lib/rancher/k3s/server/db/snapshots/ \
-  backup-server:/backups/k3s/
+kubectl get nodes
+kubectl get pods -A
 ```
 
-## Disaster Recovery with etcd
+## Pre-Upgrade Backup
 
-When recovering a cluster from scratch:
+Always create a snapshot before cluster upgrades:
 
-1. **Install k3s** (without starting):
-   ```bash
-   curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true sh -
-   ```
-
-2. **Copy snapshot to server**:
-   ```bash
-   sudo mkdir -p /var/lib/rancher/k3s/server/db/snapshots
-   sudo cp /backup/etcd-snapshot-latest /var/lib/rancher/k3s/server/db/snapshots/
-   ```
-
-3. **Restore and start**:
-   ```bash
-   sudo k3s server --cluster-reset \
-     --cluster-reset-restore-path=/var/lib/rancher/k3s/server/db/snapshots/etcd-snapshot-latest
-   ```
+```bash
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  snapshot save /var/backups/etcd/pre-upgrade-\$(date +%Y%m%d-%H%M%S).db"
+```
 
 ## Troubleshooting
 
@@ -319,41 +209,32 @@ When recovering a cluster from scratch:
 
 ```bash
 # Check etcd health
-sudo k3s kubectl get cs
+ssh km01 "sudo ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/ssl/etcd/ssl/ca.pem \
+  --cert=/etc/ssl/etcd/ssl/node-km01.pem \
+  --key=/etc/ssl/etcd/ssl/node-km01-key.pem \
+  endpoint health"
 
-# Check k3s server logs
-sudo journalctl -u k3s -f
+# Check etcd logs
+ssh km01 "sudo journalctl -u etcd -n 50"
 ```
 
-### Cannot Find Snapshots After Restore
+### Certificate Errors
 
-Snapshots are in different locations depending on configuration:
+Verify certificates exist and are readable:
 
 ```bash
-# Check default location
-ls /var/lib/rancher/k3s/server/db/snapshots/
-
-# Check custom location (from config)
-grep etcd-snapshot-dir /etc/rancher/k3s/config.yaml
+ssh km01 "sudo ls -la /etc/ssl/etcd/ssl/"
 ```
 
-### Worker Nodes Cannot Rejoin
+### Restore Fails
 
-After restore, worker nodes need the new token:
-
-```bash
-# On server: Get new token
-sudo cat /var/lib/rancher/k3s/server/node-token
-
-# On worker: Update token and restart
-# Edit /etc/systemd/system/k3s-agent.service.env
-# Update K3S_TOKEN value
-sudo systemctl daemon-reload
-sudo systemctl restart k3s-agent
-```
+1. Ensure etcd is stopped on all nodes
+2. Ensure /var/lib/etcd is empty or moved
+3. Check snapshot integrity with `etcdctl snapshot status`
 
 ## Related Documentation
 
 - [Disaster Recovery Runbook](./disaster-recovery-runbook.md) - Full cluster recovery
 - [Velero Restore Guide](./restore-single-app.md) - Application-level recovery
-- [k3s Documentation](https://docs.k3s.io/datastore/backup-restore) - Official k3s backup docs
