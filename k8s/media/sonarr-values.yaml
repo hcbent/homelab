@@ -68,6 +68,9 @@ persistence:
     size: 10Gi
     storageClass: freenas-iscsi-csi
     retain: true
+    # Annotations to prevent ArgoCD pruning
+    annotations:
+      argocd.argoproj.io/sync-options: Prune=false
     globalMounts:
       - path: /config
 

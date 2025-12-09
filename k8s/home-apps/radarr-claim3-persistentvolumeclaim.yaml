@@ -4,6 +4,12 @@ metadata:
   labels:
     io.kompose.service: radarr-claim3
   name: radarr-claim3
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce

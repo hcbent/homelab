@@ -1,4 +1,6 @@
 ---
+# PVC for nginx-proxy-manager data
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -7,6 +9,12 @@ metadata:
   labels:
     app.kubernetes.io/name: nginx-proxy-manager
     app.kubernetes.io/component: storage
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce
@@ -15,6 +23,8 @@ spec:
     requests:
       storage: 1Gi
 ---
+# PVC for Let's Encrypt certificates
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -23,6 +33,12 @@ metadata:
   labels:
     app.kubernetes.io/name: nginx-proxy-manager
     app.kubernetes.io/component: storage
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce

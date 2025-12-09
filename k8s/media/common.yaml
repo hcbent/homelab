@@ -4,11 +4,16 @@ kind: Namespace
 metadata:
   name: media
 ---
+# PersistentVolume for video storage on Synology NAS
+# Protected from ArgoCD pruning with annotations
 apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: video-pv
   namespace: media
+  annotations:
+    # Prevent ArgoCD from deleting this PV during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   capacity:
     storage: 24Ti
@@ -21,11 +26,16 @@ spec:
     server: 192.168.1.230
     path: /volume1/video
 ---
+# PersistentVolume for music storage on Synology NAS
+# Protected from ArgoCD pruning with annotations
 apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: music-pv
   namespace: media
+  annotations:
+    # Prevent ArgoCD from deleting this PV during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   capacity:
     storage: 24Ti
@@ -38,11 +48,19 @@ spec:
     server: 192.168.1.230
     path: /volume1/music
 ---
+# PVC for video storage
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: video-pvc
   namespace: media
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteMany
@@ -51,11 +69,19 @@ spec:
       storage: 24Ti
   storageClassName: manual
 ---
+# PVC for music storage
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: music-pvc
   namespace: media
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteMany

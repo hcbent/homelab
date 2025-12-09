@@ -78,11 +78,18 @@ data:
     server=/thewortmans.org/192.168.1.1
 ---
 # PVC for Pi-hole config
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pihole-config-pvc
   namespace: pihole
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce
@@ -92,11 +99,18 @@ spec:
   storageClassName: freenas-iscsi-csi
 ---
 # PVC for dnsmasq config
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pihole-dnsmasq-pvc
   namespace: pihole
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce
