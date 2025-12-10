@@ -9,7 +9,7 @@ spec:
     server: https://kubernetes.default.svc
   source:
     path: k8s/eso
-    repoURL: git@github.com:wortmanb/homelab
+    repoURL: https://github.com/wortmanb/homelab.git
     targetRevision: main
   project: default
   syncPolicy:

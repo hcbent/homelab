@@ -38,19 +38,8 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          livenessProbe:
-            httpGet:
-              path: /ready
-              port: 2000
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 2000
-            initialDelaySeconds: 5
-            periodSeconds: 10
+          # Note: Cloudflared minimal image has no shell for probes
+          # The container will restart automatically if it crashes
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

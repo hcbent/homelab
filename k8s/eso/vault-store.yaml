@@ -20,7 +20,7 @@ metadata:
 spec:
   provider:
     vault:
-      server: "https://192.168.10.101:8200"
+      server: "https://vault.lab.thewortmans.org:8200"
       path: "secret"
       version: "v2"
       # Skip TLS verification for self-signed cert (adjust if you have proper certs)
