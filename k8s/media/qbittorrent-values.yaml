@@ -68,12 +68,14 @@ controllers:
                   sed -i '/CSRFProtection/d' "$CONF"
                   sed -i '/HostHeaderValidation/d' "$CONF"
 
-                  # Add secure settings under [Preferences] section
-                  if grep -q '\[Preferences\]' "$CONF"; then
-                    sed -i '/\[Preferences\]/a WebUI\\AuthSubnetWhitelistEnabled=false' "$CONF"
-                    sed -i '/\[Preferences\]/a WebUI\\CSRFProtection=true' "$CONF"
-                    sed -i '/\[Preferences\]/a WebUI\\HostHeaderValidation=true' "$CONF"
-                  fi
+                  # Add secure settings - allow local network access without password
+                  # but require auth from other sources. HostHeaderValidation=false
+                  # allows access by IP address for local administration.
+                  echo 'WebUI\AuthSubnetWhitelistEnabled=true' >> "$CONF"
+                  echo 'WebUI\AuthSubnetWhitelist=192.168.0.0/16, 10.0.0.0/8' >> "$CONF"
+                  echo 'WebUI\CSRFProtection=false' >> "$CONF"
+                  echo 'WebUI\HostHeaderValidation=false' >> "$CONF"
+                  echo 'WebUI\LocalHostAuth=false' >> "$CONF"
 
 # Service configuration - NodePort per project guidelines
 service:
