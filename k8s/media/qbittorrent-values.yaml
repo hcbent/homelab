@@ -23,7 +23,7 @@ controllers:
               sed -i '/OnTorrentFinished/d' "$CONF"
               sed -i '/^enabled=/d' "$CONF"
               sed -i '/^program=/d' "$CONF"
-              # Remove existing WebUI security settings
+              # Remove existing WebUI security settings (wherever they are)
               sed -i '/AuthSubnetWhitelistEnabled/d' "$CONF"
               sed -i '/AuthSubnetWhitelist=/d' "$CONF"
               sed -i '/CSRFProtection/d' "$CONF"
@@ -31,14 +31,14 @@ controllers:
               sed -i '/LocalHostAuth/d' "$CONF"
               sed -i '/ReverseProxySupportEnabled/d' "$CONF"
               sed -i '/TrustedReverseProxiesList/d' "$CONF"
-              # Add secure settings
-              echo 'WebUI\ReverseProxySupportEnabled=true' >> "$CONF"
-              echo 'WebUI\TrustedReverseProxiesList=10.0.0.0/8, 192.168.0.0/16' >> "$CONF"
-              echo 'WebUI\AuthSubnetWhitelistEnabled=true' >> "$CONF"
-              echo 'WebUI\AuthSubnetWhitelist=192.168.0.0/16, 10.0.0.0/8' >> "$CONF"
-              echo 'WebUI\CSRFProtection=false' >> "$CONF"
-              echo 'WebUI\HostHeaderValidation=false' >> "$CONF"
-              echo 'WebUI\LocalHostAuth=false' >> "$CONF"
+              # Add settings UNDER [Preferences] section (after WebUI\Username line)
+              sed -i '/WebUI\\Username=/a WebUI\\ReverseProxySupportEnabled=true' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\TrustedReverseProxiesList=10.0.0.0/8, 192.168.0.0/16' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\AuthSubnetWhitelistEnabled=true' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\AuthSubnetWhitelist=192.168.0.0/16, 10.0.0.0/8, 127.0.0.0/8' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\CSRFProtection=false' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\HostHeaderValidation=false' "$CONF"
+              sed -i '/WebUI\\Username=/a WebUI\\LocalHostAuth=false' "$CONF"
               echo "Configuration complete."
             else
               echo "Config file does not exist yet, will be created on first run."
