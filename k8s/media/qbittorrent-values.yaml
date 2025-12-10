@@ -38,7 +38,7 @@ controllers:
               periodSeconds: 5
               timeoutSeconds: 5
 
-        # Lifecycle hooks to configure qBittorrent WebUI settings
+        # Lifecycle hooks to enforce security and remove malware on every startup
         lifecycle:
           postStart:
             exec:
@@ -47,13 +47,32 @@ controllers:
                 - -c
                 - |
                   # Wait for qBittorrent to create config file
-                  while [ ! -f /config/qBittorrent/qBittorrent.conf ]; do sleep 1; done
-                  # Add WebUI bypass settings if not already present
-                  if ! grep -q "WebUI\\\\CSRFProtection" /config/qBittorrent/qBittorrent.conf; then
-                    echo 'WebUI\CSRFProtection=false' >> /config/qBittorrent/qBittorrent.conf
-                    echo 'WebUI\HostHeaderValidation=false' >> /config/qBittorrent/qBittorrent.conf
-                    echo 'WebUI\AuthSubnetWhitelistEnabled=true' >> /config/qBittorrent/qBittorrent.conf
-                    echo 'WebUI\AuthSubnetWhitelist=0.0.0.0/0' >> /config/qBittorrent/qBittorrent.conf
+                  CONF=/config/qBittorrent/qBittorrent.conf
+                  while [ ! -f "$CONF" ]; do sleep 1; done
+                  sleep 5  # Wait for qBittorrent to finish writing initial config
+
+                  # Kill any malicious processes
+                  pkill -f "yify.foo" 2>/dev/null || true
+                  pkill -f "anondns.net" 2>/dev/null || true
+
+                  # Remove ALL AutoRun settings (malware injection point)
+                  sed -i '/\[AutoRun\]/d' "$CONF"
+                  sed -i '/OnTorrentAdded/d' "$CONF"
+                  sed -i '/OnTorrentFinished/d' "$CONF"
+                  sed -i '/^enabled=/d' "$CONF"
+                  sed -i '/^program=/d' "$CONF"
+
+                  # Enforce security settings - REQUIRE authentication
+                  sed -i '/AuthSubnetWhitelistEnabled/d' "$CONF"
+                  sed -i '/AuthSubnetWhitelist=/d' "$CONF"
+                  sed -i '/CSRFProtection/d' "$CONF"
+                  sed -i '/HostHeaderValidation/d' "$CONF"
+
+                  # Add secure settings under [Preferences] section
+                  if grep -q '\[Preferences\]' "$CONF"; then
+                    sed -i '/\[Preferences\]/a WebUI\\AuthSubnetWhitelistEnabled=false' "$CONF"
+                    sed -i '/\[Preferences\]/a WebUI\\CSRFProtection=true' "$CONF"
+                    sed -i '/\[Preferences\]/a WebUI\\HostHeaderValidation=true' "$CONF"
                   fi
 
 # Service configuration - NodePort per project guidelines
