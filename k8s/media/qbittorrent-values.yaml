@@ -62,15 +62,20 @@ controllers:
                   sed -i '/^enabled=/d' "$CONF"
                   sed -i '/^program=/d' "$CONF"
 
-                  # Enforce security settings - REQUIRE authentication
+                  # Configure reverse proxy support so qBittorrent sees real client IPs
+                  # from X-Forwarded-For header instead of the LB's IP
                   sed -i '/AuthSubnetWhitelistEnabled/d' "$CONF"
                   sed -i '/AuthSubnetWhitelist=/d' "$CONF"
                   sed -i '/CSRFProtection/d' "$CONF"
                   sed -i '/HostHeaderValidation/d' "$CONF"
+                  sed -i '/LocalHostAuth/d' "$CONF"
+                  sed -i '/ReverseProxySupportEnabled/d' "$CONF"
+                  sed -i '/TrustedReverseProxiesList/d' "$CONF"
 
-                  # Add secure settings - allow local network access without password
-                  # but require auth from other sources. HostHeaderValidation=false
-                  # allows access by IP address for local administration.
+                  # Enable reverse proxy support - trust LB/cluster to provide real IP
+                  echo 'WebUI\ReverseProxySupportEnabled=true' >> "$CONF"
+                  echo 'WebUI\TrustedReverseProxiesList=10.0.0.0/8, 192.168.0.0/16' >> "$CONF"
+                  # Whitelist local networks only (real IP seen via X-Forwarded-For)
                   echo 'WebUI\AuthSubnetWhitelistEnabled=true' >> "$CONF"
                   echo 'WebUI\AuthSubnetWhitelist=192.168.0.0/16, 10.0.0.0/8' >> "$CONF"
                   echo 'WebUI\CSRFProtection=false' >> "$CONF"
