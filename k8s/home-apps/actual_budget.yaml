@@ -15,11 +15,19 @@ data:
   APP_URL: "http://actual-budget.default.svc.cluster.local"
   APP_ENV: "production"
 ---
+# PVC for Actual Budget data
+# Protected from ArgoCD pruning with annotations and finalizers
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: actual-budget-data
   namespace: default
+  annotations:
+    # Prevent ArgoCD from deleting this PVC during sync/prune operations
+    argocd.argoproj.io/sync-options: Prune=false
+  finalizers:
+    # Kubernetes built-in protection - prevents deletion while in use
+    - kubernetes.io/pvc-protection
 spec:
   accessModes:
     - ReadWriteOnce

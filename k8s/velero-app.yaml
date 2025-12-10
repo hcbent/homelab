@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: velero
+    server: https://kubernetes.default.svc
+  sources:
+    # Velero Helm chart
+    - repoURL: https://vmware-tanzu.github.io/helm-charts
+      targetRevision: 7.2.1
+      chart: velero
+      helm:
+        valueFiles:
+          - $values/k8s/velero/velero-values.yaml
+    # Values from git repository
+    - repoURL: https://github.com/wortmanb/homelab.git
+      targetRevision: HEAD
+      ref: values
+    # Additional Velero resources (schedules, BSL, etc.)
+    - repoURL: https://github.com/wortmanb/homelab.git
+      path: k8s/velero
+      targetRevision: HEAD
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated: {}

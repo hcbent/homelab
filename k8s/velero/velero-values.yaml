@@ -1,0 +1,77 @@
+# Velero Helm Values Configuration
+# Chart: vmware-tanzu/velero
+# Repository: https://vmware-tanzu.github.io/helm-charts
+
+# Fix kubectl image - chart defaults to cluster k8s version which may not exist
+kubectl:
+  image:
+    repository: docker.io/bitnami/kubectl
+    tag: "1.31.0"
+
+# Disable CRD upgrade job completely
+upgradeCRDs: false
+
+# Use Restic for file-level PVC backup (required for iSCSI volumes from democratic-csi)
+# Note: Restic is now called "File System Backup" in newer Velero versions
+deployNodeAgent: true
+
+nodeAgent:
+  # Resources for the node-agent (Restic) pods
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Velero configuration
+configuration:
+  # Use Restic/Kopia for volume snapshots (required for non-CSI snapshot volumes)
+  defaultVolumesToFsBackup: true
+
+  # Backup storage location configuration (references BackupStorageLocation CR)
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero-backups
+      default: true
+      config:
+        region: minio
+        s3ForcePathStyle: "true"
+        s3Url: http://192.168.1.230:9000
+
+  # Disable volume snapshots (using Restic instead)
+  volumeSnapshotLocation: []
+
+# Init containers to install the AWS plugin
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.10.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+# Credentials for MinIO (S3-compatible storage)
+credentials:
+  useSecret: true
+  existingSecret: velero-minio-credentials
+
+# Velero server resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+# Enable metrics for Prometheus scraping
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Enable if using prometheus-operator
+
+# Backup schedules are managed via separate Schedule CRs
+# See velero/schedules/ directory

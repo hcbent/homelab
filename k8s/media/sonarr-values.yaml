@@ -1,0 +1,100 @@
+# Sonarr Helm Values Configuration
+# Using bjw-s app-template chart
+# Chart: https://bjw-s-labs.github.io/helm-charts/
+
+# Default controller configuration
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/sonarr
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
+          # UMASK 000 ensures directories are created with 777 permissions
+          # Required for Plex optimization - Plex runs on a separate VM and
+          # needs write access to show directories created by Sonarr
+          UMASK: "000"
+
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 8989
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 8989
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+# Service configuration
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 8989
+        targetPort: 8989
+        protocol: TCP
+
+# Ingress disabled - external routing handled by NGINX Proxy Manager
+ingress:
+  main:
+    enabled: false
+    hosts: []
+
+# Persistent storage configuration
+persistence:
+  # Config storage on iSCSI (RWO for SQLite compatibility)
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
+    # Annotations to prevent ArgoCD pruning
+    annotations:
+      argocd.argoproj.io/sync-options: Prune=false
+    globalMounts:
+      - path: /config
+
+  # Downloads storage on Synology NFS (RWX)
+  downloads:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: downloads-storage-pvc
+    globalMounts:
+      - path: /downloads
+
+  # Media storage on Synology NFS (RWX)
+  media:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: media-storage-pvc
+    globalMounts:
+      - path: /data
+
+# Resource limits
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "200m"
+  limits:
+    memory: "2Gi"
+    cpu: "2000m"

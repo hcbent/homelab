@@ -1,1 +1,4 @@
 - Address pods using the nginx-lb instead of directly whenever possible
+- NEVER modify PVC configurations or Helm values that affect persistent storage without explicitly warning about potential data loss and getting confirmation
+- Before making ArgoCD/Helm changes, always check what's currently deployed with `kubectl get` commands
+- ArgoCD apps with `prune: true` will DELETE resources that disappear from manifests - be extremely careful
