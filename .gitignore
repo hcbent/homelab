@@ -122,3 +122,6 @@ k8s/**/freenas*.yml
 *.backup
 *.bak
 *.old
+
+# Private documentation with network details
+docs/troubleshooting-udm-pro-nat-connectivity.md
