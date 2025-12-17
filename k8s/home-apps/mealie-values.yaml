@@ -63,9 +63,11 @@ controllers:
 service:
   main:
     controller: main
+    type: NodePort
     ports:
       http:
         port: 9000
+        nodePort: 32424
 
 persistence:
   data:
