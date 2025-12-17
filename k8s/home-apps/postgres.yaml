@@ -1,0 +1,92 @@
+# Mealie PostgreSQL Database
+#
+# UPGRADE WARNING: This database must be upgraded in coordination with Mealie.
+# Mealie contains Alembic migrations that must match the database schema version.
+#
+# Before any mealie upgrades:
+# 1. Back up this PVC (mealie-postgres)
+# 2. Back up mealie-data PVC
+# 3. Check mealie release notes for migration requirements
+#
+# Current alembic version can be checked with:
+# kubectl exec -n home-apps deploy/mealie-postgres -- psql -U mealie -d mealie -c "SELECT * FROM alembic_version;"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mealie-postgres
+  namespace: home-apps
+type: Opaque
+stringData:
+  POSTGRES_DB: mealie
+  POSTGRES_USER: mealie
+  POSTGRES_PASSWORD: mealie_secure_password_change_me
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mealie-postgres
+  namespace: home-apps
+  annotations:
+    # Prevent ArgoCD from deleting this PVC
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  finalizers:
+    - kubernetes.io/pvc-protection
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: freenas-iscsi-csi
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mealie-postgres
+  namespace: home-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mealie-postgres
+  template:
+    metadata:
+      labels:
+        app: mealie-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: mealie-postgres
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mealie-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mealie-postgres
+  namespace: home-apps
+spec:
+  selector:
+    app: mealie-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -1,0 +1,75 @@
+# Mealie Recipe Manager - bjw-s app-template values
+#
+# UPGRADE WARNING: Mealie and its PostgreSQL database must be upgraded together.
+# The mealie image contains database migrations that must match the database schema.
+#
+# Before upgrading:
+# 1. Back up the mealie-postgres PVC
+# 2. Back up the mealie-data PVC
+# 3. Test the new version in a staging environment if possible
+#
+# Current tested image digest (for rollback reference):
+# ghcr.io/mealie-recipes/mealie@sha256:ea5dd702484a79f7e4f7ecdcbf4dc95c0cf6bec7020abc46900a33911bdbb063
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/mealie-recipes/mealie
+          # Using nightly because stable doesn't have migrations matching our DB
+          # See: https://github.com/mealie-recipes/mealie/releases for version info
+          tag: nightly
+          pullPolicy: IfNotPresent
+        env:
+          TZ: America/New_York
+          ALLOW_SIGNUP: "true"
+          BASE_URL: "http://localhost:9925"
+          DB_ENGINE: postgres
+          POSTGRES_SERVER: mealie-postgres
+          POSTGRES_PORT: "5432"
+          POSTGRES_DB: mealie
+          POSTGRES_USER: mealie
+          POSTGRES_PASSWORD: mealie_secure_password_change_me
+          PUID: "1000"
+          PGID: "1000"
+          MAX_WORKERS: "1"
+          WEB_CONCURRENCY: "1"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/app/about
+                port: 9000
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 5
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/app/about
+                port: 9000
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 5
+    strategy: Recreate
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 9000
+
+persistence:
+  data:
+    enabled: true
+    existingClaim: mealie-data
+    globalMounts:
+      - path: /app/data
