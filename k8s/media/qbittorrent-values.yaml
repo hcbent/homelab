@@ -55,6 +55,9 @@ controllers:
           PGID: "1000"
           TZ: "America/New_York"
           WEBUI_PORT: "8080"
+          # UMASK 000 ensures files are created with 666 and directories with 777
+          # Required for Plex - runs on separate VM and needs write access via NFS
+          UMASK: "000"
 
         probes:
           liveness:
