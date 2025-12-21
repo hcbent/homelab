@@ -9,13 +9,16 @@ lapi:
   enabled: true
   replicas: 1
 
-  # Persistent storage disabled until iSCSI is fixed
-  # TODO: Enable storage once TrueNAS connectivity issues are resolved
+  # Persistent storage for bouncer keys and decisions
   persistentVolume:
     data:
-      enabled: false
+      enabled: true
+      storageClassName: freenas-iscsi-csi
+      size: 1Gi
     config:
-      enabled: false
+      enabled: true
+      storageClassName: freenas-iscsi-csi
+      size: 100Mi
 
   # Resources
   resources:
