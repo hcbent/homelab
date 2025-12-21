@@ -1,0 +1,106 @@
+# CrowdSec Helm Values
+# https://github.com/crowdsecurity/helm-charts
+
+# Container runtime - kubespray uses containerd
+container_runtime: containerd
+
+# LAPI (Local API) configuration
+lapi:
+  enabled: true
+  replicas: 1
+
+  # Persistent storage for bouncer keys and decisions
+  persistentVolume:
+    data:
+      enabled: true
+      storageClassName: freenas-iscsi-csi
+      size: 1Gi
+    config:
+      enabled: true
+      storageClassName: freenas-iscsi-csi
+      size: 100Mi
+
+  # Resources
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Environment variables
+  env:
+    # Register with CrowdSec Central API for threat intelligence
+    - name: ENROLL_KEY
+      value: ""  # Add your enrollment key from app.crowdsec.net if desired
+    - name: ENROLL_INSTANCE_NAME
+      value: "homelab-k8s"
+
+# Agent configuration - runs as DaemonSet on all nodes
+agent:
+  enabled: true
+
+  # Log acquisition configuration
+  acquisition:
+    # Monitor Kubernetes pod logs
+    - namespace: ""
+      podName: ""
+      program: ""
+      poll_without_inotify: true
+    # Monitor syslog from nodes
+    - filenames:
+        - /var/log/syslog
+        - /var/log/auth.log
+        - /var/log/kern.log
+      labels:
+        type: syslog
+    # Monitor nginx access logs if present
+    - filenames:
+        - /var/log/nginx/*.log
+      labels:
+        type: nginx
+
+  # Resources per agent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Tolerations to run on all nodes including control-plane
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# Collections to install (detection scenarios)
+# See https://hub.crowdsec.net/browse
+config:
+  parsers:
+    s02-enrich:
+      - crowdsecurity/whitelists
+  scenarios:
+    - crowdsecurity/ssh-bf
+    - crowdsecurity/http-probing
+    - crowdsecurity/http-bad-user-agent
+    - crowdsecurity/http-crawl-non_statics
+    - crowdsecurity/http-sensitive-files
+    - crowdsecurity/linux-bf
+    - crowdsecurity/nginx-cc
+  postoverflows:
+    s01-whitelist:
+      - crowdsecurity/rdns
+
+# Metrics for Prometheus
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Enable if you have prometheus-operator
+
+# Pod security context
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
