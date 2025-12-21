@@ -31,9 +31,6 @@ lapi:
 
   # Environment variables
   env:
-    # Register with CrowdSec Central API for threat intelligence
-    - name: ENROLL_KEY
-      value: ""  # Add your enrollment key from app.crowdsec.net if desired
     - name: ENROLL_INSTANCE_NAME
       value: "homelab-k8s"
 
@@ -41,25 +38,16 @@ lapi:
 agent:
   enabled: true
 
-  # Log acquisition configuration
+  # Pod log acquisition - monitor specific namespaces
   acquisition:
-    # Monitor Kubernetes pod logs
-    - namespace: ""
-      podName: ""
+    - namespace: media
+      podName: "*"
       program: ""
       poll_without_inotify: true
-    # Monitor syslog from nodes
-    - filenames:
-        - /var/log/syslog
-        - /var/log/auth.log
-        - /var/log/kern.log
-      labels:
-        type: syslog
-    # Monitor nginx access logs if present
-    - filenames:
-        - /var/log/nginx/*.log
-      labels:
-        type: nginx
+    - namespace: nginx-proxy-manager
+      podName: "*"
+      program: nginx
+      poll_without_inotify: true
 
   # Resources per agent
   resources:
@@ -76,31 +64,16 @@ agent:
       operator: Exists
       effect: NoSchedule
 
-# Collections to install (detection scenarios)
-# See https://hub.crowdsec.net/browse
+# Custom configuration - these are objects not arrays
 config:
   parsers:
-    s02-enrich:
-      - crowdsecurity/whitelists
-  scenarios:
-    - crowdsecurity/ssh-bf
-    - crowdsecurity/http-probing
-    - crowdsecurity/http-bad-user-agent
-    - crowdsecurity/http-crawl-non_statics
-    - crowdsecurity/http-sensitive-files
-    - crowdsecurity/linux-bf
-    - crowdsecurity/nginx-cc
+    s02-enrich: {}
+  scenarios: {}
   postoverflows:
-    s01-whitelist:
-      - crowdsecurity/rdns
+    s01-whitelist: {}
 
 # Metrics for Prometheus
 metrics:
   enabled: true
   serviceMonitor:
-    enabled: false  # Enable if you have prometheus-operator
-
-# Pod security context
-podSecurityContext:
-  runAsUser: 1000
-  runAsGroup: 1000
+    enabled: false
