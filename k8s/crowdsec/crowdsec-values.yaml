@@ -34,6 +34,10 @@ lapi:
     - name: ENROLL_INSTANCE_NAME
       value: "homelab-k8s"
 
+  # Node selector to schedule on worker nodes with working iSCSI
+  nodeSelector:
+    kubernetes.io/hostname: kube01
+
 # Agent configuration - runs as DaemonSet on all nodes
 agent:
   enabled: true
