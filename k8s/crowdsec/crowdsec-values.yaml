@@ -9,15 +9,15 @@ lapi:
   enabled: true
   replicas: 1
 
-  # Persistent storage for bouncer keys and decisions
+  # Persistent storage for bouncer keys and decisions (using NFS for reliability)
   persistentVolume:
     data:
       enabled: true
-      storageClassName: freenas-iscsi-csi
+      storageClassName: freenas-nfs-csi
       size: 1Gi
     config:
       enabled: true
-      storageClassName: freenas-iscsi-csi
+      storageClassName: freenas-nfs-csi
       size: 100Mi
 
   # Resources
@@ -34,9 +34,6 @@ lapi:
     - name: ENROLL_INSTANCE_NAME
       value: "homelab-k8s"
 
-  # Node selector to schedule on worker nodes with working iSCSI
-  nodeSelector:
-    kubernetes.io/hostname: kube01
 
 # Agent configuration - runs as DaemonSet on all nodes
 agent:
