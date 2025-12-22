@@ -1,0 +1,14 @@
+---
+# Handlers for CrowdSec role
+
+- name: restart crowdsec
+  systemd:
+    name: crowdsec
+    state: restarted
+  become: yes
+
+- name: restart crowdsec-firewall-bouncer
+  systemd:
+    name: crowdsec-firewall-bouncer
+    state: restarted
+  become: yes

@@ -1,0 +1,22 @@
+---
+# Deploy CrowdSec agent and firewall bouncer to hosts (standalone mode)
+#
+# Usage:
+#   ansible-playbook -i inventory/lab playbooks/setup_crowdsec.yml --limit elasticsearch_all
+#   ansible-playbook -i inventory/lab playbooks/setup_crowdsec.yml --limit kibana_nodes
+#
+# Each host runs its own CrowdSec LAPI + agent + firewall bouncer
+# Console enrollment is optional but recommended for centralized monitoring
+
+- name: Deploy CrowdSec to hosts
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # Console enrollment key - set via --extra-vars or group_vars
+    # Get from: app.crowdsec.net -> Security Engines -> Add Security Engine
+    crowdsec_console_enrollment_key: ""
+
+  roles:
+    - role: crowdsec

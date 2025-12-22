@@ -1,0 +1,36 @@
+---
+# Add CrowdSec repository
+
+- name: Install prerequisites
+  apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Add CrowdSec GPG key
+  shell: |
+    curl -fsSL https://packagecloud.io/crowdsec/crowdsec/gpgkey | gpg --dearmor -o /usr/share/keyrings/crowdsec-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/crowdsec-archive-keyring.gpg
+  become: yes
+
+- name: Add CrowdSec repository
+  copy:
+    content: |
+      deb [signed-by=/usr/share/keyrings/crowdsec-archive-keyring.gpg] https://packagecloud.io/crowdsec/crowdsec/any/ any main
+    dest: /etc/apt/sources.list.d/crowdsec.list
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+  register: crowdsec_repo
+
+- name: Update apt cache after adding repo
+  apt:
+    update_cache: yes
+  become: yes
+  when: crowdsec_repo.changed

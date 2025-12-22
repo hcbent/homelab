@@ -1,0 +1,30 @@
+---
+# Install CrowdSec firewall bouncer (uses local LAPI)
+
+- name: Install nftables
+  apt:
+    name: nftables
+    state: present
+  become: yes
+  when: crowdsec_bouncer_mode == 'nftables'
+
+- name: Enable nftables service
+  systemd:
+    name: nftables
+    state: started
+    enabled: yes
+  become: yes
+  when: crowdsec_bouncer_mode == 'nftables'
+
+- name: Install CrowdSec firewall bouncer
+  apt:
+    name: crowdsec-firewall-bouncer-nftables
+    state: present
+  become: yes
+
+- name: Ensure firewall bouncer is running
+  systemd:
+    name: crowdsec-firewall-bouncer
+    state: started
+    enabled: yes
+  become: yes

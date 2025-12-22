@@ -1,0 +1,12 @@
+---
+# CrowdSec agent and firewall bouncer installation (standalone mode)
+
+- name: Include repository setup
+  include_tasks: repository.yml
+
+- name: Include agent installation
+  include_tasks: agent.yml
+
+- name: Include bouncer installation
+  include_tasks: bouncer.yml
+  when: crowdsec_bouncer_enabled | default(true)

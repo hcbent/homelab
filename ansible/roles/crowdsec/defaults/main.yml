@@ -1,0 +1,11 @@
+---
+# CrowdSec defaults
+
+# Console enrollment key (get from app.crowdsec.net)
+crowdsec_console_enrollment_key: ""
+
+# Firewall bouncer mode
+crowdsec_bouncer_mode: nftables
+
+# Enable firewall bouncer
+crowdsec_bouncer_enabled: true

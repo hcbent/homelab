@@ -1,0 +1,23 @@
+---
+# Install CrowdSec agent with local LAPI (standalone mode)
+
+- name: Install CrowdSec
+  apt:
+    name: crowdsec
+    state: present
+  become: yes
+
+- name: Start and enable CrowdSec
+  systemd:
+    name: crowdsec
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Enroll in CrowdSec console
+  command: "cscli console enroll {{ crowdsec_console_enrollment_key }} --name {{ inventory_hostname }}"
+  register: enroll_result
+  changed_when: "'successfully enrolled' in enroll_result.stdout"
+  failed_when: false
+  become: yes
+  when: crowdsec_console_enrollment_key is defined and crowdsec_console_enrollment_key != ""
