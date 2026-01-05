@@ -1,4 +1,19 @@
 ---
+# Unpackerr - Extracts archived downloads for Sonarr/Radarr
+#
+# SECRET SETUP (from vault):
+#   kubectl delete secret -n media unpackerr-secrets 2>/dev/null; \
+#   kubectl create secret generic unpackerr-secrets -n media \
+#     --from-literal=UN_SONARR_0_URL=$(vault kv get -field=sonarr_url secret/homelab/apps/unpackerr) \
+#     --from-literal=UN_SONARR_0_API_KEY=$(vault kv get -field=sonarr_api_key secret/homelab/apps/unpackerr) \
+#     --from-literal=UN_RADARR_0_URL=$(vault kv get -field=radarr_url secret/homelab/apps/unpackerr) \
+#     --from-literal=UN_RADARR_0_API_KEY=$(vault kv get -field=radarr_api_key secret/homelab/apps/unpackerr)
+#
+# NOTE: Uses internal ClusterIP addresses to avoid Cloudflare SSL failures.
+# If services are recreated, update vault with new IPs:
+#   kubectl get svc -n media | grep -E "sonarr|radarr"
+#
+---
 # PVC for Unpackerr configuration (RWO for settings)
 apiVersion: v1
 kind: PersistentVolumeClaim
