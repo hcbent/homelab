@@ -34,12 +34,10 @@ configuration:
   backupStorageLocation:
     - name: default
       provider: aws
-      bucket: velero-backups
+      bucket: bdw-velero
       default: true
       config:
-        region: minio
-        s3ForcePathStyle: "true"
-        s3Url: http://192.168.1.230:9000
+        region: us-east-1
 
   # Disable volume snapshots (using Restic instead)
   volumeSnapshotLocation: []
@@ -53,10 +51,10 @@ initContainers:
       - mountPath: /target
         name: plugins
 
-# Credentials for MinIO (S3-compatible storage)
+# Credentials for AWS S3
 credentials:
   useSecret: true
-  existingSecret: velero-minio-credentials
+  existingSecret: velero-aws-credentials
 
 # Velero server resources
 resources:
