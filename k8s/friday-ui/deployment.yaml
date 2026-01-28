@@ -17,10 +17,17 @@ spec:
     spec:
       containers:
         - name: friday-ui
-          image: ghcr.io/wortmanb/friday-ui:latest
-          imagePullPolicy: Never
+          image: python:3.13-slim
+          command: ["python3", "/app/server.py"]
           ports:
             - containerPort: 8080
+          volumeMounts:
+            - name: app-code
+              mountPath: /app/server.py
+              subPath: server.py
+            - name: app-html
+              mountPath: /app/index.html
+              subPath: index.html
           resources:
             requests:
               memory: "32Mi"
@@ -40,3 +47,10 @@ spec:
               port: 8080
             initialDelaySeconds: 2
             periodSeconds: 10
+      volumes:
+        - name: app-code
+          configMap:
+            name: friday-ui-app
+        - name: app-html
+          configMap:
+            name: friday-ui-html
