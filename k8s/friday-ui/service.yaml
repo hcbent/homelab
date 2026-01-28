@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: friday-ui
+  namespace: friday-ui
+spec:
+  selector:
+    app: friday-ui
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: LoadBalancer
