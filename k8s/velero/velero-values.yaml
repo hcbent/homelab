@@ -39,7 +39,7 @@ configuration:
       config:
         region: minio
         s3ForcePathStyle: "true"
-        s3Url: http://192.168.1.230:9000
+        s3Url: http://192.168.1.195:9000
 
   # Disable volume snapshots (using Restic instead)
   volumeSnapshotLocation: []
@@ -53,7 +53,7 @@ initContainers:
       - mountPath: /target
         name: plugins
 
-# Credentials for MinIO (S3-compatible storage)
+# Credentials for MinIO S3-compatible storage
 credentials:
   useSecret: true
   existingSecret: velero-minio-credentials

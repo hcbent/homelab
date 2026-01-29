@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: friday-ui
+  namespace: argocd
+spec:
+  destination:
+    namespace: friday-ui
+    server: https://kubernetes.default.svc
+  source:
+    path: k8s/friday-ui
+    repoURL: https://github.com/hcbent/homelab.git
+    targetRevision: main
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
