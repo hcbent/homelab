@@ -117,6 +117,20 @@ data:
         filter: drop-shadow(0 4px 20px rgba(240,192,64,0.3));
       }
 
+      .tail {
+        stroke: #d4a020;
+        stroke-width: 7;
+        fill: none;
+        stroke-linecap: round;
+        transform-origin: 135px 160px;
+        transform-box: fill-box;
+        animation: tailSway 3.8s ease-in-out infinite;
+      }
+      @keyframes tailSway {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(6deg); }
+      }
+
       /* ── Eye animations ── */
       .eye-rect {
         fill: #ffffff;
@@ -169,6 +183,10 @@ data:
 
       .cat-wrap.state-speaking {
         animation: breathe 3s ease-in-out infinite;
+      }
+
+      .cat-wrap.sleepy {
+        animation-duration: 6s;
       }
 
       /* ── Waveform (Speaking) ── */
@@ -311,6 +329,47 @@ data:
       .aura.coding-aura {
         background: radial-gradient(circle, rgba(64,240,100,0.3) 0%, transparent 70%);
       }
+
+      .aura.aura-dim {
+        background: radial-gradient(circle, rgba(240,192,64,0.22) 0%, transparent 70%);
+      }
+
+      .aura.aura-dim-strong {
+        background: radial-gradient(circle, rgba(240,192,64,0.12) 0%, transparent 70%);
+        filter: blur(34px);
+      }
+
+      .zzz-layer {
+        position: absolute;
+        top: 40px;
+        right: 60px;
+        width: 60px;
+        height: 90px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.4s;
+        z-index: 4;
+      }
+      .zzz-layer.active {
+        opacity: 1;
+      }
+      .zzz {
+        position: absolute;
+        right: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: rgba(255,255,255,0.65);
+        animation: zzzFloat 4s ease-in-out infinite;
+      }
+      .zzz.zzz-1 { top: 40px; animation-delay: 0s; }
+      .zzz.zzz-2 { top: 20px; font-size: 16px; animation-delay: 1.2s; }
+      .zzz.zzz-3 { top: 0px; font-size: 14px; animation-delay: 2.4s; }
+      @keyframes zzzFloat {
+        0% { transform: translateY(0); opacity: 0; }
+        20% { opacity: 0.6; }
+        60% { opacity: 0.8; }
+        100% { transform: translateY(-24px); opacity: 0; }
+      }
     </style>
     </head>
     <body>
@@ -328,6 +387,9 @@ data:
             <polygon points="45,70 57,30 67,68" fill="#c49520" />
             <polygon points="108,70 125,20 142,75" fill="#d4a020" />
             <polygon points="113,68 123,30 135,70" fill="#c49520" />
+
+            <!-- Tail -->
+            <path class="tail" d="M135 160 C155 156 168 140 160 120 C170 125 176 110 164 98" />
 
             <!-- Body -->
             <ellipse cx="90" cy="125" rx="62" ry="60" fill="#e0a820" />
@@ -366,6 +428,12 @@ data:
             <ellipse cx="68" cy="178" rx="16" ry="8" fill="#c49520" />
             <ellipse cx="112" cy="178" rx="16" ry="8" fill="#c49520" />
           </svg>
+        </div>
+
+        <div class="zzz-layer" id="zzzLayer">
+          <div class="zzz zzz-1">z</div>
+          <div class="zzz zzz-2">Z</div>
+          <div class="zzz zzz-3">Z</div>
         </div>
 
         <!-- Waveform for Speaking -->
@@ -450,6 +518,62 @@ data:
     let currentState = 'idle';
     let particleSpeed = 1;
 
+    const eyeL = document.getElementById('eyeL');
+    const eyeR = document.getElementById('eyeR');
+    const eyeCenterY = parseFloat(eyeL.getAttribute('y')) + parseFloat(eyeL.getAttribute('height')) / 2;
+    const eyeBaseHeightDefault = parseFloat(eyeL.getAttribute('height'));
+    let eyeBaseHeight = eyeBaseHeightDefault;
+    let eyeBaseY = parseFloat(eyeL.getAttribute('y'));
+    let isBlinking = false;
+
+    function setEyeDims(height, y) {
+      eyeL.setAttribute('height', height);
+      eyeR.setAttribute('height', height);
+      eyeL.setAttribute('y', y);
+      eyeR.setAttribute('y', y);
+    }
+
+    function setEyeBase(height) {
+      eyeBaseHeight = height;
+      eyeBaseY = +(eyeCenterY - height / 2).toFixed(1);
+      if (!isBlinking) {
+        setEyeDims(eyeBaseHeight, eyeBaseY);
+      }
+    }
+
+    function doBlink() {
+      if (isBlinking) return;
+      isBlinking = true;
+      const closedHeight = Math.max(1, Math.round(eyeBaseHeight * 0.15));
+      const closedY = +(eyeCenterY - closedHeight / 2).toFixed(1);
+      setEyeDims(closedHeight, closedY);
+      setTimeout(() => {
+        setEyeDims(eyeBaseHeight, eyeBaseY);
+        isBlinking = false;
+      }, 180);
+    }
+
+    let blinkInterval = null;
+    function scheduleBlink() {
+      if (blinkInterval) clearInterval(blinkInterval);
+      const delay = 3000 + Math.random() * 3000;
+      blinkInterval = setInterval(() => {
+        doBlink();
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+
+    let currentTimePeriod = 'day';
+
+    function getTimePeriod(date) {
+      const h = date.getHours();
+      if (h >= 23 || h < 6) return 'night';
+      if (h >= 6 && h < 9) return 'morning';
+      if (h >= 9 && h < 18) return 'day';
+      return 'evening';
+    }
+
     // ── Build waveform bars ──
     const waveformEl = document.getElementById('waveform');
     for (let i = 0; i < 12; i++) {
@@ -476,8 +600,7 @@ data:
       const s = STATES[key];
       const catWrap = document.getElementById('catWrap');
       const aura = document.getElementById('aura');
-      const eyeL = document.getElementById('eyeL');
-      const eyeR = document.getElementById('eyeR');
+      const zzzLayer = document.getElementById('zzzLayer');
 
       // Status text
       document.getElementById('statusName').textContent = s.label;
@@ -499,6 +622,7 @@ data:
         eyeL.classList.add(s.eyeClass);
         eyeR.classList.add(s.eyeClass);
       }
+      setEyeBase(eyeBaseHeightDefault);
       // Coding: green-tinted eyes
       if (key === 'coding') {
         eyeL.style.fill = '#80ff90';
@@ -525,6 +649,15 @@ data:
           b.style.color = '';
         }
       });
+
+      if (key !== 'idle') {
+        catWrap.classList.remove('sleepy');
+        aura.classList.remove('aura-dim', 'aura-dim-strong');
+        zzzLayer.classList.remove('active');
+        setEyeBase(eyeBaseHeightDefault);
+      }
+
+      applyTimeOfDay();
     }
 
     // ── Particles ──
@@ -573,6 +706,50 @@ data:
     }
     drawParticles();
 
+    function applyTimeOfDay() {
+      const period = getTimePeriod(new Date());
+      currentTimePeriod = period;
+
+      const catWrap = document.getElementById('catWrap');
+      const aura = document.getElementById('aura');
+      const zzzLayer = document.getElementById('zzzLayer');
+
+      if (currentState !== 'idle') {
+        aura.classList.remove('aura-dim', 'aura-dim-strong');
+        catWrap.classList.remove('sleepy');
+        zzzLayer.classList.remove('active');
+        setEyeBase(eyeBaseHeightDefault);
+        return;
+      }
+
+      aura.classList.remove('aura-dim', 'aura-dim-strong');
+      catWrap.classList.remove('sleepy');
+      zzzLayer.classList.remove('active');
+      setEyeBase(eyeBaseHeightDefault);
+      particleSpeed = 1;
+
+      if (period === 'night') {
+        document.getElementById('statusDesc').textContent = 'Resting... monitoring quietly.';
+        catWrap.classList.add('sleepy');
+        aura.classList.add('aura-dim-strong');
+        zzzLayer.classList.add('active');
+        setEyeBase(6);
+        particleSpeed = 0.5;
+      } else if (period === 'morning') {
+        document.getElementById('statusDesc').textContent = 'Good morning! Starting the day.';
+      } else if (period === 'evening') {
+        document.getElementById('statusDesc').textContent = 'Evening mode. Standing by.';
+        aura.classList.add('aura-dim');
+      } else {
+        document.getElementById('statusDesc').textContent = STATES.idle.desc;
+      }
+    }
+
+    applyTimeOfDay();
+    setInterval(() => {
+      if (currentState === 'idle') applyTimeOfDay();
+    }, 60000);
+
     // ── Manual override ──
     let manualUntil = 0;
     const MANUAL_HOLD_MS = 10000;
@@ -608,6 +785,5 @@ data:
     </html>
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: friday-ui-html
   namespace: friday-ui
