@@ -1,0 +1,75 @@
+# -- Default values for the Actual Budget Helm chart.
+
+# Image settings for the Actual Budget container.
+image:
+  # -- The image repository for Actual Budget.
+  repository: actualbudget/actual-server
+  # -- The image tag to use (e.g., latest, edge).
+  # @default -- ""
+  tag: "latest"
+  # -- Image pull policy (Always, IfNotPresent, Never).
+  pullPolicy: IfNotPresent
+
+# -- Number of pod replicas for Actual Budget.
+replicaCount: 1
+
+# Kubernetes Service settings.
+service:
+  # -- Service type (ClusterIP, NodePort, LoadBalancer).
+  type: NodePort
+  # -- Port on which the service will be exposed.
+  port: 5006
+  
+
+# Ingress configuration for exposing the service externally.
+ingress:
+  # -- Enable or disable Ingress resource.
+  enabled: true
+  # -- Hostname for the Ingress.
+  # url: "budget.thewortmans.org"
+  # -- Specify the ingressClassName (optional).
+  # ingressClassName: ""
+  # -- Additional annotations for the Ingress resource.
+  # @example
+  # annotations:
+  #   cert-manager.io/cluster-issuer: letsencrypt-prod
+  annotations: {}
+  hosts:
+    - host: budget.thewortmans.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+# Persistent storage settings for data.
+persistence:
+  # -- Enable or disable persistent storage.
+  enabled: true
+  # -- Size of the PersistentVolumeClaim.
+  size: 5Gi
+  # -- StorageClass for the PVC.
+  # Use "-" to indicate no storage class, empty to use the default
+  storageClass: ""
+  # -- Specify an existing PVC claim name, if available.
+  existingClaim: ""
+
+# -- Resource requests and limits for the Actual Budget container.
+# @default -- {}
+# @example
+# resources:
+#   requests:
+#     memory: "256Mi"
+#     cpu: "100m"
+#   limits:
+#     memory: "512Mi"
+#     cpu: "500m"
+resources: {}
+
+# -- Security context for the Actual Budget pod.
+# @default -- {}
+# @example
+# securityContext:
+#   runAsUser: 1000
+#   runAsGroup: 1000
+#   fsGroup: 2000
+securityContext: {}
+
