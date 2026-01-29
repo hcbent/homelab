@@ -47,8 +47,7 @@ persistence:
   # -- Size of the PersistentVolumeClaim.
   size: 5Gi
   # -- StorageClass for the PVC.
-  # Use "-" to indicate no storage class, empty to use the default
-  storageClass: ""
+  storageClass: "freenas-iscsi-csi"
   # -- Specify an existing PVC claim name, if available.
   existingClaim: ""
 
