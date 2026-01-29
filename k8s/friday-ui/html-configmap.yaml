@@ -122,13 +122,13 @@ data:
         stroke-width: 7;
         fill: none;
         stroke-linecap: round;
-        transform-origin: 135px 160px;
+        transform-origin: 45px 160px;
         transform-box: fill-box;
         animation: tailSway 3.8s ease-in-out infinite;
       }
       @keyframes tailSway {
         0%, 100% { transform: rotate(0deg); }
-        50% { transform: rotate(6deg); }
+        50% { transform: rotate(-6deg); }
       }
 
       /* ── Eye animations ── */
@@ -381,7 +381,7 @@ data:
         <div class="cat-wrap" id="catWrap">
           <div class="aura" id="aura"></div>
 
-          <svg class="cat-svg" viewBox="0 0 180 200" xmlns="http://www.w3.org/2000/svg">
+          <svg class="cat-svg" viewBox="-10 0 200 200" xmlns="http://www.w3.org/2000/svg">
             <!-- Ears -->
             <polygon points="38,75 55,20 72,70" fill="#d4a020" />
             <polygon points="45,70 57,30 67,68" fill="#c49520" />
@@ -389,7 +389,7 @@ data:
             <polygon points="113,68 123,30 135,70" fill="#c49520" />
 
             <!-- Tail -->
-            <path class="tail" d="M135 160 C155 156 168 140 160 120 C170 125 176 110 164 98" />
+            <path class="tail" d="M45 160 C25 156 12 140 20 120 C10 125 6 110 18 98" />
 
             <!-- Body -->
             <ellipse cx="90" cy="125" rx="62" ry="60" fill="#e0a820" />
