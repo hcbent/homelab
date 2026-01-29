@@ -1,113 +1,67 @@
----
-define: &containerPort 9117
+# Jackett Helm Values Configuration
+# Using bjw-s app-template chart v3.5.1
+# Chart: https://bjw-s-labs.github.io/helm-charts/
 
-common:
-  name: "jackett"
-  define: &containerPort 9117
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/jackett
+          tag: latest
+          pullPolicy: IfNotPresent
 
-  service:
-    servicePort: *containerPort
-    type: ClusterIP
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
 
-  deployment:
-    port: *containerPort
-    memoryRequest: null
-    cpuRequest: null
-    memoryLimit: null
-    cpuLimit: null
-    strategy:
-      type: RollingUpdate
-      rollingUpdate:
-        maxUnavailable: 25%
-        maxSurge: 25%
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 9117
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 1
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 9117
+              initialDelaySeconds: 10
+              periodSeconds: 5
+              timeoutSeconds: 1
+              failureThreshold: 3
 
-  # container
-  image:
-    repositorySettings:
-      isPrivate: false
-      secretName: null
-    repository: linuxserver/jackett
-    tag: 0.22.1680
-    pullPolicy: Always
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 9117
+        targetPort: 9117
+        protocol: TCP
 
-  # ingress
-  ingress:
+ingress:
+  main:
     enabled: false
-    hostName: toto.lan
-    extraLabels: {}
-    annotations:
-      {}
-      # nginx.ingress.kubernetes.io/proxy-body-size: 100m
-    tls:
-      enabled: false
-      secretName: "secret-jackett-tls"
-    # For Ingress CRD
-    ingressClassName: istio
+    hosts: []
 
-  # env variables
-  variables:
-    secret: {}
-    nonSecret:
-      PUID: 1000
-      PGID: 1000
-      TZ: Etc/UTC
-      AUTO_UPDATE: true
-
-  # horizontal autoscaler
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 2
-    avgCpuUtilization: 50
-
-  # startupProbe
-  startupProbeEnabled: false
-  startupProbe:
-    httpGet:
-      path: "/"
-      port: *containerPort
-    periodSeconds: 10
-    failureThreshold: 20
-    timeoutSeconds: 1
-
-  # readinessProbe
-  readinessProbeEnabled: true
-  readinessProbe:
-    tcpSocket:
-      port: *containerPort
-    initialDelaySeconds: 30
-    periodSeconds: 30
-    failureThreshold: 2
-    timeoutSeconds: 3
-
-  # livenessProbe
-  livenessProbeEnabled: true
-  livenessProbe:
-    tcpSocket:
-      port: *containerPort
-    initialDelaySeconds: 30
-    periodSeconds: 60
-    failureThreshold: 1
-    timeoutSeconds: 3
-
-  persistence:
+persistence:
+  config:
     enabled: true
-    volumes:
-      - name: "config"
-        storageClassName: "" # leave empty if you want to use default
-        size: "2Gi"
-        pvcClaim: "" # Fill only if you want to use existing pvc
-        containerMount: "/config/"
-      - name: "downloads" # OPTIONAL
-        storageClassName: "" # leave empty if you want to use default
-        size: "1Gi"
-        pvcClaim: "" # Fill only if you want to use existing pvc
-        containerMount: "/downloads/"
+    type: persistentVolumeClaim
+    existingClaim: jackett-config
+    globalMounts:
+      - path: /config
 
-  tests:
-    classicHttp: # default helm test method
-      enabled: false
-    curlHostHeader: # curl using ingress.hostName as Host in header
-      enabled: true
-      path: "/"
-
+  downloads:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: jackett-downloads
+    globalMounts:
+      - path: /downloads

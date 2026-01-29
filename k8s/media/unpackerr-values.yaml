@@ -1,50 +1,62 @@
-#
-# IMPORTANT NOTE
-#
-# This chart inherits from our common library chart. You can check the default values/options here:
-# https://github.com/k8s-at-home/library-charts/tree/main/charts/stable/common/values.yaml
-#
+# Unpackerr Helm Values Configuration
+# Using bjw-s app-template chart v3.5.1
+# Chart: https://bjw-s-labs.github.io/helm-charts/
 
-image:
-  # -- image repository
-  repository: golift/unpackerr
-  # -- image tag
-  tag: 0.9.7
-  # -- image pull policy
-  pullPolicy: IfNotPresent
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: golift/unpackerr
+          tag: latest
+          pullPolicy: Always
 
-# -- environment variables. See [image docs](https://github.com/davidnewhall/unpackerr#docker-env-variables) for more details.
-# @default -- See below
-env:
-  # -- Set the container timezone
-  TZ: Americas/New_York
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
+          UNPACKERR_WEB_ENABLED: "true"
+          UN_SONARR_0_DELETE_ORIG: "true"
+          UN_RADARR_0_DELETE_ORIG: "true"
+          UN_PATHS_0_PATH: "/data/downloads"
 
-# -- Configures service settings for the chart.
-# @default -- Disabled
+        envFrom:
+          - secretRef:
+              name: unpackerr-secrets
+
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
 service:
   main:
-    enabled: false
+    controller: main
+    ports:
+      http:
+        port: 5656
+        targetPort: 5656
+        protocol: TCP
 
 ingress:
-  # -- Enable and configure ingress settings for the chart under this key.
-  # @default -- Disabled
   main:
     enabled: false
+    hosts: []
 
-# -- Configures the probes for the main Pod.
-# @default -- Disabled
-probes:
-  liveness:
-    enabled: false
-  readiness:
-    enabled: false
-  startup:
-    enabled: false
-
-# -- Configure persistence settings for the chart under this key.
-# @default -- See values.yaml
 persistence:
-  downloads:
-    enabled: false
-    mountPath: /downloads
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: unpackerr-config
+    globalMounts:
+      - path: /config
 
+  media:
+    enabled: true
+    type: persistentVolumeClaim
+    existingClaim: media-storage-pvc
+    globalMounts:
+      - path: /data
