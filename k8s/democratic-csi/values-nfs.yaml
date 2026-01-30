@@ -26,23 +26,24 @@ driver:
     driver: freenas-nfs
     instance_id:
     httpConnection:
-      protocol: https
-      host: 192.168.2.24
-      port: 443
-      username: root
-        #password: CHANGEME_FREENAS_PASSWORD
-      allowInsecure: false
-      apiKey: CHANGEME_FREENAS_API_KEY
+      protocol: http
+      host: truenas.lab.thewortmans.org
+      port: 80
+      apiVersion: 2
+      allowInsecure: true
+      apiKey: 6-CKqiHhEGDG3RU2WcsWs4oury3KTTnuvMm8rJnNNsyCNfx78GoYrZ1vFxL0xSgyCE
     sshConnection:
-      host: 192.168.2.24
+      host: truenas.lab.thewortmans.org
       port: 22
       username: root
-      # use either password or key
-      password: "CHANGEME_FREENAS_PASSWORD"
-        #      privateKey: |
-        #        -----BEGIN RSA PRIVATE KEY-----
-        #        ...
-        #        -----END RSA PRIVATE KEY-----
+      privateKey: |
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+        QyNTUxOQAAACBbPBIqd50SahnhyBDreqJgcDuEVLBmGQ48zVb4JWeUSgAAAJjMna6czJ2u
+        nAAAAAtzc2gtZWQyNTUxOQAAACBbPBIqd50SahnhyBDreqJgcDuEVLBmGQ48zVb4JWeUSg
+        AAAEA2u76X0ansjjvdTQ9RLQ99u/XDcc4wzfLHEmVgjQLc4Vs8Eip3nRJqGeHIEOt6omBw
+        O4RUsGYZDjzNVvglZ5RKAAAADmRlbW9jcmF0aWMtY3NpAQIDBAUGBw==
+        -----END OPENSSH PRIVATE KEY-----
     zfs:
       datasetParentName: tank/k8s/nfs/vols
       detachedSnapshotsDatasetParentName: tank/k8s/nfs/snaps
