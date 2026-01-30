@@ -22,9 +22,10 @@ service:
   
 
 # Ingress configuration for exposing the service externally.
+# Disabled — external routing handled by NGINX Proxy Manager
 ingress:
   # -- Enable or disable Ingress resource.
-  enabled: true
+  enabled: false
   # -- Hostname for the Ingress.
   # url: "budget.thewortmans.org"
   # -- Specify the ingressClassName (optional).

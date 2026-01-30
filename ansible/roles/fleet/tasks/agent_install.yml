@@ -1,26 +1,89 @@
 ---
 # Elastic Agent installation tasks
+# Must run as root for privileged mode (full system access)
+# See: https://www.elastic.co/docs/reference/fleet/elastic-agent-unprivileged
+
 - name: Verify enrollment token is provided
   fail:
     msg: "enrollment_token must be provided"
   when: enrollment_token == ""
 
-- name: Download and install Elastic Agent
-  shell: |
-    curl -L -O {{ elastic_agent_download_url }}
-    tar xzvf elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz
-    cd elastic-agent-{{ elastic_agent_version }}-linux-x86_64
-    ./elastic-agent install \
-      --url={{ fleet_server_url }} \
-      --enrollment-token={{ enrollment_token }} \
-      {{ '--insecure' if elastic_agent_insecure else '' }} \
-      {{ '--non-interactive' if elastic_agent_non_interactive else '' }} \
-      {{ '--force' if elastic_agent_force else '' }}
+- name: Check if Elastic Agent is installed
+  stat:
+    path: "{{ elastic_agent_binary_path }}"
+  register: agent_exists
+
+- name: Uninstall existing Elastic Agent
+  command: "{{ elastic_agent_binary_path }} uninstall --force"
+  become: yes
+  become_user: root
+  when:
+    - agent_exists.stat.exists
+    - force_reinstall | default(false) | bool
+  ignore_errors: yes
+
+- name: Clean up Elastic Agent directories after uninstall
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/Elastic/Agent
+    - /var/lib/elastic-agent
+  become: yes
+  become_user: root
+  when: force_reinstall | default(false) | bool
+
+- name: Create temp directory for Elastic Agent download
+  file:
+    path: "{{ elastic_agent_temp_dir | dirname }}"
+    state: directory
+    mode: '0755'
+  become: yes
+  become_user: root
+
+- name: Download Elastic Agent
+  get_url:
+    url: "{{ elastic_agent_download_url }}"
+    dest: "/tmp/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz"
+    mode: '0644'
+  become: yes
+  become_user: root
+
+- name: Extract Elastic Agent
+  unarchive:
+    src: "/tmp/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz"
+    dest: /tmp
+    remote_src: yes
+  become: yes
+  become_user: root
+
+- name: Install Elastic Agent in privileged mode
+  command: >
+    ./elastic-agent install
+    --url={{ fleet_server_url }}
+    --enrollment-token={{ enrollment_token }}
+    {{ '--insecure' if elastic_agent_insecure else '' }}
+    {{ '--non-interactive' if elastic_agent_non_interactive else '' }}
+    {{ '--force' if elastic_agent_force else '' }}
   args:
-    creates: "{{ elastic_agent_binary_path }}"
+    chdir: "{{ elastic_agent_temp_dir }}"
+  become: yes
+  become_user: root
 
 - name: Verify Elastic Agent service is running
   systemd:
     name: "{{ elastic_agent_service }}"
     state: started
     enabled: yes
+  become: yes
+  become_user: root
+
+- name: Cleanup downloaded files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/elastic-agent-{{ elastic_agent_version }}-linux-x86_64.tar.gz"
+    - "{{ elastic_agent_temp_dir }}"
+  become: yes
+  become_user: root

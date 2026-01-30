@@ -1,0 +1,46 @@
+---
+# Deploy Elastic Agent to hosts
+#
+# Usage:
+#   # Deploy to all hosts
+#   ansible-playbook -i inventory/lab playbooks/deploy_elastic_agent.yml
+#
+#   # Deploy to specific hosts
+#   ansible-playbook -i inventory/lab playbooks/deploy_elastic_agent.yml --limit elasticsearch_all
+#   ansible-playbook -i inventory/lab playbooks/deploy_elastic_agent.yml --limit kibana_nodes
+#
+#   # Force reinstall (uninstall existing agent first)
+#   ansible-playbook -i inventory/lab playbooks/deploy_elastic_agent.yml -e force_reinstall=true
+#
+# Prerequisites:
+#   - Fleet Server must be running
+#   - enrollment_token must be provided (via Vault or --extra-vars)
+#
+# Get enrollment token from Kibana: Fleet -> Enrollment tokens
+
+- name: Deploy Elastic Agent to hosts
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    fleet_action: agent_install
+    elastic_agent_version: "9.2.1"
+    fleet_server_url: "https://fleet.lab.thewortmans.org:8220"
+    force_reinstall: false
+    # Get from Vault (requires VAULT_ADDR and VAULT_TOKEN env vars)
+    enrollment_token: "{{ lookup('hashi_vault', 'secret=secret/data/homelab/elasticsearch/fleet:enrollment_token') }}"
+
+  pre_tasks:
+    - name: Check if Elastic Agent is already installed
+      stat:
+        path: /opt/Elastic/Agent/elastic-agent
+      register: agent_installed
+
+    - name: Display agent status
+      debug:
+        msg: "Elastic Agent {{ 'already installed' if agent_installed.stat.exists else 'not installed' }}{{ ' - will reinstall' if force_reinstall else '' }}"
+
+  roles:
+    - role: fleet
+      when: not agent_installed.stat.exists or (force_reinstall | bool)
