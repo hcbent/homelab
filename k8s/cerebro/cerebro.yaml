@@ -149,13 +149,9 @@ metadata:
   name: cerebro
   namespace: cerebro
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  ingressClassName: nginx
-  tls:
-  - hosts:
-    - cerebro.lab.thewortmans.org
-    secretName: cerebro-tls
+  ingressClassName: traefik
   rules:
   - host: cerebro.lab.thewortmans.org
     http:
