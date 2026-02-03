@@ -1,0 +1,789 @@
+apiVersion: v1
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friday — AI Avatar</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      :root {
+        --gold: #f0c040;
+        --gold-dim: #c49a2a;
+        --gold-bright: #ffe066;
+        --bg-dark: #0a0a1a;
+        --bg-mid: #10102a;
+        --border-glow: rgba(80, 120, 255, 0.25);
+        --text-muted: rgba(255,255,255,0.45);
+        --text-light: rgba(255,255,255,0.75);
+        --glow-color: rgba(240, 192, 64, 0.35);
+        --glow-color-strong: rgba(240, 192, 64, 0.6);
+        --state-accent: var(--gold);
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, sans-serif;
+        background: linear-gradient(135deg, #06061a 0%, #0d0d2b 40%, #12102e 70%, #0a0a1a 100%);
+        color: white;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ── Particles canvas ── */
+      #particles {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      /* ── Main layout ── */
+      .container {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        width: 100%;
+        max-width: 560px;
+        padding: 20px;
+      }
+
+      /* ── Avatar viewport ── */
+      .viewport {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4/3;
+        max-height: 46vh;
+        border: 1.5px solid var(--border-glow);
+        border-radius: 24px;
+        background: radial-gradient(ellipse at 50% 60%, rgba(20,18,50,0.9), rgba(8,8,24,0.95));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        box-shadow:
+          0 0 30px rgba(80,120,255,0.08),
+          inset 0 0 60px rgba(10,10,30,0.5);
+      }
+
+      /* ── Cat wrapper ── */
+      .cat-wrap {
+        position: relative;
+        width: 180px;
+        height: 200px;
+        animation: breathe 4s ease-in-out infinite;
+        transition: filter 0.6s;
+      }
+
+      @keyframes breathe {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-6px) scale(1.03); }
+      }
+
+      /* ── Glow aura ── */
+      .aura {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 220px; height: 220px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: radial-gradient(circle, var(--glow-color) 0%, transparent 70%);
+        filter: blur(30px);
+        animation: auraPulse 4s ease-in-out infinite;
+        transition: background 0.6s, filter 0.4s;
+      }
+      @keyframes auraPulse {
+        0%, 100% { opacity: 0.7; transform: translate(-50%,-50%) scale(1); }
+        50% { opacity: 1; transform: translate(-50%,-50%) scale(1.12); }
+      }
+
+      /* ── Cat body (SVG) ── */
+      .cat-svg {
+        position: relative;
+        z-index: 2;
+        width: 180px;
+        height: 200px;
+        filter: drop-shadow(0 4px 20px rgba(240,192,64,0.3));
+      }
+
+      .tail {
+        stroke: #d4a020;
+        stroke-width: 7;
+        fill: none;
+        stroke-linecap: round;
+        transform-origin: 45px 160px;
+        transform-box: fill-box;
+        animation: tailSway 3.8s ease-in-out infinite;
+      }
+      @keyframes tailSway {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(-6deg); }
+      }
+
+      /* ── Eye animations ── */
+      .eye-rect {
+        fill: #ffffff;
+        filter: drop-shadow(0 0 8px rgba(255,255,255,0.8));
+        transition: fill 0.4s, opacity 0.15s;
+      }
+      .eye-rect.thinking {
+        animation: eyePulse 1.2s ease-in-out infinite;
+      }
+      @keyframes eyePulse {
+        0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(255,255,255,0.8)); }
+        50% { opacity: 0.4; filter: drop-shadow(0 0 16px rgba(180,200,255,1)); }
+      }
+      .eye-rect.coding {
+        animation: eyeFlicker 0.6s steps(2) infinite;
+      }
+      @keyframes eyeFlicker {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.15; }
+      }
+
+      /* ── State-specific cat animations ── */
+      .cat-wrap.state-thinking {
+        animation: think 2.4s ease-in-out infinite;
+      }
+      @keyframes think {
+        0%, 100% { transform: translateY(0) scale(1); }
+        30% { transform: translateY(-3px) scale(1.01); }
+        50% { transform: translateY(-1px) scale(0.98); }
+        70% { transform: translateY(-4px) scale(1.02); }
+      }
+
+      .cat-wrap.state-working {
+        animation: bounce 1.6s ease-in-out infinite;
+      }
+      @keyframes bounce {
+        0%, 100% { transform: translateY(0) scale(1); }
+        30% { transform: translateY(-12px) scale(1.05); }
+        60% { transform: translateY(2px) scale(0.98); }
+      }
+
+      .cat-wrap.state-alert {
+        animation: wiggle 0.4s ease-in-out infinite;
+      }
+      @keyframes wiggle {
+        0%, 100% { transform: rotate(0deg); }
+        25% { transform: rotate(-3deg); }
+        75% { transform: rotate(3deg); }
+      }
+
+      .cat-wrap.state-speaking {
+        animation: breathe 3s ease-in-out infinite;
+      }
+
+      .cat-wrap.sleepy {
+        animation-duration: 6s;
+      }
+
+      /* ── Waveform (Speaking) ── */
+      .waveform {
+        display: none;
+        position: absolute;
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        gap: 4px;
+        align-items: flex-end;
+        height: 36px;
+        z-index: 5;
+      }
+      .waveform.active { display: flex; }
+      .wave-bar {
+        width: 5px;
+        border-radius: 3px;
+        background: var(--gold);
+        opacity: 0.85;
+        animation: waveAnim 0.8s ease-in-out infinite alternate;
+      }
+      @keyframes waveAnim {
+        0% { height: 6px; }
+        100% { height: 32px; }
+      }
+
+      /* ── Status text ── */
+      .status-section {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      .status-label {
+        font-size: 11px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        font-weight: 600;
+      }
+      .status-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--gold);
+        transition: color 0.4s;
+      }
+      .status-desc {
+        font-size: 13px;
+        color: var(--text-light);
+        max-width: 400px;
+        line-height: 1.5;
+      }
+
+      /* ── Divider ── */
+      .divider {
+        width: 80%;
+        max-width: 360px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+      }
+
+      /* ── Buttons ── */
+      .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+      .state-btn {
+        padding: 7px 16px;
+        border-radius: 20px;
+        border: 1.5px solid rgba(255,255,255,0.15);
+        background: transparent;
+        color: var(--text-light);
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-transform: uppercase;
+      }
+      .state-btn:hover {
+        border-color: rgba(255,255,255,0.35);
+        color: white;
+      }
+      .state-btn.active {
+        border-color: var(--state-accent);
+        color: var(--state-accent);
+        background: rgba(240,192,64,0.08);
+        box-shadow: 0 0 12px rgba(240,192,64,0.15);
+      }
+
+      /* ── Live indicator ── */
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .live-dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #2ecc71;
+        box-shadow: 0 0 8px rgba(46,204,113,0.6);
+        animation: livePulse 2s ease-in-out infinite;
+      }
+      @keyframes livePulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+
+      /* ── Alert aura override ── */
+      .aura.alert-aura {
+        background: radial-gradient(circle, rgba(255,80,50,0.45) 0%, transparent 70%);
+        animation: alertPulse 0.8s ease-in-out infinite;
+      }
+      @keyframes alertPulse {
+        0%, 100% { opacity: 0.6; transform: translate(-50%,-50%) scale(1); }
+        50% { opacity: 1; transform: translate(-50%,-50%) scale(1.2); }
+      }
+
+      .aura.thinking-aura {
+        background: radial-gradient(circle, rgba(80,160,255,0.35) 0%, transparent 70%);
+        animation: thinkPulse 2.4s ease-in-out infinite;
+      }
+      @keyframes thinkPulse {
+        0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
+        25% { opacity: 0.9; transform: translate(-50%,-50%) scale(1.08); }
+        50% { opacity: 0.6; transform: translate(-50%,-50%) scale(0.95); }
+        75% { opacity: 1; transform: translate(-50%,-50%) scale(1.12); }
+      }
+
+      .aura.coding-aura {
+        background: radial-gradient(circle, rgba(64,240,100,0.3) 0%, transparent 70%);
+      }
+
+      .aura.aura-dim {
+        background: radial-gradient(circle, rgba(240,192,64,0.22) 0%, transparent 70%);
+      }
+
+      .aura.aura-dim-strong {
+        background: radial-gradient(circle, rgba(240,192,64,0.12) 0%, transparent 70%);
+        filter: blur(34px);
+      }
+
+      .zzz-layer {
+        position: absolute;
+        top: 40px;
+        right: 60px;
+        width: 60px;
+        height: 90px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.4s;
+        z-index: 4;
+      }
+      .zzz-layer.active {
+        opacity: 1;
+      }
+      .zzz {
+        position: absolute;
+        right: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: rgba(255,255,255,0.65);
+        animation: zzzFloat 4s ease-in-out infinite;
+      }
+      .zzz.zzz-1 { top: 40px; animation-delay: 0s; }
+      .zzz.zzz-2 { top: 20px; font-size: 16px; animation-delay: 1.2s; }
+      .zzz.zzz-3 { top: 0px; font-size: 14px; animation-delay: 2.4s; }
+      @keyframes zzzFloat {
+        0% { transform: translateY(0); opacity: 0; }
+        20% { opacity: 0.6; }
+        60% { opacity: 0.8; }
+        100% { transform: translateY(-24px); opacity: 0; }
+      }
+    </style>
+    </head>
+    <body>
+
+    <canvas id="particles"></canvas>
+
+    <div class="container">
+      <div class="viewport">
+        <div class="cat-wrap" id="catWrap">
+          <div class="aura" id="aura"></div>
+
+          <svg class="cat-svg" viewBox="-10 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <!-- Ears -->
+            <polygon points="38,75 55,20 72,70" fill="#d4a020" />
+            <polygon points="45,70 57,30 67,68" fill="#c49520" />
+            <polygon points="108,70 125,20 142,75" fill="#d4a020" />
+            <polygon points="113,68 123,30 135,70" fill="#c49520" />
+
+            <!-- Tail -->
+            <path class="tail" d="M45 160 C25 156 12 140 20 120 C10 125 6 110 18 98" />
+
+            <!-- Body -->
+            <ellipse cx="90" cy="125" rx="62" ry="60" fill="#e0a820" />
+            <ellipse cx="90" cy="125" rx="58" ry="56" fill="#d4a020" />
+            <!-- Belly highlight -->
+            <ellipse cx="90" cy="130" rx="38" ry="36" fill="#ddb030" opacity="0.5" />
+
+            <!-- Arms/wings -->
+            <ellipse cx="32" cy="120" rx="14" ry="22" fill="#d4a020" transform="rotate(-15, 32, 120)" />
+            <ellipse cx="148" cy="120" rx="14" ry="22" fill="#d4a020" transform="rotate(15, 148, 120)" />
+
+            <!-- Face area -->
+            <ellipse cx="90" cy="95" rx="40" ry="32" fill="#ddb030" opacity="0.3" />
+
+            <!-- Eyes (robot visor style) -->
+            <rect class="eye-rect" id="eyeL" x="62" y="85" width="20" height="12" rx="3" />
+            <rect class="eye-rect" id="eyeR" x="98" y="85" width="20" height="12" rx="3" />
+
+            <!-- Nose -->
+            <polygon points="87,104 93,104 90,109" fill="#b8860b" />
+
+            <!-- Whiskers (left) -->
+            <line x1="50" y1="100" x2="76" y2="104" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+            <line x1="48" y1="108" x2="75" y2="108" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+            <line x1="50" y1="116" x2="76" y2="112" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+
+            <!-- Whiskers (right) -->
+            <line x1="104" y1="104" x2="130" y2="100" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+            <line x1="105" y1="108" x2="132" y2="108" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+            <line x1="104" y1="112" x2="130" y2="116" stroke="#b8860b" stroke-width="1.2" opacity="0.7" />
+
+            <!-- Mouth -->
+            <path d="M 82 112 Q 90 118 98 112" stroke="#b8860b" stroke-width="1.5" fill="none" />
+
+            <!-- Feet -->
+            <ellipse cx="68" cy="178" rx="16" ry="8" fill="#c49520" />
+            <ellipse cx="112" cy="178" rx="16" ry="8" fill="#c49520" />
+          </svg>
+        </div>
+
+        <div class="zzz-layer" id="zzzLayer">
+          <div class="zzz zzz-1">z</div>
+          <div class="zzz zzz-2">Z</div>
+          <div class="zzz zzz-3">Z</div>
+        </div>
+
+        <!-- Waveform for Speaking -->
+        <div class="waveform" id="waveform"></div>
+      </div>
+
+      <div class="status-section">
+        <div class="status-label">STATUS</div>
+        <div class="status-name" id="statusName">IDLE</div>
+        <div class="status-desc" id="statusDesc">Ambient monitoring with gentle breathing and soft glows.</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="buttons" id="buttons"></div>
+
+      <div class="live">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+    </div>
+
+    <script>
+    // ── State definitions ──
+    const STATES = {
+      idle: {
+        label: 'IDLE',
+        desc: 'Ambient monitoring with gentle breathing and soft glows.',
+        catClass: '',
+        eyeClass: '',
+        auraClass: '',
+        accentColor: null,
+        waveform: false
+      },
+      thinking: {
+        label: 'THINKING',
+        desc: 'Processing with neural pulse animations.',
+        catClass: 'state-thinking',
+        eyeClass: 'thinking',
+        auraClass: 'thinking-aura',
+        accentColor: '#80b0ff',
+        waveform: false
+      },
+      working: {
+        label: 'WORKING',
+        desc: 'Executing tasks with active energy.',
+        catClass: 'state-working',
+        eyeClass: '',
+        auraClass: '',
+        accentColor: null,
+        waveform: false
+      },
+      coding: {
+        label: 'CODING',
+        desc: 'Writing code with focused intensity.',
+        catClass: '',
+        eyeClass: 'coding',
+        auraClass: 'coding-aura',
+        accentColor: '#40f070',
+        waveform: false
+      },
+      alert: {
+        label: 'ALERT',
+        desc: 'Attention needed — something requires your input.',
+        catClass: 'state-alert',
+        eyeClass: '',
+        auraClass: 'alert-aura',
+        accentColor: '#ff5040',
+        waveform: false
+      },
+      speaking: {
+        label: 'SPEAKING',
+        desc: 'Voice output online with a responsive waveform pulse.',
+        catClass: 'state-speaking',
+        eyeClass: '',
+        auraClass: '',
+        accentColor: null,
+        waveform: true
+      }
+    };
+
+    let currentState = 'idle';
+    let particleSpeed = 1;
+
+    const eyeL = document.getElementById('eyeL');
+    const eyeR = document.getElementById('eyeR');
+    const eyeCenterY = parseFloat(eyeL.getAttribute('y')) + parseFloat(eyeL.getAttribute('height')) / 2;
+    const eyeBaseHeightDefault = parseFloat(eyeL.getAttribute('height'));
+    let eyeBaseHeight = eyeBaseHeightDefault;
+    let eyeBaseY = parseFloat(eyeL.getAttribute('y'));
+    let isBlinking = false;
+
+    function setEyeDims(height, y) {
+      eyeL.setAttribute('height', height);
+      eyeR.setAttribute('height', height);
+      eyeL.setAttribute('y', y);
+      eyeR.setAttribute('y', y);
+    }
+
+    function setEyeBase(height) {
+      eyeBaseHeight = height;
+      eyeBaseY = +(eyeCenterY - height / 2).toFixed(1);
+      if (!isBlinking) {
+        setEyeDims(eyeBaseHeight, eyeBaseY);
+      }
+    }
+
+    function doBlink() {
+      if (isBlinking) return;
+      isBlinking = true;
+      const closedHeight = Math.max(1, Math.round(eyeBaseHeight * 0.15));
+      const closedY = +(eyeCenterY - closedHeight / 2).toFixed(1);
+      setEyeDims(closedHeight, closedY);
+      setTimeout(() => {
+        setEyeDims(eyeBaseHeight, eyeBaseY);
+        isBlinking = false;
+      }, 180);
+    }
+
+    let blinkInterval = null;
+    function scheduleBlink() {
+      if (blinkInterval) clearInterval(blinkInterval);
+      const delay = 3000 + Math.random() * 3000;
+      blinkInterval = setInterval(() => {
+        doBlink();
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+
+    let currentTimePeriod = 'day';
+
+    function getTimePeriod(date) {
+      const h = date.getHours();
+      if (h >= 23 || h < 6) return 'night';
+      if (h >= 6 && h < 9) return 'morning';
+      if (h >= 9 && h < 18) return 'day';
+      return 'evening';
+    }
+
+    // ── Build waveform bars ──
+    const waveformEl = document.getElementById('waveform');
+    for (let i = 0; i < 12; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'wave-bar';
+      bar.style.animationDelay = `${i * 0.1}s`;
+      bar.style.animationDuration = `${0.5 + Math.random() * 0.6}s`;
+      waveformEl.appendChild(bar);
+    }
+
+    // ── Build buttons ──
+    const btnContainer = document.getElementById('buttons');
+    Object.keys(STATES).forEach(key => {
+      const btn = document.createElement('button');
+      btn.className = 'state-btn' + (key === 'idle' ? ' active' : '');
+      btn.textContent = STATES[key].label;
+      btn.dataset.state = key;
+      btn.addEventListener('click', () => setStateManual(key));
+      btnContainer.appendChild(btn);
+    });
+
+    function setState(key) {
+      currentState = key;
+      const s = STATES[key];
+      const catWrap = document.getElementById('catWrap');
+      const aura = document.getElementById('aura');
+      const zzzLayer = document.getElementById('zzzLayer');
+
+      // Status text
+      document.getElementById('statusName').textContent = s.label;
+      document.getElementById('statusName').style.color = s.accentColor || 'var(--gold)';
+      document.getElementById('statusDesc').textContent = s.desc;
+
+      // Cat animation class
+      catWrap.className = 'cat-wrap';
+      if (s.catClass) catWrap.classList.add(s.catClass);
+
+      // Aura
+      aura.className = 'aura';
+      if (s.auraClass) aura.classList.add(s.auraClass);
+
+      // Eyes
+      eyeL.className = 'eye-rect';
+      eyeR.className = 'eye-rect';
+      if (s.eyeClass) {
+        eyeL.classList.add(s.eyeClass);
+        eyeR.classList.add(s.eyeClass);
+      }
+      setEyeBase(eyeBaseHeightDefault);
+      // Coding: green-tinted eyes
+      if (key === 'coding') {
+        eyeL.style.fill = '#80ff90';
+        eyeR.style.fill = '#80ff90';
+      } else {
+        eyeL.style.fill = '#ffffff';
+        eyeR.style.fill = '#ffffff';
+      }
+
+      // Waveform
+      waveformEl.className = s.waveform ? 'waveform active' : 'waveform';
+
+      // Particle speed
+      particleSpeed = key === 'thinking' ? 3 : key === 'working' ? 2 : key === 'alert' ? 2.5 : 1;
+
+      // Button active state
+      document.querySelectorAll('.state-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.state === key);
+        if (b.dataset.state === key && s.accentColor) {
+          b.style.borderColor = s.accentColor;
+          b.style.color = s.accentColor;
+        } else {
+          b.style.borderColor = '';
+          b.style.color = '';
+        }
+      });
+
+      if (key !== 'idle') {
+        catWrap.classList.remove('sleepy');
+        aura.classList.remove('aura-dim', 'aura-dim-strong');
+        zzzLayer.classList.remove('active');
+        setEyeBase(eyeBaseHeightDefault);
+      }
+
+      applyTimeOfDay();
+    }
+
+    // ── Particles ──
+    const canvas = document.getElementById('particles');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    function initParticles() {
+      particles = [];
+      const count = Math.floor((canvas.width * canvas.height) / 8000);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          r: Math.random() * 1.5 + 0.5,
+          dx: (Math.random() - 0.5) * 0.3,
+          dy: (Math.random() - 0.5) * 0.3,
+          alpha: Math.random() * 0.6 + 0.2
+        });
+      }
+    }
+    initParticles();
+
+    function drawParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.x += p.dx * particleSpeed;
+        p.y += p.dy * particleSpeed;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${p.alpha})`;
+        ctx.fill();
+      });
+      requestAnimationFrame(drawParticles);
+    }
+    drawParticles();
+
+    function applyTimeOfDay() {
+      const period = getTimePeriod(new Date());
+      currentTimePeriod = period;
+
+      const catWrap = document.getElementById('catWrap');
+      const aura = document.getElementById('aura');
+      const zzzLayer = document.getElementById('zzzLayer');
+
+      if (currentState !== 'idle') {
+        aura.classList.remove('aura-dim', 'aura-dim-strong');
+        catWrap.classList.remove('sleepy');
+        zzzLayer.classList.remove('active');
+        setEyeBase(eyeBaseHeightDefault);
+        return;
+      }
+
+      aura.classList.remove('aura-dim', 'aura-dim-strong');
+      catWrap.classList.remove('sleepy');
+      zzzLayer.classList.remove('active');
+      setEyeBase(eyeBaseHeightDefault);
+      particleSpeed = 1;
+
+      if (period === 'night') {
+        document.getElementById('statusDesc').textContent = 'Resting... monitoring quietly.';
+        catWrap.classList.add('sleepy');
+        aura.classList.add('aura-dim-strong');
+        zzzLayer.classList.add('active');
+        setEyeBase(6);
+        particleSpeed = 0.5;
+      } else if (period === 'morning') {
+        document.getElementById('statusDesc').textContent = 'Good morning! Starting the day.';
+      } else if (period === 'evening') {
+        document.getElementById('statusDesc').textContent = 'Evening mode. Standing by.';
+        aura.classList.add('aura-dim');
+      } else {
+        document.getElementById('statusDesc').textContent = STATES.idle.desc;
+      }
+    }
+
+    applyTimeOfDay();
+    setInterval(() => {
+      if (currentState === 'idle') applyTimeOfDay();
+    }, 60000);
+
+    // ── Manual override ──
+    let manualUntil = 0;
+    const MANUAL_HOLD_MS = 10000;
+
+    function setStateManual(key) {
+      setState(key);
+      manualUntil = Date.now() + MANUAL_HOLD_MS;
+      // Notify server so its poller backs off too
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: key })
+      }).catch(() => {});
+    }
+
+    // ── API polling ──
+    async function pollState() {
+      // Skip polling during manual override window
+      if (Date.now() < manualUntil) return;
+      try {
+        const res = await fetch('/api/state');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.state && STATES[data.state] && data.state !== currentState) {
+            setState(data.state);
+          }
+        }
+      } catch (e) { /* server may not have API yet */ }
+    }
+    setInterval(pollState, 2000);
+    </script>
+    </body>
+    </html>
+kind: ConfigMap
+metadata:
+  name: friday-ui-html
+  namespace: friday-ui

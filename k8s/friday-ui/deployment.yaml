@@ -5,10 +5,6 @@ metadata:
   namespace: friday-ui
   labels:
     app: friday-ui
-  annotations:
-    # Argo Image Updater annotations for automatic image updates
-    argocd-image-updater.argoproj.io/image-list: friday-ui=ghcr.io/wortmanb/friday-ui
-    argocd-image-updater.argoproj.io/friday-ui.update-strategy: latest
 spec:
   replicas: 1
   selector:
@@ -19,15 +15,19 @@ spec:
       labels:
         app: friday-ui
     spec:
-      # Image pull secret for GHCR (if repo is private)
-      # imagePullSecrets:
-      #   - name: ghcr-secret
       containers:
         - name: friday-ui
-          image: ghcr.io/wortmanb/friday-ui:latest
-          imagePullPolicy: Always
+          image: python:3.13-slim
+          command: ["python3", "/app/server.py"]
           ports:
             - containerPort: 8080
+          volumeMounts:
+            - name: app-code
+              mountPath: /app/server.py
+              subPath: server.py
+            - name: app-html
+              mountPath: /app/index.html
+              subPath: index.html
           resources:
             requests:
               memory: "32Mi"
@@ -47,3 +47,10 @@ spec:
               port: 8080
             initialDelaySeconds: 2
             periodSeconds: 10
+      volumes:
+        - name: app-code
+          configMap:
+            name: friday-ui-app
+        - name: app-html
+          configMap:
+            name: friday-ui-html
