@@ -1,8 +1,43 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cerebro
+---
+# ExternalSecret to pull ES credentials from Vault
+# Requires: vault kv put secret/homelab/cerebro es_username=elastic es_password=xxx session_secret=xxx
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cerebro-secrets
+  namespace: cerebro
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: cerebro-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: es_username
+      remoteRef:
+        key: secret/homelab/cerebro
+        property: es_username
+    - secretKey: es_password
+      remoteRef:
+        key: secret/homelab/cerebro
+        property: es_password
+    - secretKey: session_secret
+      remoteRef:
+        key: secret/homelab/cerebro
+        property: session_secret
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cerebro-config
-  namespace: elastic-stack
+  namespace: cerebro
 data:
   application.conf: |
     hosts = [
@@ -11,12 +46,14 @@ data:
         name = "Homelab Cluster"
         auth = {
           type = "basic"
-          username = "CHANGEME_ES_USERNAME"
-          password = "CHANGEME_ES_PASSWORD"
+          username = ${?ES_USERNAME}
+          password = ${?ES_PASSWORD}
         }
       }
     ]
-    play.http.secret.key = "CHANGEME_SESSION_SECRET_KEY"
+    play.http.secret.key = ${?SESSION_SECRET}
+    
+    # Database configuration (in-memory H2)
     slick.dbs.default.profile = "slick.jdbc.H2Profile$"
     slick.dbs.default.db.driver = "org.h2.Driver"
     slick.dbs.default.db.url = "jdbc:h2:mem:cerebro;DB_CLOSE_DELAY=-1"
@@ -27,7 +64,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cerebro
-  namespace: elastic-stack
+  namespace: cerebro
   labels:
     app: cerebro
 spec:
@@ -43,17 +80,34 @@ spec:
     spec:
       containers:
       - name: cerebro
-        image: lmenezes/cerebro:latest
+        image: lmenezes/cerebro:0.9.4
         ports:
         - containerPort: 9000
           protocol: TCP
+        env:
+        - name: ES_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: cerebro-secrets
+              key: es_username
+        - name: ES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerebro-secrets
+              key: es_password
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cerebro-secrets
+              key: session_secret
         volumeMounts:
         - name: config
-          mountPath: /opt/cerebro/conf
+          mountPath: /opt/cerebro/conf/application.conf
+          subPath: application.conf
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
             memory: "512Mi"
             cpu: "500m"
@@ -67,7 +121,7 @@ spec:
           httpGet:
             path: /
             port: 9000
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 10
       volumes:
       - name: config
@@ -78,35 +132,38 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cerebro
-  namespace: elastic-stack
+  namespace: cerebro
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
   - port: 9000
-    name: https
+    name: http
     targetPort: 9000
-    nodePort: 30490
     protocol: TCP
   selector:
     app: cerebro
-#---
-#apiVersion: networking.k8s.io/v1
-#kind: Ingress
-#metadata:
-#  name: cerebro-ingress
-#  namespace: elastic-stack
-#  annotations:
-#    nginx.ingress.kubernetes.io/rewrite-target: /
-#spec: 
-#  ingressClassName: nginx
-#  rules:
-#  - host: cerebro.lab.thewortmans.org
-#    http:
-#      paths:
-#      - path: /
-#        pathType: Prefix
-#        backend:
-#          service:
-#            name: cerebro
-#            port:
-#              number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cerebro
+  namespace: cerebro
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - cerebro.lab.thewortmans.org
+    secretName: cerebro-tls
+  rules:
+  - host: cerebro.lab.thewortmans.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cerebro
+            port:
+              number: 9000
