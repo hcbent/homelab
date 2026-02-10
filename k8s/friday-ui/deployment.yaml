@@ -7,7 +7,7 @@ metadata:
     app: friday-ui
   annotations:
     # Argo Image Updater annotations for automatic image updates
-    argocd-image-updater.argoproj.io/image-list: friday-ui=ghcr.io/wortmanb/friday-ui-websocket
+    argocd-image-updater.argoproj.io/image-list: friday-ui=ghcr.io/wortmanb/friday-ui
     argocd-image-updater.argoproj.io/friday-ui.update-strategy: latest
 spec:
   replicas: 1
@@ -24,11 +24,10 @@ spec:
       #   - name: ghcr-secret
       containers:
         - name: friday-ui
-          image: ghcr.io/wortmanb/friday-ui-websocket:latest
+          image: ghcr.io/wortmanb/friday-ui:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
-            - containerPort: 8081
           resources:
             requests:
               memory: "32Mi"

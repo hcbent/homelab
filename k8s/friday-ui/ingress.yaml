@@ -5,7 +5,6 @@ metadata:
   namespace: friday-ui
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
-    traefik.ingress.kubernetes.io/router.middlewares: friday-ui-websocket-headers@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
@@ -19,10 +18,3 @@ spec:
                 name: friday-ui
                 port:
                   number: 80
-          - path: /ws
-            pathType: Prefix
-            backend:
-              service:
-                name: friday-ui
-                port:
-                  number: 8081
