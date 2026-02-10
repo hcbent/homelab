@@ -7,7 +7,12 @@ spec:
   selector:
     app: friday-ui
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 8080
+      protocol: TCP
+    - name: websocket
+      port: 8081
+      targetPort: 8081
       protocol: TCP
   type: LoadBalancer
