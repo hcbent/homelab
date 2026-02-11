@@ -1290,7 +1290,7 @@ grafana:
   defaultDashboardsInterval: 1m
 
   adminUser: admin
-  adminPassword: prom-operator
+  adminPassword: CHANGEME_ADMIN_PASSWORD
 
   rbac:
     ## If true, Grafana PSPs will be created
@@ -3954,7 +3954,7 @@ prometheus:
     ## This is disabled by default.
     ## ref: https://prometheus.io/docs/prometheus/latest/querying/api/#tsdb-admin-apis
     ##
-    enableAdminAPI: true
+    enableAdminAPI: false
 
     ## Sets version of Prometheus overriding the Prometheus version as derived
     ## from the image tag. Useful in cases where the tag does not follow semver v2.
