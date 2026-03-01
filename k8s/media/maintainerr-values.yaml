@@ -5,6 +5,17 @@
 # Default controller configuration
 controllers:
   main:
+    initContainers:
+      init-chown:
+        image:
+          repository: busybox
+          tag: latest
+        command:
+          - sh
+          - -c
+          - chown -R 1000:1000 /opt/data
+        securityContext:
+          runAsUser: 0
     containers:
       main:
         image:
@@ -13,8 +24,6 @@ controllers:
           pullPolicy: IfNotPresent
 
         env:
-          PUID: "1000"
-          PGID: "1000"
           TZ: "America/New_York"
 
         probes:
