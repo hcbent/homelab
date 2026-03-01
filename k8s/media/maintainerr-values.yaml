@@ -20,7 +20,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/jorenn92/maintainerr
-          tag: latest
+          tag: v3.0.1
           pullPolicy: IfNotPresent
 
         env:
