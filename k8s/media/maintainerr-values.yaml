@@ -1,0 +1,80 @@
+# Maintainerr Helm Values Configuration
+# Using bjw-s app-template chart
+# Chart: https://bjw-s-labs.github.io/helm-charts/
+
+# Default controller configuration
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/jorenn92/maintainerr
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
+
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 6246
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 6246
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+# Service configuration
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 6246
+        targetPort: 6246
+        protocol: TCP
+
+# Ingress disabled - external routing handled by nginx
+ingress:
+  main:
+    enabled: false
+    hosts: []
+
+# Persistent storage configuration
+persistence:
+  # Config storage on iSCSI (RWO for SQLite compatibility)
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
+    # Annotations to prevent ArgoCD pruning
+    annotations:
+      argocd.argoproj.io/sync-options: Prune=false
+    globalMounts:
+      - path: /opt/data
+
+# Resource limits
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
