@@ -1,0 +1,66 @@
+# Tautulli Helm Values Configuration
+# Using bjw-s app-template chart v3.5.1
+# Chart: https://bjw-s-labs.github.io/helm-charts/
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/tautulli
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          TZ: "America/New_York"
+
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 8181
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 1
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 8181
+              initialDelaySeconds: 10
+              periodSeconds: 5
+              timeoutSeconds: 1
+              failureThreshold: 3
+
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 8181
+        targetPort: 8181
+        protocol: TCP
+
+ingress:
+  main:
+    enabled: false
+    hosts: []
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
+    # Prevent ArgoCD pruning
+    annotations:
+      argocd.argoproj.io/sync-options: Prune=false
+    globalMounts:
+      - path: /config
