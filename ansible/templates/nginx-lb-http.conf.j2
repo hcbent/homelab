@@ -8,7 +8,8 @@
 # ============================================
 # Each upstream targets worker nodes on the NodePort
 
-{% for service in services %}
+{% set all_services = services + ([tautulli_service] if tautulli_service is defined else []) %}
+{% for service in all_services %}
 # {{ service.description }}
 upstream {{ service.name }} {
     {{ nginx_config.lb_method }};  # Use least connections load balancing
@@ -23,7 +24,7 @@ upstream {{ service.name }} {
 # SERVER BLOCKS - NodePort Services
 # ============================================
 
-{% for service in services %}
+{% for service in all_services %}
 # {{ service.description }}
 server {
     listen {{ service.listen_port }}{% if 'https' in service.name %} ssl{% endif %};
