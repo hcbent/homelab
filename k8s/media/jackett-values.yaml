@@ -62,6 +62,6 @@ persistence:
   downloads:
     enabled: true
     type: persistentVolumeClaim
-    existingClaim: jackett-downloads
+    existingClaim: downloads-storage-pvc
     globalMounts:
       - path: /downloads
