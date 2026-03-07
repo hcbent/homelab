@@ -195,7 +195,7 @@ spec:
               memory: "256Mi"
         # Cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
         - name: cloudflared
-          image: cloudflare/cloudflared:latest
+          image: cloudflare/cloudflared:2026.1.0
           args:
             - proxy-dns
             - --port=5053
