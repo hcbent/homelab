@@ -43,7 +43,8 @@ data:
   FTLCONF_dns_listeningMode: "all"
   # Use 'lan' as local domain - thewortmans.org is managed by UDM
   FTLCONF_dns_domain_name: "lan"
-  # Upstream DNS servers are configured via Pi-hole UI
+  # Upstream DNS servers
+  PIHOLE_DNS_1: "127.0.0.1#5053"
   FTLCONF_dns_blockESNI: "true"
   FTLCONF_dns_specialDomains_mozillaCanary: "true"
   FTLCONF_dns_specialDomains_iCloudPrivateRelay: "true"
@@ -76,6 +77,46 @@ data:
     address=/home.lab/100.123.46.74
     # Forward thewortmans.org to UDM for local DNS records
     server=/thewortmans.org/192.168.1.1
+---
+# ConfigMap for dnscrypt-proxy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnscrypt-proxy-config
+  namespace: pihole
+data:
+  dnscrypt-proxy.toml: |
+    listen_addresses = ['127.0.0.1:5053']
+    server_names = ['cloudflare', 'cloudflare-ipv6']
+    max_clients = 250
+    ipv4_servers = true
+    ipv6_servers = false
+    dnscrypt_servers = true
+    doh_servers = true
+    require_dnssec = false
+    require_nolog = true
+    require_nofilter = true
+
+    [sources]
+      [sources.public-resolvers]
+      urls = [
+        'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+        'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md',
+      ]
+      cache_file = 'public-resolvers.md'
+      minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
+      refresh_delay = 73
+      prefix = ''
+
+      [sources.relays]
+      urls = [
+        'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/relays.md',
+        'https://download.dnscrypt.info/resolvers-list/v3/relays.md',
+      ]
+      cache_file = 'relays.md'
+      minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
+      refresh_delay = 73
+      prefix = ''
 ---
 # PVC for Pi-hole config
 # Protected from ArgoCD pruning with annotations and finalizers
@@ -193,14 +234,16 @@ spec:
             requests:
               cpu: "100m"
               memory: "256Mi"
-        # Cloudflared sidecar for DNS-over-HTTPS (bypasses UniFi DNS interception)
-        - name: cloudflared
-          image: cloudflare/cloudflared:2026.1.0
+        # dnscrypt-proxy sidecar for DNS-over-HTTPS (replacement for cloudflared proxy-dns)
+        - name: dnscrypt-proxy
+          image: dnscrypt/dnscrypt-proxy:2.1.5
           args:
-            - proxy-dns
-            - --port=5053
-            - --upstream=https://1.1.1.1/dns-query
-            - --upstream=https://1.0.0.1/dns-query
+            - -config
+            - /config/dnscrypt-proxy.toml
+          volumeMounts:
+            - name: dnscrypt-proxy-config
+              mountPath: /config/dnscrypt-proxy.toml
+              subPath: dnscrypt-proxy.toml
           resources:
             limits:
               cpu: "100m"
@@ -221,6 +264,9 @@ spec:
         - name: dnsmasq-custom
           configMap:
             name: pihole-dnsmasq-custom
+        - name: dnscrypt-proxy-config
+          configMap:
+            name: dnscrypt-proxy-config
 ---
 # DNS Service (LoadBalancer with specific IP)
 apiVersion: v1
