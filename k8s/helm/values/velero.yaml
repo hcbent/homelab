@@ -73,13 +73,14 @@ podLabels: {}
 
 # Resource requests/limits to specify for the Velero deployment.
 # https://velero.io/docs/v1.6/customize-installation/#customize-resource-requests-and-limits
-resources: {}
-  # requests:
-  #   cpu: 500m
-  #   memory: 128Mi
-  # limits:
-  #   cpu: 1000m
-  #   memory: 512Mi
+# Increased limits to prevent OOM kills during backup deletion/maintenance operations
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
 
 # Configure hostAliases for Velero deployment. Optional
 # For more information, check: https://kubernetes.io/docs/tasks/network/customize-hosts-file-for-pods/
