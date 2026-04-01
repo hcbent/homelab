@@ -21,13 +21,14 @@ essential_packages:
   - gnupg
   - lsb-release
 
-# Dotfiles configuration
-dotfiles_repo: git@github.com:wortmanb/dotfiles.git
-dotfiles_path: ~/git/dotfiles
+# Dotfiles configuration (chezmoi)
+dotfiles_repo: git@github.com:hcbent/dotfiles.git
+chezmoi_source_dir: "~/.local/share/chezmoi"
 default_shell: /usr/bin/zsh
 
 # SSH and dotfiles sync settings
-local_ssh_path: /Users/bret/.ssh
+# Auto-detects controller OS via HOME env var (works on both Linux and macOS)
+local_ssh_path: "{{ lookup('env', 'HOME') }}/.ssh"
 ssh_files_pattern: "github* config known_hosts"
 setup_dotfiles: true
 
