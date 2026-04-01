@@ -1,6 +1,11 @@
 ---
 # Dotfiles deployment via chezmoi
 # Replaces the old stow-based workflow
+# Requires: gather_facts: true in the calling playbook
+
+- name: Set user home directory
+  set_fact:
+    user_home: "/home/{{ ansible_user }}"
 
 - name: Check if chezmoi is already installed
   ansible.builtin.command: chezmoi --version
@@ -11,7 +16,7 @@
 
 - name: Check if dotfiles are already applied
   ansible.builtin.stat:
-    path: "{{ chezmoi_source_dir }}/.git"
+    path: "{{ user_home }}/.local/share/chezmoi/.git"
   register: chezmoi_repo_check
 
 - name: Setup dotfiles and SSH keys for user {{ ansible_user }}
@@ -19,61 +24,59 @@
   block:
     - name: Ensure .ssh directory exists
       file:
-        path: ~/.ssh
+        path: "{{ user_home }}/.ssh"
         state: directory
         mode: '0700'
 
     - name: Clean up old host keys from localhost known_hosts
       shell: |
-        ssh-keygen -R {{ inventory_hostname }} || true
         ssh-keygen -R {{ ansible_host | default(inventory_hostname) }} || true
+        ssh-keygen -R {{ inventory_hostname }} || true
         ssh-keygen -R {{ inventory_hostname.split('.')[0] }} || true
-        sed -i.bak '/{{ inventory_hostname }}/d' ~/.ssh/known_hosts || true
-        sed -i.bak '/{{ inventory_hostname.split('.')[0] }}/d' ~/.ssh/known_hosts || true
       delegate_to: localhost
       connection: local
       ignore_errors: yes
+      changed_when: false
 
     - name: Test SSH connection to ensure host key is accepted
-      shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ inventory_hostname }} 'echo "SSH connection test successful"'
+      shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }} 'echo "SSH connection test successful"'
       delegate_to: localhost
       connection: local
       ignore_errors: yes
 
     - name: Rsync SSH files from localhost
-      shell: cd {{ local_ssh_path }} && rsync -av {{ ssh_files_pattern }} {{ ansible_user }}@{{ inventory_hostname }}:.ssh/
+      shell: cd {{ local_ssh_path }} && rsync -av {{ ssh_files_pattern }} {{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }}:.ssh/
       delegate_to: localhost
       connection: local
 
     - name: Install chezmoi
-      shell: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+      shell: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b {{ user_home }}/.local/bin
       args:
-        creates: ~/.local/bin/chezmoi
+        creates: "{{ user_home }}/.local/bin/chezmoi"
       when: chezmoi_check.rc != 0
-
-    - name: Ensure ~/.local/bin is in PATH for this session
-      set_fact:
-        ansible_env_path: "{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH | default('/usr/local/bin:/usr/bin:/bin') }}"
 
     - name: Initialize and apply dotfiles with chezmoi
       shell: |
-        export PATH="{{ ansible_env_path }}"
+        export PATH="{{ user_home }}/.local/bin:$PATH"
         chezmoi init --apply {{ dotfiles_repo }}
       args:
-        creates: "{{ chezmoi_source_dir }}/.git"
+        creates: "{{ user_home }}/.local/share/chezmoi/.git"
       environment:
-        PATH: "{{ ansible_env_path }}"
+        PATH: "{{ user_home }}/.local/bin:{{ ansible_env.PATH | default('/usr/local/bin:/usr/bin:/bin') }}"
+        HOME: "{{ user_home }}"
       async: 1200
       poll: 10
-      when: chezmoi_repo_check.stat.exists is not defined or not chezmoi_repo_check.stat.exists
+      when: not chezmoi_repo_check.stat.exists
 
     - name: Update dotfiles if already initialized
       shell: |
-        export PATH="{{ ansible_env_path }}"
+        export PATH="{{ user_home }}/.local/bin:$PATH"
         chezmoi update --force
       environment:
-        PATH: "{{ ansible_env_path }}"
-      when: chezmoi_repo_check.stat.exists is defined and chezmoi_repo_check.stat.exists
+        PATH: "{{ user_home }}/.local/bin:{{ ansible_env.PATH | default('/usr/local/bin:/usr/bin:/bin') }}"
+        HOME: "{{ user_home }}"
+      when: chezmoi_repo_check.stat.exists
+      changed_when: false
   when: setup_dotfiles
 
 - name: Change shell to zsh

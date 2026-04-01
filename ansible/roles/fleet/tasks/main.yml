@@ -3,6 +3,11 @@
 # Handles both Fleet Server setup and Elastic Agent installation
 
 # Fleet Server setup actions
+- name: Ensure Elastic repository is configured
+  include_role:
+    name: elastic
+  when: fleet_action == 'fleet_server_setup'
+
 - name: Include Fleet Server installation
   include_tasks: fleet_install.yml
   when: fleet_action == 'fleet_server_setup'

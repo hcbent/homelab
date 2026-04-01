@@ -2,10 +2,10 @@
 - name: Setup host with basic configuration
   hosts: all
   become: true
-  gather_facts: false
+  gather_facts: true
   vars:
     proxmox_vm_action: basic_host_setup
-    ansible_user: bret
+    ansible_user: "{{ default_user | default('bret') }}"
     install_qemu_agent: true
     basic_host_setup: true
     setup_dotfiles: true
