@@ -3,12 +3,16 @@
 elasticsearch_service: elasticsearch
 elasticsearch_service_name: elasticsearch
 elasticsearch_port: 9200
-elasticsearch_version: "9.1.4"
+elasticsearch_version: "9.2.1"
 elasticsearch_config_path: /etc/elasticsearch/elasticsearch.yml
 elasticsearch_cluster_name: "{{ cluster_name | default('elasticsearch') }}"
 elasticsearch_network_host: "0.0.0.0"
 es_username: "{{ elasticsearch_username | default('elastic') }}"
 es_password: "{{ elasticsearch_password | default('changeme') }}"
+
+# Single-node mode: set to true for standalone ES instances
+# Automatically sets discovery.type: single-node and replicas to 0
+elasticsearch_single_node: false
 
 # Domain suffix for nodes
 domain_suffix: lab.thewortmans.org
@@ -32,11 +36,8 @@ node_roles:
   elasticsearch_coordinating: ["remote_cluster_client"]
   elasticsearch_transform: ["transform"]
 
-# Discovery settings
-discovery_seed_nodes:
-  - "192.168.10.31:9300"
-  - "192.168.10.32:9300"
-  - "192.168.10.33:9300"
+# Discovery settings (ignored when elasticsearch_single_node is true)
+discovery_seed_hosts: []
 
 # Bootstrap node for cluster operations
-bootstrap_node: "{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined else groups['elasticsearch_all'][0] }}"
+bootstrap_node: "{{ groups['elasticsearch_bootstrap'][0] if groups['elasticsearch_bootstrap'] is defined and groups['elasticsearch_bootstrap'] | length > 0 else inventory_hostname }}"

@@ -18,3 +18,18 @@
     path: "{{ elasticsearch_config_path }}"
     regexp: '^#?network\.host:'
     line: "network.host: {{ elasticsearch_network_host }}"
+
+- name: Set discovery.type for single-node
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?discovery\.type:'
+    line: "discovery.type: single-node"
+    backup: yes
+  when: elasticsearch_single_node | bool
+
+- name: Remove discovery.type for multi-node
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^discovery\.type: single-node'
+    state: absent
+  when: not (elasticsearch_single_node | bool)

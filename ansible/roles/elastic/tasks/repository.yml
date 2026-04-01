@@ -1,7 +1,7 @@
 ---
 # Elasticsearch repository setup tasks
 - name: Download and install Elasticsearch GPG key
-  shell: wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o {{ elastic_gpg_key_path }}
+  shell: wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --dearmor -o {{ elastic_gpg_key_path }}
   args:
     creates: "{{ elastic_gpg_key_path }}"
 
@@ -19,3 +19,9 @@
     owner: root
     group: root
     mode: '0644'
+  register: elastic_repo_added
+
+- name: Update apt cache after adding Elastic repo
+  apt:
+    update_cache: yes
+  when: elastic_repo_added.changed
