@@ -10,7 +10,7 @@ controllers:
         image:
           repository: lscr.io/linuxserver/sonarr
           tag: latest
-          pullPolicy: IfNotPresent
+          pullPolicy: Always
 
         env:
           PUID: "1000"
