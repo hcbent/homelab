@@ -1,0 +1,7 @@
+---
+# nginx-lb handlers
+
+- name: Reload NGINX
+  systemd:
+    name: nginx
+    state: reloaded

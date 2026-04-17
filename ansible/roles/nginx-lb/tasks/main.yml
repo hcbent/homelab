@@ -1,0 +1,33 @@
+---
+# nginx-lb role - Deploy NGINX load balancer configuration for K8s NodePort services
+
+- name: Install NGINX
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Ensure NGINX conf.d directory exists
+  file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Deploy nginx-lb HTTP configuration
+  template:
+    src: nginx-lb-http.conf.j2
+    dest: /etc/nginx/conf.d/nginx-lb-http.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload NGINX
+
+- name: Validate NGINX configuration
+  command: nginx -t
+  changed_when: false
+
+- name: Ensure NGINX is started and enabled
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes

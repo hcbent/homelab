@@ -24,3 +24,7 @@ pihole
 [k8s:children]
 k8s_cp
 k8s_worker
+
+[nginx_proxy]
+nginx-lb01
+nginx-lb02

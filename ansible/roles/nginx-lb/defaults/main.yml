@@ -1,0 +1,81 @@
+---
+# nginx-lb role defaults
+
+# Kubernetes worker nodes
+k8s_workers:
+  - name: kube01
+    ip: 192.168.10.237
+  - name: kube02
+    ip: 192.168.10.238
+  - name: kube03
+    ip: 192.168.10.239
+
+# NGINX configuration parameters
+nginx_config:
+  lb_method: "least_conn"
+  max_fails: 3
+  fail_timeout: "30s"
+  proxy_connect_timeout: "60s"
+  proxy_send_timeout: "60s"
+  proxy_read_timeout: "60s"
+  health_check_port: 8080
+  health_check_path: "/health"
+
+# NodePort services configuration
+services:
+  - name: "actualbudget"
+    description: "Actual Budget (HTTP)"
+    node_port: 30219
+    listen_port: 5007
+
+  - name: "argocd-http"
+    description: "ArgoCD Server (HTTP)"
+    node_port: 30080
+    listen_port: 8443
+
+  - name: "mealie"
+    description: "Mealie Recipe Manager (HTTP)"
+    node_port: 32424
+    listen_port: 9925
+
+  - name: "sonarr"
+    description: "Sonarr TV Management (HTTP)"
+    node_port: 32220
+    listen_port: 8989
+
+  - name: "radarr"
+    description: "Radarr Movie Management (HTTP)"
+    node_port: 32267
+    listen_port: 7878
+
+  - name: "qbittorrent"
+    description: "qBittorrent Web UI (HTTP)"
+    node_port: 31878
+    listen_port: 8090
+
+  - name: "pihole"
+    description: "Pi-hole Web Interface (HTTP)"
+    node_port: 32306
+    listen_port: 7012
+
+  - name: "grafana"
+    description: "Grafana Monitoring (HTTP)"
+    node_port: 30030
+    listen_port: 7009
+
+  - name: "jackett"
+    description: "Jackett Indexer (HTTP)"
+    node_port: 32671
+    listen_port: 7011
+
+  - name: "maintainerr"
+    description: "Maintainerr Media Cleanup (HTTP)"
+    node_port: 31216
+    listen_port: 6246
+
+# Tautulli service (optional - can be overridden in group_vars)
+tautulli_service:
+  name: "tautulli"
+  description: "Tautulli Media Stats (HTTP)"
+  node_port: 31162
+  listen_port: 8181
