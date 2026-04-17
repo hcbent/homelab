@@ -13,6 +13,11 @@
     state: directory
     mode: '0755'
 
+- name: Remove old k8s-loadbalancer.conf file (prevents duplicates)
+  file:
+    path: /etc/nginx/conf.d/k8s-loadbalancer.conf
+    state: absent
+
 - name: Check if nginx-lb config exists
   stat:
     path: /etc/nginx/conf.d/nginx-lb-http.conf
