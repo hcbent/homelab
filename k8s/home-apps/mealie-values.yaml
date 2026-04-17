@@ -24,7 +24,7 @@ controllers:
         env:
           TZ: America/New_York
           ALLOW_SIGNUP: "true"
-          BASE_URL: "https://mealie.bwortman.us"
+          BASE_URL: "http://mealie.bwortman.us"
           DB_ENGINE: postgres
           POSTGRES_SERVER: mealie-postgres
           POSTGRES_PORT: "5432"
