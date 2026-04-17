@@ -13,24 +13,34 @@ k8s_workers:
 # NGINX configuration parameters
 nginx_config:
   lb_method: "least_conn"
-  max_fails: 3
+  max_fails: 2
   fail_timeout: "30s"
-  proxy_connect_timeout: "60s"
-  proxy_send_timeout: "60s"
-  proxy_read_timeout: "60s"
-  health_check_port: 8080
+  proxy_connect_timeout: "10s"
+  proxy_send_timeout: "90s"
+  proxy_read_timeout: "90s"
+  health_check_port: 8888
   health_check_path: "/health"
 
 # NodePort services configuration
 services:
   - name: "actualbudget"
-    description: "Actual Budget (HTTP)"
+    description: "Actualbudget (HTTP)"
+    node_port: 30219
+    listen_port: 5006
+
+  - name: "actualbudget-https"
+    description: "Actualbudget (HTTPS)"
     node_port: 30219
     listen_port: 5007
 
-  - name: "argocd-http"
-    description: "ArgoCD Server (HTTP)"
+  - name: "argocd"
+    description: "ArgoCD UI (HTTP)"
     node_port: 30080
+    listen_port: 8080
+
+  - name: "argocd-https"
+    description: "ArgoCD UI (HTTPS)"
+    node_port: 30443
     listen_port: 8443
 
   - name: "mealie"
@@ -50,23 +60,18 @@ services:
 
   - name: "qbittorrent"
     description: "qBittorrent Web UI (HTTP)"
-    node_port: 31878
+    node_port: 32070
     listen_port: 8090
 
-  - name: "pihole"
-    description: "Pi-hole Web Interface (HTTP)"
-    node_port: 32306
-    listen_port: 7012
-
-  - name: "grafana"
-    description: "Grafana Monitoring (HTTP)"
-    node_port: 30030
-    listen_port: 7009
-
   - name: "jackett"
-    description: "Jackett Indexer (HTTP)"
+    description: "Jackett Torrent Indexer (HTTP)"
     node_port: 32671
-    listen_port: 7011
+    listen_port: 9117
+
+  - name: "elasticvue"
+    description: "Elasticvue - Elasticsearch GUI (HTTP)"
+    node_port: 30290
+    listen_port: 9201
 
   - name: "maintainerr"
     description: "Maintainerr Media Cleanup (HTTP)"
@@ -79,3 +84,11 @@ tautulli_service:
   description: "Tautulli Media Stats (HTTP)"
   node_port: 31162
   listen_port: 8181
+
+# Grafana service with domain-based routing
+grafana_service:
+  name: "grafana"
+  description: "Grafana Monitoring (HTTP)"
+  node_port: 30030
+  listen_port: 80
+  server_name: "grafana.lab.thewortmans.org"

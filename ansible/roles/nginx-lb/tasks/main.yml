@@ -13,6 +13,21 @@
     state: directory
     mode: '0755'
 
+- name: Check if nginx-lb config exists
+  stat:
+    path: /etc/nginx/conf.d/nginx-lb-http.conf
+  register: nginx_lb_config
+
+- name: Backup existing nginx-lb config
+  copy:
+    src: /etc/nginx/conf.d/nginx-lb-http.conf
+    dest: "/etc/nginx/conf.d/nginx-lb-http.conf.backup.{{ ansible_date_time.iso8601_basic_short }}"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  when: nginx_lb_config.stat.exists
+
 - name: Deploy nginx-lb HTTP configuration
   template:
     src: nginx-lb-http.conf.j2

@@ -46,8 +46,8 @@ server {
 	client_max_body_size 50M;
 {% endif %}
         proxy_pass http://{{ service.name }};
-{% if 'qbittorrent' in service.name %}
-        # qBittorrent requires localhost for Host header validation
+{% if 'qbittorrent' in service.name or 'argocd' in service.name %}
+        # qBittorrent and ArgoCD require localhost for Host header validation
         proxy_set_header Host localhost:8080;
 {% else %}
         proxy_set_header Host $host;
@@ -98,3 +98,33 @@ server {
         add_header Content-Type text/plain;
     }
 }
+
+{% if grafana_service is defined %}
+# ============================================
+# GRAFANA - Domain-based routing
+# ============================================
+
+# {{ grafana_service.description }}
+upstream {{ grafana_service.name }} {
+    {{ nginx_config.lb_method }};
+{% for worker in k8s_workers %}
+    server {{ worker.ip }}:{{ grafana_service.node_port }} max_fails={{ nginx_config.max_fails }} fail_timeout={{ nginx_config.fail_timeout }};
+{% endfor %}
+}
+
+server {
+    listen {{ grafana_service.listen_port }};
+    server_name {{ grafana_service.server_name }};
+
+    location / {
+        proxy_pass http://{{ grafana_service.name }};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+{% endif %}
