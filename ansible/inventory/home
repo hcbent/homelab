@@ -28,3 +28,11 @@ k8s_worker
 [nginx_proxy]
 nginx-lb01
 nginx-lb02
+
+[new_vms]
+mealie ansible_host=192.168.10.199
+actual ansible_host=192.168.10.162
+radarr ansible_host=192.168.10.209
+sonarr ansible_host=192.168.10.253
+media ansible_host=192.168.10.200
+qbt ansible_host=192.168.10.210

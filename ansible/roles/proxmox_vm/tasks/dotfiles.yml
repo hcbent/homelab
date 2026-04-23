@@ -28,26 +28,16 @@
         state: directory
         mode: '0700'
 
-    - name: Clean up old host keys from localhost known_hosts
-      shell: |
-        ssh-keygen -R {{ ansible_host | default(inventory_hostname) }} || true
-        ssh-keygen -R {{ inventory_hostname }} || true
-        ssh-keygen -R {{ inventory_hostname.split('.')[0] }} || true
-      delegate_to: localhost
-      connection: local
-      ignore_errors: yes
-      changed_when: false
-
-    - name: Test SSH connection to ensure host key is accepted
-      shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }} 'echo "SSH connection test successful"'
-      delegate_to: localhost
-      connection: local
-      ignore_errors: yes
-
-    - name: Rsync SSH files from localhost
-      shell: cd {{ local_ssh_path }} && rsync -av {{ ssh_files_pattern }} {{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }}:.ssh/
-      delegate_to: localhost
-      connection: local
+    - name: Copy GitHub SSH keys and config for initial chezmoi clone
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ user_home }}/.ssh/{{ item.dest }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: "{{ lookup('env', 'HOME') }}/git/dotfiles/ssh/.ssh/github_rsa", dest: "github_rsa", mode: "0600" }
+        - { src: "{{ lookup('env', 'HOME') }}/git/dotfiles/ssh/.ssh/github_rsa.pub", dest: "github_rsa.pub", mode: "0644" }
+        - { src: "{{ lookup('env', 'HOME') }}/git/dotfiles/ssh/.ssh/config", dest: "config", mode: "0600" }
+      when: not chezmoi_repo_check.stat.exists
 
     - name: Install chezmoi
       shell: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b {{ user_home }}/.local/bin
@@ -58,7 +48,7 @@
     - name: Initialize and apply dotfiles with chezmoi
       shell: |
         export PATH="{{ user_home }}/.local/bin:$PATH"
-        chezmoi init --apply {{ dotfiles_repo }}
+        chezmoi init --apply --exclude scripts {{ dotfiles_repo }}
       args:
         creates: "{{ user_home }}/.local/share/chezmoi/.git"
       environment:

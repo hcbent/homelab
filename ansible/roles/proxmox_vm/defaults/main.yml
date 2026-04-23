@@ -33,7 +33,7 @@ ssh_files_pattern: "github* config known_hosts"
 setup_dotfiles: true
 
 # New VM setup defaults
-vm_user: ubuntu
+vm_user: bret
 vm_timezone: "America/New_York"
 
 # SSH and connection settings for new VMs
