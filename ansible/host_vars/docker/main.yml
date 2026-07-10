@@ -6,9 +6,9 @@ ansible_host: docker.lab.thewortmans.org
 ansible_user: bret
 
 # Match the images running in the old cluster before cutover.
-# maintainerr: set to the tag loaded from the saved cluster image
-#   (e.g. ttl.sh/maintainerr-viewcount-fix-v3:24h) once docker-loaded on the VM.
-docker_maintainerr_image: "ghcr.io/jorenn92/maintainerr:latest"
+# maintainerr: rebuilt from the running cluster container's rootfs (the ttl.sh
+#   image content was GC'd, so it was flattened + reimported on the VM).
+docker_maintainerr_image: "maintainerr-preserved:local"
 # mealie: match the tag the cluster runs (Postgres schema is version-locked).
 docker_mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
 
