@@ -1,0 +1,31 @@
+---
+# Deploy the media + home-apps Docker Compose stacks to the "docker" VM
+# (Proxmox vmid 113 on pve1), migrating these apps off Kubernetes.
+#
+# Usage:
+#   ansible-galaxy collection install -r requirements.yml   # first time
+#   ansible-playbook -i inventory/home playbooks/deploy_docker_apps.yml
+#
+# Pre-requisites:
+#   - VM provisioned via tf/home-apps and reachable over SSH (see host_vars/docker)
+#   - Base host setup done (playbooks/00_setup-host.yml)
+#   - App config migrated into /opt/docker/media/<app> and the Mealie Postgres
+#     dump restored FIRST (see docs/K8S-TO-DOCKER-MIGRATION.md) so the *arr
+#     apps don't initialize empty databases.
+
+- name: Deploy Docker Compose app stacks
+  hosts: docker
+  become: true
+  gather_facts: true
+
+  vars:
+    # Secrets from vault (placeholders until host_vars/docker/vault.yml is filled)
+    unpackerr_sonarr_api_key: "{{ vault_unpackerr_sonarr_api_key | default('changeme') }}"
+    unpackerr_radarr_api_key: "{{ vault_unpackerr_radarr_api_key | default('changeme') }}"
+    mealie_postgres_password: "{{ vault_mealie_postgres_password | default('changeme') }}"
+    # Match the images running in the old cluster before cutover
+    maintainerr_image: "{{ docker_maintainerr_image | default('ghcr.io/jorenn92/maintainerr:latest') }}"
+    mealie_image: "{{ docker_mealie_image | default('ghcr.io/mealie-recipes/mealie:latest') }}"
+
+  roles:
+    - docker_apps

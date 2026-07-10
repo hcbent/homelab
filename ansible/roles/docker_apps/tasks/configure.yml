@@ -1,0 +1,68 @@
+---
+# Lay down the compose stacks and bring them up.
+#
+# NOTE: migrate each app's config into the media bind-mount dirs (and restore
+# the Mealie Postgres dump) BEFORE running this — otherwise the *arr apps
+# initialize empty databases on first start. See docs/K8S-TO-DOCKER-MIGRATION.md.
+
+- name: Create Docker Compose stack directories
+  ansible.builtin.file:
+    path: "{{ docker_apps_base_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: '0755'
+  loop:
+    - media
+    - home-apps
+
+- name: Create media app config/data directories
+  ansible.builtin.file:
+    path: "{{ docker_apps_base_dir }}/media/{{ item }}"
+    state: directory
+    owner: "{{ docker_apps_config_uid }}"
+    group: "{{ docker_apps_config_gid }}"
+    mode: '0755'
+  loop: "{{ docker_apps_media_dirs }}"
+
+- name: Copy media compose file
+  ansible.builtin.copy:
+    src: "{{ docker_apps_repo_dir }}/docker-compose.yml"
+    dest: "{{ docker_apps_base_dir }}/media/docker-compose.yml"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: '0644'
+
+- name: Copy home-apps compose file
+  ansible.builtin.copy:
+    src: "{{ docker_apps_repo_dir }}/home-apps/docker-compose.yml"
+    dest: "{{ docker_apps_base_dir }}/home-apps/docker-compose.yml"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: '0644'
+
+- name: Template media stack .env (secrets + image overrides)
+  ansible.builtin.template:
+    src: media.env.j2
+    dest: "{{ docker_apps_base_dir }}/media/.env"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: '0600'
+
+- name: Template home-apps stack .env (secrets + image overrides)
+  ansible.builtin.template:
+    src: home-apps.env.j2
+    dest: "{{ docker_apps_base_dir }}/home-apps/.env"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: '0600'
+
+- name: Deploy the media stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ docker_apps_base_dir }}/media"
+    state: present
+
+- name: Deploy the home-apps stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ docker_apps_base_dir }}/home-apps"
+    state: present

@@ -1,0 +1,47 @@
+---
+# docker_apps role defaults
+
+# Base directory on the VM that holds the compose stacks
+docker_apps_base_dir: /opt/docker
+
+# Source of the compose files in this repo (relative to the playbook)
+docker_apps_repo_dir: "{{ playbook_dir }}/../../docker"
+
+# User that owns the stack dirs and is added to the docker group
+docker_apps_user: "{{ ansible_user | default('bret') }}"
+
+# UID/GID the linuxserver.io containers run as (PUID/PGID); config dirs are
+# chowned to this so migrated data is readable.
+docker_apps_config_uid: 1000
+docker_apps_config_gid: 1000
+
+# Host config/data dirs (bind-mount targets) for the media stack. Home-apps
+# uses named docker volumes, so it needs no host dirs.
+docker_apps_media_dirs:
+  - jackett/config
+  - qbittorrent/config
+  - sonarr/config
+  - radarr/config
+  - unpackerr/config
+  - tautulli/config
+  - maintainerr/data
+
+# Docker CE (official repo) + Compose v2 plugin
+docker_ce_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Image overrides written into the stack .env files.
+# maintainerr: set to the tag loaded from the saved cluster image
+#   (e.g. ttl.sh/maintainerr-viewcount-fix-v3:24h). Defaults to upstream.
+maintainerr_image: "ghcr.io/jorenn92/maintainerr:latest"
+# mealie: match the tag running in the old cluster (Postgres schema is locked).
+mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
+
+# Secrets — override from ansible/host_vars/docker/vault.yml
+unpackerr_sonarr_api_key: "changeme"
+unpackerr_radarr_api_key: "changeme"
+mealie_postgres_password: "changeme"

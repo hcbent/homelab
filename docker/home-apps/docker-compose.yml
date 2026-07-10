@@ -15,8 +15,12 @@ services:
       - home-apps-net
 
   mealie:
-    image: ghcr.io/mealie-recipes/mealie:latest
+    # Pin to the tag running in the old cluster — the Postgres schema is
+    # version-locked (set MEALIE_IMAGE in .env; falls back to latest).
+    image: ${MEALIE_IMAGE:-ghcr.io/mealie-recipes/mealie:latest}
     container_name: mealie
+    depends_on:
+      - mealie-postgres
     ports:
       - "9925:9000"
     volumes:
@@ -30,6 +34,25 @@ services:
       - MAX_WORKERS=1
       - WEB_CONCURRENCY=1
       - BASE_URL=http://localhost:9925
+      - DB_ENGINE=postgres
+      - POSTGRES_SERVER=mealie-postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=mealie
+      - POSTGRES_USER=mealie
+      - POSTGRES_PASSWORD=${MEALIE_POSTGRES_PASSWORD}
+    networks:
+      - home-apps-net
+
+  mealie-postgres:
+    image: postgres:16-alpine
+    container_name: mealie-postgres
+    restart: unless-stopped
+    volumes:
+      - mealie_postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: mealie
+      POSTGRES_USER: mealie
+      POSTGRES_PASSWORD: ${MEALIE_POSTGRES_PASSWORD}
     networks:
       - home-apps-net
 
@@ -110,6 +133,8 @@ volumes:
   actualbudget_data:
     driver: local
   mealie_data:
+    driver: local
+  mealie_postgres_data:
     driver: local
   paperless_data:
     driver: local

@@ -1,0 +1,61 @@
+---
+# Install Docker CE from the official repository plus the Compose v2 plugin.
+# (Modernizes the older docker.io/docker-compose apt approach used by the
+# proxy/pihole roles.)
+
+- name: Install prerequisite packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Create apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Add Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Determine dpkg architecture
+  ansible.builtin.command: dpkg --print-architecture
+  register: dpkg_arch
+  changed_when: false
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ dpkg_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable
+    filename: docker
+    state: present
+
+- name: Install Docker CE and Compose v2 plugin
+  ansible.builtin.apt:
+    name: "{{ docker_ce_packages }}"
+    state: present
+    update_cache: true
+
+- name: Install NFS client (for Docker NFS volume mounts)
+  ansible.builtin.apt:
+    name: nfs-common
+    state: present
+
+- name: Ensure Docker is running and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add user to the docker group
+  ansible.builtin.user:
+    name: "{{ docker_apps_user }}"
+    groups: docker
+    append: true

@@ -28,6 +28,7 @@ services:
     volumes:
       - ./qbittorrent/config:/config
       - media-storage:/data
+      - downloads-storage:/downloads
     ports:
       - "8080:8080"
       - "6881:6881"
@@ -43,6 +44,8 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      # UMASK 000 so Plex (separate VM) can write to the shared media library
+      - UMASK=000
     volumes:
       - ./sonarr/config:/config
       - media-storage:/data
@@ -63,6 +66,8 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      # UMASK 000 so Plex (separate VM) can write to the shared media library
+      - UMASK=000
     volumes:
       - ./radarr/config:/config
       - media-storage:/data
@@ -83,12 +88,13 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
-      # Sonarr Configuration
-      - UN_SONARR_0_URL=http://localhost:8989
-      - UN_SONARR_0_API_KEY=fcbb4214dd2f45278654f9d2305e7f15
-      # Radarr Configuration
-      - UN_RADARR_0_URL=http://localhost:7878
-      - UN_RADARR_0_API_KEY=cb713b406ea94222b178e6bd316d8839
+      - UMASK=000
+      # Sonarr Configuration (API key sourced from .env / Ansible vault)
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=${UN_SONARR_0_API_KEY}
+      # Radarr Configuration (API key sourced from .env / Ansible vault)
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=${UN_RADARR_0_API_KEY}
       # General Configuration
       - UN_DEBUG=false
       - UN_LOG_FILE=/config/unpackerr.log
@@ -109,6 +115,36 @@ services:
       - sonarr
       - radarr
       - qbittorrent
+    networks:
+      - media-net
+
+  tautulli:
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./tautulli/config:/config
+    ports:
+      - "8181:8181"
+    restart: unless-stopped
+    networks:
+      - media-net
+
+  maintainerr:
+    # Custom patched build saved/loaded from the old cluster (ttl.sh tag is
+    # ephemeral); falls back to upstream if MAINTAINERR_IMAGE is unset.
+    image: ${MAINTAINERR_IMAGE:-ghcr.io/jorenn92/maintainerr:latest}
+    container_name: maintainerr
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - ./maintainerr/data:/opt/data
+    ports:
+      - "6246:6246"
+    restart: unless-stopped
     networks:
       - media-net
 

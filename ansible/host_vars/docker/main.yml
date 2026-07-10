@@ -1,0 +1,15 @@
+---
+# Host-specific variables for "docker" (Proxmox vmid 113 on pve1) — the
+# Docker Compose VM hosting the apps migrated off Kubernetes.
+
+ansible_host: docker.lab.thewortmans.org
+ansible_user: bret
+
+# Match the images running in the old cluster before cutover.
+# maintainerr: set to the tag loaded from the saved cluster image
+#   (e.g. ttl.sh/maintainerr-viewcount-fix-v3:24h) once docker-loaded on the VM.
+docker_maintainerr_image: "ghcr.io/jorenn92/maintainerr:latest"
+# mealie: match the tag the cluster runs (Postgres schema is version-locked).
+docker_mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
+
+# Encrypted secrets live in host_vars/docker/vault.yml

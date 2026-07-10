@@ -1,0 +1,9 @@
+---
+# Main task file for docker_apps role
+- name: Install Docker CE and dependencies
+  ansible.builtin.import_tasks: install.yml
+  tags: [install, docker]
+
+- name: Deploy the compose stacks
+  ansible.builtin.import_tasks: configure.yml
+  tags: [deploy]
