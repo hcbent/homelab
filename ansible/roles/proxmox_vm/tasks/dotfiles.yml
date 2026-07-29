@@ -1,11 +1,13 @@
 ---
 # Dotfiles and SSH key setup tasks
-- name: Test for dotfiles
+- name: Test for dotfiles source
   ansible.builtin.stat:
     path: "{{ dotfiles_path }}/.git"
   register: file_check
 
-- name: Setup dotfiles and SSH keys for user bret
+# First-time-only: SSH key material + cloning the chezmoi source. Guarded by
+# the source .git not yet existing.
+- name: First-time SSH + chezmoi source setup for user bret
   become_user: bret
   block:
     - name: Ensure .ssh directory exists
@@ -27,11 +29,6 @@
       connection: local
       ignore_errors: yes
 
-    # - name: Add current host key to localhost known_hosts
-    #   shell: ssh-keyscan -H {{ inventory_hostname }} >> ~/.ssh/known_hosts
-    #   delegate_to: localhost
-    #   connection: local
-
     - name: Test SSH connection to ensure host key is accepted
       shell: ssh -o BatchMode=yes -o StrictHostKeyChecking=no {{ ansible_user }}@{{ inventory_hostname }} 'echo "SSH connection test successful"'
       delegate_to: localhost
@@ -43,30 +40,38 @@
       delegate_to: localhost
       connection: local
 
-    - name: Create git directory
-      file:
-        path: ~/git
-        state: directory
-
-    - name: Clone dotfiles repository
-      git:
-        repo: "{{ dotfiles_repo }}"
-        dest: "{{ dotfiles_path }}"
-        clone: yes
-        update: yes
-
-    - name: Run linux setup script
-      shell: ./__setup/linux.sh
+    # Install chezmoi + clone the dotfiles source ONLY (no --apply). Keeping the
+    # slow package-install run_once scripts out of this step means a stalled
+    # download can't leave the source half-initialised, and the file apply below
+    # is what actually places the dotfiles.
+    - name: Install chezmoi and clone the dotfiles source
+      shell: sh -c "$(curl -fsLS get.chezmoi.io)" -- init {{ dotfiles_repo }}
       args:
-        chdir: "{{ dotfiles_path }}"
-      async: 1200
-      poll: 10
-
-    - name: Run setup script
-      shell: ./setup.sh
-      args:
-        chdir: "{{ dotfiles_path }}"
+        chdir: ~
+        creates: "{{ dotfiles_path }}/.git"
   when: file_check.stat.exists == False and setup_dotfiles
+
+# Runs EVERY play (idempotent) so a partial previous run self-heals: apply the
+# dotfiles WITHOUT scripts, so a slow/failing package install can never block
+# dotfile application (the original failure mode).
+- name: Apply dotfiles (excluding scripts, self-healing)
+  become_user: bret
+  shell: "$HOME/bin/chezmoi apply --exclude scripts"
+  changed_when: false
+  when: setup_dotfiles
+
+# Best-effort, NON-BLOCKING (fire-and-forget): run the install-package run_once
+# scripts. They must never fail the play or hold it up if a download stalls;
+# chezmoi records run_once state so re-runs are cheap. curl calls inside the
+# script are timeout-bounded so a stalled fetch cannot hang indefinitely.
+- name: Run chezmoi install-package scripts (best-effort, non-blocking)
+  become_user: bret
+  shell: "$HOME/bin/chezmoi apply --include scripts"
+  async: 1800
+  poll: 0
+  ignore_errors: true
+  changed_when: false
+  when: setup_dotfiles
 
 - name: Change shell to zsh
   user:
