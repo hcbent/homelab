@@ -8,7 +8,8 @@
 # ============================================
 # Each upstream targets worker nodes on the NodePort
 
-{% for service in services %}
+{% set all_services = services + ([tautulli_service] if tautulli_service is defined else []) %}
+{% for service in all_services %}
 # {{ service.description }}
 upstream {{ service.name }} {
     {{ nginx_config.lb_method }};  # Use least connections load balancing
@@ -23,7 +24,7 @@ upstream {{ service.name }} {
 # SERVER BLOCKS - NodePort Services
 # ============================================
 
-{% for service in services %}
+{% for service in all_services %}
 # {{ service.description }}
 server {
     listen {{ service.listen_port }}{% if 'https' in service.name %} ssl{% endif %};
@@ -49,12 +50,12 @@ server {
         # qBittorrent requires localhost for Host header validation
         proxy_set_header Host localhost:8080;
 {% else %}
-        proxy_set_header Host $host:$server_port;
+        proxy_set_header Host $host;
 {% endif %}
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto {% if 'https' in service.name %}https{% else %}$scheme{% endif %};
-        proxy_set_header X-Forwarded-Host $host:$server_port;
+        proxy_set_header X-Forwarded-Host $host;
 
         # WebSocket support
         proxy_http_version 1.1;

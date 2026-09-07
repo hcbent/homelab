@@ -1,0 +1,29 @@
+---
+# Deploy NUT Server to Raspberry Pi for UPS 1 (Network) monitoring
+#
+# Usage:
+#   ansible-playbook -i inventory/home playbooks/deploy_nut_server.yml
+#
+# This deploys the Network UPS Tools (NUT) server to monitor the rack UPS
+# that powers the network tier (UDM Pro, switch, modem).
+#
+# Pre-requisites:
+#   - USB cable connected from UPS to Raspberry Pi
+#   - Pi is accessible via SSH and listed in inventory
+
+- name: Deploy NUT Server for Network UPS
+  hosts: nut_server
+  become: true
+  gather_facts: true
+
+  vars:
+    # Override defaults for this specific deployment
+    nut_ups_name: "ups-network"
+    nut_ups_desc: "CyberPower 1500VA - Network Tier"
+    # Store passwords in vault - these are placeholders
+    nut_admin_password: "{{ vault_nut_admin_password | default('changeme') }}"
+    nut_monitor_local_password: "{{ vault_nut_local_password | default('changeme') }}"
+    nut_monitor_remote_password: "{{ vault_nut_remote_password | default('changeme') }}"
+
+  roles:
+    - nut_server

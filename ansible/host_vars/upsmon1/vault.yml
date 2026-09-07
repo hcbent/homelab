@@ -1,0 +1,8 @@
+---
+# Host-specific encrypted secrets for upsmon1 (NUT server)
+# Use 'ansible-vault encrypt' on this file after updating passwords
+
+vault_host_secrets:
+  nut_admin_password: "CHANGE_ME_NUT_ADMIN_PASSWORD"
+  nut_local_password: "CHANGE_ME_NUT_LOCAL_PASSWORD"
+  nut_remote_password: "CHANGE_ME_NUT_REMOTE_PASSWORD"

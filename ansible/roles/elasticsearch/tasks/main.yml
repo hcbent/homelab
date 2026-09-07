@@ -2,6 +2,11 @@
 # Main task file for comprehensive elasticsearch role
 # Handles installation, operations, and configuration
 
+# Single-node setup (install + configure + start in one action)
+- name: Include single-node setup tasks
+  include_tasks: single_node_setup.yml
+  when: elasticsearch_action == 'single_node_setup'
+
 # Installation actions
 - name: Include installation tasks
   include_tasks: install.yml

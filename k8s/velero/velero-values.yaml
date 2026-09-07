@@ -17,13 +17,14 @@ deployNodeAgent: true
 
 nodeAgent:
   # Resources for the node-agent (Restic) pods
+  # Increased to 2Gi to prevent OOMKills during backup with multiple Kopia repos
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 200m
+      memory: 512Mi
     limits:
-      cpu: 1000m
-      memory: 1Gi
+      cpu: 2000m
+      memory: 2Gi
 
 # Velero configuration
 configuration:
@@ -59,13 +60,14 @@ credentials:
   existingSecret: velero-minio-credentials
 
 # Velero server resources
+# Increased limits to prevent OOM kills during backup deletion/maintenance operations
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 1000m
+    cpu: 500m
     memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
 
 # Enable metrics for Prometheus scraping
 metrics:

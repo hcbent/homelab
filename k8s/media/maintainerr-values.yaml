@@ -1,0 +1,89 @@
+# Maintainerr Helm Values Configuration
+# Using bjw-s app-template chart
+# Chart: https://bjw-s-labs.github.io/helm-charts/
+
+# Default controller configuration
+controllers:
+  main:
+    initContainers:
+      init-chown:
+        image:
+          repository: busybox
+          tag: latest
+        command:
+          - sh
+          - -c
+          - chown -R 1000:1000 /opt/data
+        securityContext:
+          runAsUser: 0
+    containers:
+      main:
+        image:
+          repository: ghcr.io/maintainerr/maintainerr
+          tag: 3.0.1
+          pullPolicy: IfNotPresent
+
+        env:
+          TZ: "America/New_York"
+
+        probes:
+          liveness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 6246
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            spec:
+              tcpSocket:
+                port: 6246
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+# Service configuration
+service:
+  main:
+    controller: main
+    type: NodePort
+    ports:
+      http:
+        port: 6246
+        targetPort: 6246
+        protocol: TCP
+
+# Ingress disabled - external routing handled by nginx
+ingress:
+  main:
+    enabled: false
+    hosts: []
+
+# Persistent storage configuration
+persistence:
+  # Config storage on iSCSI (RWO for SQLite compatibility)
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClass: freenas-iscsi-csi
+    retain: true
+    # Annotations to prevent ArgoCD pruning
+    annotations:
+      argocd.argoproj.io/sync-options: Prune=false
+    globalMounts:
+      - path: /opt/data
+
+# Resource limits
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"

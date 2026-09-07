@@ -1,0 +1,15 @@
+# NUT upsd users configuration
+# This file is managed by Ansible - do not edit manually
+
+[{{ nut_admin_user }}]
+    password = {{ nut_admin_password }}
+    actions = SET
+    instcmds = ALL
+
+[{{ nut_monitor_local_user }}]
+    password = {{ nut_monitor_local_password }}
+    upsmon master
+
+[{{ nut_monitor_remote_user }}]
+    password = {{ nut_monitor_remote_password }}
+    upsmon slave

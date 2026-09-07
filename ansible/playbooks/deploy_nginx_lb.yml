@@ -1,0 +1,31 @@
+---
+# Deploy NGINX load balancer configuration for Kubernetes NodePort services
+#
+# This playbook deploys NGINX configuration to load balance traffic to K8s worker nodes
+# for services exposed via NodePort.
+#
+# Usage:
+#   ansible-playbook playbooks/deploy_nginx_lb.yml -i inventory/home
+#
+# Targets: nginx_proxy group (nginx-lb01, nginx-lb02)
+
+- name: Deploy NGINX Load Balancer Configuration
+  hosts: nginx_proxy
+  become: true
+  gather_facts: yes
+
+  roles:
+    - role: ../roles/nginx-lb
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "NGINX load balancer configuration deployed successfully"
+          - "Configuration file: /etc/nginx/conf.d/nginx-lb-http.conf"
+          - "Services configured: {{ services | length + (1 if tautulli_service is defined else 0) }}"
+          - "Worker nodes: {{ k8s_workers | map(attribute='name') | list | join(', ') }}"
+          - ""
+          - "To verify: ssh to {{ inventory_hostname }} and run:"
+          - "  sudo nginx -t"
+          - "  curl -I http://localhost:{{ services[0].listen_port }}"

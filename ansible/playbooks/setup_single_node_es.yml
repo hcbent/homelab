@@ -1,0 +1,48 @@
+---
+# Deploy a single-node Elasticsearch cluster
+#
+# Usage:
+#   ansible-playbook playbooks/setup_single_node_es.yml -i inventory/<env> --limit <hostname>
+#
+# Required inventory vars:
+#   elasticsearch_version: "9.2.1"
+#   cluster_name: "my-cluster"
+#   elasticsearch_password: "<password>"  (or use ansible-vault)
+#
+# Optional inventory vars:
+#   elasticsearch_data_path: /esdata        (custom data directory)
+#   elasticsearch_reset_password: true      (reset elastic user password)
+#
+# Example inventory (inventory/my-es-node):
+#   [elasticsearch_bootstrap]
+#   es-new
+#
+#   [elasticsearch_all:children]
+#   elasticsearch_bootstrap
+#
+#   [elasticsearch_all:vars]
+#   elasticsearch_version=9.2.1
+#   cluster_name=my-cluster
+#   elasticsearch_password=supersecret
+
+- name: Deploy single-node Elasticsearch
+  hosts: elasticsearch_bootstrap
+  become: true
+  gather_facts: true
+  vars:
+    elasticsearch_action: single_node_setup
+    elasticsearch_single_node: true
+
+  roles:
+    - elasticsearch
+
+- name: Deploy Kibana (if kibana_nodes group exists)
+  hosts: kibana_nodes
+  become: true
+  gather_facts: true
+  vars:
+    kibana_action: install
+
+  roles:
+    - role: kibana
+      when: "'kibana_nodes' in groups and groups['kibana_nodes'] | length > 0"

@@ -1,0 +1,12 @@
+---
+# Host-specific variables for upsmon1 (NUT server for Network UPS)
+
+ansible_host: 192.168.1.12
+ansible_user: bret
+
+# NUT-specific settings for this host
+nut_ups_name: "ups-network"
+nut_ups_desc: "CyberPower 1500VA - Network Tier"
+
+# Include encrypted host secrets
+host_secrets: "{{ vault_host_secrets }}"

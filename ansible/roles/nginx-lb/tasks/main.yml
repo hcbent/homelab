@@ -1,0 +1,53 @@
+---
+# nginx-lb role - Deploy NGINX load balancer configuration for K8s NodePort services
+
+- name: Install NGINX
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Ensure NGINX conf.d directory exists
+  file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Remove old k8s-loadbalancer.conf file (prevents duplicates)
+  file:
+    path: /etc/nginx/conf.d/k8s-loadbalancer.conf
+    state: absent
+
+- name: Check if nginx-lb config exists
+  stat:
+    path: /etc/nginx/conf.d/nginx-lb-http.conf
+  register: nginx_lb_config
+
+- name: Backup existing nginx-lb config
+  copy:
+    src: /etc/nginx/conf.d/nginx-lb-http.conf
+    dest: "/etc/nginx/conf.d/nginx-lb-http.conf.backup.{{ ansible_date_time.iso8601_basic_short }}"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  when: nginx_lb_config.stat.exists
+
+- name: Deploy nginx-lb HTTP configuration
+  template:
+    src: nginx-lb-http.conf.j2
+    dest: /etc/nginx/conf.d/nginx-lb-http.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload NGINX
+
+- name: Validate NGINX configuration
+  command: nginx -t
+  changed_when: false
+
+- name: Ensure NGINX is started and enabled
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes

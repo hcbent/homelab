@@ -1,0 +1,27 @@
+# Single-node Elasticsearch example inventory
+# Copy this file and customize for your deployment
+#
+# Usage:
+#   ansible-playbook playbooks/setup_single_node_es.yml -i inventory/my-es-node
+
+[elasticsearch_bootstrap]
+es-new  ansible_host=192.168.10.XX
+
+[elasticsearch_all:children]
+elasticsearch_bootstrap
+
+[elasticsearch_all:vars]
+elasticsearch_version=9.2.1
+cluster_name=homelab-es
+elasticsearch_password=CHANGEME
+
+# Optional: custom data path (e.g., dedicated disk mount)
+# elasticsearch_data_path=/esdata
+
+# Optional: Kibana on the same host
+# [kibana_nodes]
+# es-new
+#
+# [kibana_nodes:vars]
+# kibana_version=9.2.1
+# elasticsearch_hosts=["https://localhost:9200"]

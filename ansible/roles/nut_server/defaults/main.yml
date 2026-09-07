@@ -1,0 +1,37 @@
+---
+# Network UPS Tools (NUT) server role defaults
+
+# UPS configuration
+nut_ups_name: "ups"
+nut_ups_desc: "CyberPower UPS"
+nut_driver: "usbhid-ups"
+nut_vendor_id: "0764"  # CyberPower vendor ID
+nut_port: "auto"
+nut_pollinterval: 5
+
+# NUT server configuration
+nut_mode: "netserver"
+nut_listen_address: "0.0.0.0"
+nut_listen_port: 3493
+nut_maxage: 15
+
+# User configuration
+nut_admin_user: "admin"
+nut_admin_password: "changeme"
+nut_monitor_local_user: "upsmon-local"
+nut_monitor_local_password: "changeme"
+nut_monitor_remote_user: "upsmon-remote"
+nut_monitor_remote_password: "changeme"
+
+# Monitoring configuration
+nut_minsupplies: 1
+nut_pollfreq: 5
+nut_pollfreqalert: 2
+nut_deadtime: 25
+nut_finaldelay: 5
+
+# Shutdown command (default)
+nut_shutdowncmd: "/sbin/shutdown -h +0"
+
+# Power down flag
+nut_powerdownflag: "/etc/killpower"

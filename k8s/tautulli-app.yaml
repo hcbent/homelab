@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tautulli
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: media
+    server: https://kubernetes.default.svc
+  sources:
+    - chart: app-template
+      repoURL: https://bjw-s-labs.github.io/helm-charts/
+      targetRevision: 3.5.1
+      helm:
+        valueFiles:
+          - $values/k8s/media/tautulli-values.yaml
+    - repoURL: https://github.com/wortmanb/homelab.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

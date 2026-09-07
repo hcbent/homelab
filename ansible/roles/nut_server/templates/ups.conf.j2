@@ -1,0 +1,9 @@
+# UPS device configuration
+# This file is managed by Ansible - do not edit manually
+
+[{{ nut_ups_name }}]
+    driver = {{ nut_driver }}
+    port = {{ nut_port }}
+    desc = "{{ nut_ups_desc }}"
+    vendorid = {{ nut_vendor_id }}
+    pollinterval = {{ nut_pollinterval }}

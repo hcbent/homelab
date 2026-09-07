@@ -1,0 +1,7 @@
+---
+# Main task file for nut_server role
+- name: Include NUT installation
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include NUT configuration
+  ansible.builtin.include_tasks: configure.yml

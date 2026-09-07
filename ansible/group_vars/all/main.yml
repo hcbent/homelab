@@ -3,5 +3,12 @@ homelab_domain: "home.lab"
 timezone: "America/New_York"
 default_user: "bret"
 
+# nginx-lb NodePort services (optional add-ons)
+tautulli_service:
+  name: "tautulli"
+  description: "Tautulli Media Stats (HTTP)"
+  node_port: 31162
+  listen_port: 8181
+
 # Include encrypted secrets
 secrets: "{{ vault_secrets }}"

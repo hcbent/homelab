@@ -1,0 +1,25 @@
+---
+# Handlers for NUT server
+
+- name: Restart NUT driver
+  ansible.builtin.systemd:
+    name: nut-driver
+    state: restarted
+    enabled: true
+  ignore_errors: true  # nut-driver may not exist as separate service on all distros
+
+- name: Restart NUT server
+  ansible.builtin.systemd:
+    name: nut-server
+    state: restarted
+    enabled: true
+
+- name: Restart NUT monitor
+  ansible.builtin.systemd:
+    name: nut-monitor
+    state: restarted
+    enabled: true
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

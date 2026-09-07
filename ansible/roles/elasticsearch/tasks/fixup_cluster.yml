@@ -7,14 +7,45 @@
     state: absent
     backup: yes
 
-- name: Remove any existing discovery.seed_nodes setting
-  lineinfile:
-    path: "{{ elasticsearch_config_path }}"
-    regexp: '^#?discovery\.seed_nodes:'
-    state: absent
+- name: Configure discovery for single-node
+  block:
+    - name: Remove any discovery.seed_hosts setting
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        regexp: '^#?discovery\.seed_hosts:'
+        state: absent
 
-- name: Add discovery.seed_nodes configuration
-  lineinfile:
-    path: "{{ elasticsearch_config_path }}"
-    line: 'discovery.seed_nodes: {{ discovery_seed_nodes | to_json }}'
-    backup: yes
+    - name: Remove any discovery.seed_nodes setting
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        regexp: '^#?discovery\.seed_nodes:'
+        state: absent
+
+    - name: Set discovery.type single-node
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        regexp: '^#?discovery\.type:'
+        line: "discovery.type: single-node"
+        backup: yes
+  when: elasticsearch_single_node | bool
+
+- name: Configure discovery for multi-node
+  block:
+    - name: Remove any existing discovery.seed_hosts setting
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        regexp: '^#?discovery\.seed_hosts:'
+        state: absent
+
+    - name: Remove any legacy discovery.seed_nodes setting
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        regexp: '^#?discovery\.seed_nodes:'
+        state: absent
+
+    - name: Add discovery.seed_hosts configuration
+      lineinfile:
+        path: "{{ elasticsearch_config_path }}"
+        line: 'discovery.seed_hosts: {{ discovery_seed_hosts | to_json }}'
+        backup: yes
+  when: not (elasticsearch_single_node | bool)

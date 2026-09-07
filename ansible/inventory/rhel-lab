@@ -1,0 +1,31 @@
+# RHEL 10 test Elastic stack — Proxmox pve1, VMIDs 9001-9004 (disks on tank)
+# Provisioned from ~/git/homelab/rhel/ks.cfg (user 'bret', key-only, sudo via wheel).
+#
+# NOTE: the whole inventory/ directory is merged, so ALWAYS target this
+# stack with `-l rhel_lab` (or a subgroup) to avoid touching other hosts.
+
+[rhel_lab:children]
+es_lab
+kb_lab
+ls_lab
+ft_lab
+
+# Elasticsearch
+[es_lab]
+es-lab ansible_host=192.168.10.222
+
+# Kibana
+[kb_lab]
+kb-lab ansible_host=192.168.10.151
+
+# Logstash
+[ls_lab]
+ls-lab ansible_host=192.168.10.152
+
+# Fleet Server (installed last, after ES/KB/LS are up)
+[ft_lab]
+ft-lab ansible_host=192.168.10.211
+
+[rhel_lab:vars]
+ansible_user=bret
+ansible_python_interpreter=/usr/bin/python3

@@ -1,0 +1,91 @@
+---
+# NUT server configuration tasks
+
+- name: Ensure NUT configuration directory exists
+  ansible.builtin.file:
+    path: /etc/nut
+    state: directory
+    owner: root
+    group: nut
+    mode: '0750'
+
+- name: Deploy nut.conf
+  ansible.builtin.template:
+    src: nut.conf.j2
+    dest: /etc/nut/nut.conf
+    owner: root
+    group: nut
+    mode: '0640'
+  notify: Restart NUT server
+
+- name: Deploy ups.conf
+  ansible.builtin.template:
+    src: ups.conf.j2
+    dest: /etc/nut/ups.conf
+    owner: root
+    group: nut
+    mode: '0640'
+  notify: Restart NUT driver
+
+- name: Deploy upsd.conf
+  ansible.builtin.template:
+    src: upsd.conf.j2
+    dest: /etc/nut/upsd.conf
+    owner: root
+    group: nut
+    mode: '0640'
+  notify: Restart NUT server
+
+- name: Deploy upsd.users
+  ansible.builtin.template:
+    src: upsd.users.j2
+    dest: /etc/nut/upsd.users
+    owner: root
+    group: nut
+    mode: '0640'
+  notify: Restart NUT server
+
+- name: Deploy upsmon.conf
+  ansible.builtin.template:
+    src: upsmon.conf.j2
+    dest: /etc/nut/upsmon.conf
+    owner: root
+    group: nut
+    mode: '0640'
+  notify: Restart NUT monitor
+
+- name: Set ownership of all NUT config files
+  ansible.builtin.file:
+    path: "/etc/nut/{{ item }}"
+    owner: root
+    group: nut
+    mode: '0640'
+  loop:
+    - nut.conf
+    - ups.conf
+    - upsd.conf
+    - upsd.users
+    - upsmon.conf
+
+- name: Ensure NUT services are started
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - nut-server
+    - nut-monitor
+
+- name: Verify UPS is detected
+  ansible.builtin.command: "upsc {{ nut_ups_name }}@localhost ups.status"
+  register: ups_status_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Display UPS status
+  ansible.builtin.debug:
+    msg:
+      - "UPS Status: {{ ups_status_check.stdout | default('Not available') }}"
+      - "UPS Name: {{ nut_ups_name }}"
+      - "UPS Description: {{ nut_ups_desc }}"
+      - "NUT Server: {{ nut_listen_address }}:{{ nut_listen_port }}"

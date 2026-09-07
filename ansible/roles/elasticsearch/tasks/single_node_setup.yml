@@ -1,0 +1,130 @@
+---
+# Single-node Elasticsearch setup
+# Installs, configures, and starts ES as a standalone single-node cluster
+# No enrollment tokens, no discovery seeds, no multi-node complexity
+
+- name: Ensure Elastic repository is configured
+  include_role:
+    name: elastic
+
+- name: Update package cache and install Elasticsearch
+  apt:
+    name: "elasticsearch={{ elasticsearch_version }}"
+    state: present
+    update_cache: yes
+
+- name: Set cluster.name
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?cluster\.name:'
+    line: "cluster.name: {{ elasticsearch_cluster_name }}"
+    backup: yes
+
+- name: Set network.host
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?network\.host:'
+    line: "network.host: {{ elasticsearch_network_host }}"
+
+- name: Set discovery.type to single-node
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?discovery\.type:'
+    line: "discovery.type: single-node"
+    backup: yes
+
+- name: Remove discovery.seed_hosts (not needed for single-node)
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?discovery\.seed_hosts:'
+    state: absent
+
+- name: Remove discovery.seed_nodes (not needed for single-node)
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?discovery\.seed_nodes:'
+    state: absent
+
+- name: Remove cluster.initial_master_nodes (not needed for single-node)
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?cluster\.initial_master_nodes:'
+    state: absent
+
+- name: Set data path (if custom path defined)
+  lineinfile:
+    path: "{{ elasticsearch_config_path }}"
+    regexp: '^#?path\.data:'
+    line: "path.data: {{ elasticsearch_data_path }}"
+  when: elasticsearch_data_path is defined
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start Elasticsearch service
+  systemd:
+    name: "{{ elasticsearch_service_name }}.service"
+    enabled: yes
+    state: started
+
+- name: Wait for Elasticsearch to be ready
+  uri:
+    url: "https://localhost:{{ elasticsearch_port }}/_cluster/health"
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    validate_certs: no
+    status_code: 200
+    return_content: yes
+  register: es_health
+  retries: "{{ health_check_retries }}"
+  delay: "{{ health_check_delay }}"
+  until: es_health.status == 200
+  changed_when: false
+
+- name: Display cluster health
+  debug:
+    msg: "Cluster '{{ elasticsearch_cluster_name }}' is {{ es_health.json.status }} — {{ es_health.json.number_of_nodes }} node(s)"
+
+- name: Set default replicas to 0 for single-node
+  uri:
+    url: "https://localhost:{{ elasticsearch_port }}/_settings"
+    method: PUT
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      index:
+        number_of_replicas: 0
+    status_code: 200
+  changed_when: false
+
+- name: Set default index template for single-node (0 replicas)
+  uri:
+    url: "https://localhost:{{ elasticsearch_port }}/_index_template/single-node-defaults"
+    method: PUT
+    url_username: "{{ es_username }}"
+    url_password: "{{ es_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      index_patterns: ["*"]
+      priority: 1
+      template:
+        settings:
+          number_of_replicas: 0
+    status_code: 200
+  changed_when: false
+
+- name: Reset elastic user password (if custom password provided)
+  shell: >
+    /usr/share/elasticsearch/bin/elasticsearch-reset-password
+    -u elastic -b -s
+  register: reset_password
+  when: elasticsearch_reset_password | default(false) | bool
+
+- name: Display new elastic password
+  debug:
+    msg: "New elastic password: {{ reset_password.stdout }}"
+  when: reset_password is defined and reset_password.changed

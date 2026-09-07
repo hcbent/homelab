@@ -1,0 +1,15 @@
+# NUT upsmon client configuration
+# This file is managed by Ansible - do not edit manually
+
+MONITOR {{ nut_ups_name }}@localhost 1 {{ nut_monitor_local_user }} {{ nut_monitor_local_password }} master
+
+MINSUPPLIES {{ nut_minsupplies }}
+SHUTDOWNCMD "{{ nut_shutdowncmd }}"
+POWERDOWNFLAG {{ nut_powerdownflag }}
+POLLFREQ {{ nut_pollfreq }}
+POLLFREQALERT {{ nut_pollfreqalert }}
+HOSTSYNC 15
+DEADTIME {{ nut_deadtime }}
+RBWARNTIME 43200
+NOCOMMWARNTIME 300
+FINALDELAY {{ nut_finaldelay }}
