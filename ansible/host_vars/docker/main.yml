@@ -12,4 +12,9 @@ docker_maintainerr_image: "maintainerr-preserved:local"
 # mealie: match the tag the cluster runs (Postgres schema is version-locked).
 docker_mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
 
+# Map vault_ prefixed secrets to the variable names the docker_apps role expects
+unpackerr_radarr_api_key: "{{ vault_unpackerr_radarr_api_key }}"
+unpackerr_sonarr_api_key: "{{ vault_unpackerr_sonarr_api_key }}"
+mealie_postgres_password: "{{ vault_mealie_postgres_password }}"
+
 # Encrypted secrets live in host_vars/docker/vault.yml

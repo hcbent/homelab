@@ -15,3 +15,8 @@ AWS-SUPPORT-RESPONSE-TEMPLATE.txt:aws-access-token:11
 
 # Note: These files document a deactivated AWS key for security incident response
 # The key was deactivated on 2025-11-14 and is safe to reference in documentation
+
+# DNSCrypt public minisign key (not a secret — used to verify resolver list integrity)
+# Published at: https://github.com/DNSCrypt/dnscrypt-resolvers
+k8s/pihole/pihole.yaml:generic-api-key:107
+k8s/pihole/pihole.yaml:generic-api-key:117

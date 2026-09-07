@@ -30,7 +30,7 @@ services:
       - media-storage:/data
       - downloads-storage:/downloads
     ports:
-      - "8080:8080"
+      - "8082:8080"
       - "6881:6881"
       - "6881:6881/udp"
     restart: unless-stopped

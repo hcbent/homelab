@@ -49,7 +49,7 @@ secrets). Add this VM block to the `home_app_vms` list (generate a skeleton with
   disk_storage   = "tank"
   network_model  = "virtio"
   network_bridge = "vmbr0"
-  ipconfig0      = "ip=192.168.10.113/24,gw=192.168.10.1"
+  ipconfig0      = "ip=192.168.10.210/24,gw=192.168.10.1"
 }
 ```
 
@@ -62,7 +62,7 @@ terraform apply -var-file terraform.tfvars
 ## 2. Base host setup (Ansible)
 
 `docker` is already in `[home_apps]` in `ansible/inventory/home`; its address is
-set in `ansible/host_vars/docker/main.yml` (`ansible_host: 192.168.10.113` —
+set in `ansible/host_vars/docker/main.yml` (`ansible_host: 192.168.10.210` —
 adjust if DHCP gives another IP).
 
 ```bash
@@ -84,8 +84,8 @@ sudo ctr -n k8s.io images export maintainerr.tar ttl.sh/maintainerr-viewcount-fi
 #   (or: sudo nerdctl -n k8s.io save -o maintainerr.tar ttl.sh/maintainerr-viewcount-fix-v3:24h)
 
 # Copy to the VM and load:
-scp maintainerr.tar bret@192.168.10.113:/tmp/
-ssh bret@192.168.10.113 'docker load -i /tmp/maintainerr.tar'
+scp maintainerr.tar bret@192.168.10.210:/tmp/
+ssh bret@192.168.10.210 'docker load -i /tmp/maintainerr.tar'
 ```
 
 Then set the loaded tag in `ansible/host_vars/docker/main.yml`:
@@ -105,8 +105,8 @@ kubectl scale -n media deploy/sonarr --replicas=0
 kubectl run -n media tmp-copy --image=busybox --restart=Never --rm -i \
   --overrides='{"spec":{"volumes":[{"name":"c","persistentVolumeClaim":{"claimName":"sonarr-config"}}],"containers":[{"name":"c","image":"busybox","command":["tar","czf","-","-C","/config","."],"volumeMounts":[{"name":"c","mountPath":"/config"}]}]}}' \
   > sonarr-config.tgz
-scp sonarr-config.tgz bret@192.168.10.113:/tmp/
-ssh bret@192.168.10.113 'sudo mkdir -p /opt/docker/media/sonarr/config && \
+scp sonarr-config.tgz bret@192.168.10.210:/tmp/
+ssh bret@192.168.10.210 'sudo mkdir -p /opt/docker/media/sonarr/config && \
   sudo tar xzf /tmp/sonarr-config.tgz -C /opt/docker/media/sonarr/config && \
   sudo chown -R 1000:1000 /opt/docker/media/sonarr/config'
 ```
@@ -125,7 +125,7 @@ or bind-mount actualbudget to a host dir if you prefer.
 ```bash
 kubectl exec -n home-apps deploy/mealie-postgres -- \
   pg_dump -U mealie -Fc mealie > mealie.dump
-scp mealie.dump bret@192.168.10.113:/tmp/
+scp mealie.dump bret@192.168.10.210:/tmp/
 
 # Match the mealie image tag to the cluster (schema is version-locked):
 kubectl get deploy mealie -n home-apps -o jsonpath='{.spec.template.spec.containers[*].image}'
@@ -135,7 +135,7 @@ kubectl get deploy mealie -n home-apps -o jsonpath='{.spec.template.spec.contain
 Bring up only Postgres first, restore, then start Mealie:
 
 ```bash
-ssh bret@192.168.10.113
+ssh bret@192.168.10.210
 cd /opt/docker/home-apps
 docker compose up -d mealie-postgres
 docker compose cp /tmp/mealie.dump mealie-postgres:/tmp/mealie.dump   # or docker cp
@@ -170,14 +170,14 @@ Repoint each proxy host's upstream from the cluster NodePort to the VM:
 
 | Proxy host | New upstream |
 |-----------|--------------|
-| actualbudget | 192.168.10.113:5006 |
-| mealie | 192.168.10.113:9925 |
-| sonarr | 192.168.10.113:8989 |
-| radarr | 192.168.10.113:7878 |
-| jackett | 192.168.10.113:9117 |
-| tautulli | 192.168.10.113:8181 |
-| maintainerr | 192.168.10.113:6246 |
-| qbittorrent | 192.168.10.113:8080 |
+| actualbudget | 192.168.10.210:5006 |
+| mealie | 192.168.10.210:9925 |
+| sonarr | 192.168.10.210:8989 |
+| radarr | 192.168.10.210:7878 |
+| jackett | 192.168.10.210:9117 |
+| tautulli | 192.168.10.210:8181 |
+| maintainerr | 192.168.10.210:6246 |
+| qbittorrent | 192.168.10.210:8082 |
 
 ## 8. Decommission the K8s workloads (after sign-off)
 

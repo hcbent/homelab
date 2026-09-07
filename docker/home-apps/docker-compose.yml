@@ -59,6 +59,7 @@ services:
   paperless-redis:
     image: docker.io/library/redis:8
     container_name: paperless-redis
+    profiles: [paperless]
     restart: unless-stopped
     volumes:
       - paperless_redis_data:/data
@@ -68,6 +69,7 @@ services:
   paperless-db:
     image: docker.io/library/postgres:18
     container_name: paperless-db
+    profiles: [paperless]
     restart: unless-stopped
     volumes:
       - paperless_db_data:/var/lib/postgresql/data
@@ -81,6 +83,7 @@ services:
   paperless-ngx:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
     container_name: paperless-ngx
+    profiles: [paperless]
     restart: unless-stopped
     depends_on:
       - paperless-db
@@ -114,6 +117,7 @@ services:
   paperless-gotenberg:
     image: docker.io/gotenberg/gotenberg:8
     container_name: paperless-gotenberg
+    profiles: [paperless]
     restart: unless-stopped
     command:
       - "gotenberg"
@@ -123,8 +127,11 @@ services:
       - home-apps-net
 
   paperless-tika:
-    image: ghcr.io/paperless-ngx/tika:latest
+    # ghcr.io/paperless-ngx/tika:latest has been removed upstream;
+    # use the Apache Tika image when re-enabling the paperless profile.
+    image: apache/tika:latest
     container_name: paperless-tika
+    profiles: [paperless]
     restart: unless-stopped
     networks:
       - home-apps-net
