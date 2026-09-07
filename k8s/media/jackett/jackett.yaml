@@ -31,6 +31,10 @@ spec:
       labels:
         app: jackett
     spec:
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "1"
       containers:
       - name: jackett
         image: lscr.io/linuxserver/jackett:latest
