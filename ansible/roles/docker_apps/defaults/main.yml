@@ -35,9 +35,8 @@ docker_ce_packages:
   - docker-compose-plugin
 
 # Image overrides written into the stack .env files.
-# maintainerr: set to the tag loaded from the saved cluster image
-#   (e.g. ttl.sh/maintainerr-viewcount-fix-v3:24h). Defaults to upstream.
-maintainerr_image: "ghcr.io/jorenn92/maintainerr:latest"
+# maintainerr: v3+ moved to Docker Hub (ghcr.io still has v2).
+maintainerr_image: "jorenn92/maintainerr:latest"
 # mealie: match the tag running in the old cluster (Postgres schema is locked).
 mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
 

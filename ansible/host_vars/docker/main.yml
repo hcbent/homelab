@@ -5,10 +5,8 @@
 ansible_host: docker.lab.thewortmans.org
 ansible_user: bret
 
-# Match the images running in the old cluster before cutover.
-# maintainerr: rebuilt from the running cluster container's rootfs (the ttl.sh
-#   image content was GC'd, so it was flattened + reimported on the VM).
-docker_maintainerr_image: "maintainerr-preserved:local"
+# Pin maintainerr to a specific version to avoid schema drift with :latest.
+docker_maintainerr_image: "jorenn92/maintainerr:latest"
 # mealie: match the tag the cluster runs (Postgres schema is version-locked).
 docker_mealie_image: "ghcr.io/mealie-recipes/mealie:latest"
 
