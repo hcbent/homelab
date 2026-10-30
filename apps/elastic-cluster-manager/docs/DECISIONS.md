@@ -19,3 +19,11 @@
 7. **es01–es09 is live.** Read-only discovery and adoption target only.
 8. **Admin credential:** an Argon2id hash in the `ECM_ADMIN_PASSWORD_HASH` environment variable. This is more secure than a plaintext password variable, and a first-run page would be an open window before setup.
 9. **Secrets policy (hard rule):** secrets are never committed. Real env files are gitignored. Only `*.example` or `*.template` copies with placeholders are committed.
+
+## Phase 3 implementation notes
+- **Deviation from ARCHITECTURE.md §10:** the VM link lives directly on `es_nodes` (`vm_id`, `link_confidence`, `link_evidence`) instead of a separate `vm_links` table. Simpler, and a node has at most one VM.
+- **Proxmox connection:** one row per API endpoint. If pve1–3 form one PVE cluster, a single connection lists all three nodes. If they are standalone, add three connections. To be confirmed on the live system.
+- **Correlation** uses the node's published IP against guest-agent IPs and static cloud-init IPs. Guest-agent evidence outranks configuration. MAC addresses are stored but ES does not report them, so they are not used.
+- **Stale rows:** VMs, nodes and storage that disappear from a source are deleted from the observed-state tables on the next successful sync.
+- **TLS:** verification is on by default. A pasted CA certificate or an explicit "skip verification" opt-in is available, and the opt-in is audited.
+- **Fixtures are synthetic** (RFC 5737 addresses, invented names). They follow the real API response shapes but have not been checked against a live Proxmox or Elasticsearch yet.

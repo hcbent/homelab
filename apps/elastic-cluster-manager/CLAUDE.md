@@ -1,6 +1,6 @@
 # CLAUDE.md — Elasticsearch Cluster Manager
 
-**Status:** Phase 1 done. Phase 2 (foundation) implemented and unit-tested; compose stack not yet run. Phases 3+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
+**Status:** Phase 1 done. Phase 2 (foundation) deployed and verified on infra. Phase 3 (read-only discovery + dashboard) implemented and tested against synthetic fixtures only; NOT yet run against live Proxmox/Elasticsearch. Phases 4+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
 
 ## Rules (hard)
 - Never commit secrets. Real env files are gitignored. Commit only `*.example`/`*.template` copies with placeholders. Don't name source files/dirs with `secret`, `token`, or `password` (the parent .gitignore silently ignores them).
@@ -18,6 +18,7 @@
 - `cluster.initial_master_nodes` only on the first bootstrap, never after `bootstrapped_at` is set.
 - One Terraform state per cluster. Plans containing delete or replace are rejected during adoption.
 - Phases must be idempotent so jobs can resume after a restart.
+- Discovery clients are GET-only. Tests serve synthetic fixtures via `tests/fixtures/transport.py`, which fails any non-GET request. Regenerate with `python -m tests.fixtures.build`.
 - Tests with fixtures or fakes for Proxmox and ES. Integration tests require an explicit `DISPOSABLE_TARGET`.
 
 ## Layout
