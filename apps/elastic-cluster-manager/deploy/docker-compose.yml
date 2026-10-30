@@ -1,0 +1,60 @@
+# Run from deploy/: docker compose --env-file .env up -d --build
+x-app-env: &app-env
+  ECM_DATABASE_URL: postgresql+psycopg://ecm:${POSTGRES_PASSWORD}@postgres:5432/ecm
+  ECM_MASTER_KEY: ${ECM_MASTER_KEY}
+  ECM_ADMIN_USERNAME: ${ECM_ADMIN_USERNAME:-admin}
+  ECM_ADMIN_PASSWORD_HASH: ${ECM_ADMIN_PASSWORD_HASH}
+  ECM_SECURE_COOKIES: ${ECM_SECURE_COOKIES:-true}
+  ECM_DEFAULT_TEMPLATE_VMID: ${ECM_DEFAULT_TEMPLATE_VMID:-}
+  ECM_DEFAULT_TEMPLATE_NAME: ${ECM_DEFAULT_TEMPLATE_NAME:-}
+  ECM_DEFAULT_STORAGE: ${ECM_DEFAULT_STORAGE:-tank}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ecm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ecm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecm"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    build: {context: ../backend}
+    command: python -m app.migrate
+    environment: *app-env
+    depends_on: {postgres: {condition: service_healthy}}
+    restart: "no"
+
+  api:
+    build: {context: ../backend}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment: *app-env
+    depends_on: {migrate: {condition: service_completed_successfully}}
+    restart: unless-stopped
+    # Bound to the compose network only; Caddy reaches it through `web`.
+
+  worker:
+    build: {context: ../backend}
+    command: procrastinate --app=app.jobs.queue worker
+    environment: *app-env
+    depends_on: {migrate: {condition: service_completed_successfully}}
+    restart: unless-stopped
+    volumes:
+      - appdata:/data   # per-cluster working dirs, state snapshots (later phases)
+
+  web:
+    build: {context: ../frontend}
+    depends_on: [api]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8480:8080"   # Caddy on this host proxies ecm.lab.thewortmans.org here
+
+volumes:
+  pgdata:
+  appdata:

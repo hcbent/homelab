@@ -1,0 +1,31 @@
+# Secrets and local config: never commit. Commit the *.example / *.template copies instead.
+.env
+.env.*
+*.env
+!.env.example
+!.env.template
+!*.env.example
+!*.env.template
+*.pem
+*.key
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+data/
+backups/
+
+# Parent repo ignores these patterns; re-include the files that are safe to commit.
+!docker-compose.yml
+!docker-compose*.yml
+
+# Python / Node
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+node_modules/
+dist/
+*.tsbuildinfo

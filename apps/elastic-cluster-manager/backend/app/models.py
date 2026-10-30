@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -58,6 +58,7 @@ class Cluster(Base):
 
 
 ACTIVE_STATES = ("pending_approval", "running")
+_ACTIVE_SQL = text("state IN ('pending_approval', 'running')")
 
 
 class Operation(Base):
@@ -80,8 +81,8 @@ class Operation(Base):
             "uq_operations_one_active_per_cluster",
             "cluster_id",
             unique=True,
-            postgresql_where=state.in_(ACTIVE_STATES),
-            sqlite_where=state.in_(ACTIVE_STATES),
+            postgresql_where=_ACTIVE_SQL,
+            sqlite_where=_ACTIVE_SQL,
         ),
     )
 

@@ -1,8 +1,9 @@
 # CLAUDE.md — Elasticsearch Cluster Manager
 
-**Status:** Phase 1 (design) only. No application code exists yet. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
+**Status:** Phase 1 done. Phase 2 (foundation) implemented and unit-tested; compose stack not yet run. Phases 3+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
 
 ## Rules (hard)
+- Never commit secrets. Real env files are gitignored. Commit only `*.example`/`*.template` copies with placeholders. Don't name source files/dirs with `secret`, `token`, or `password` (the parent .gitignore silently ignores them).
 - Never run `terraform apply`/`destroy`, infrastructure-changing Ansible, or anything that mutates Proxmox or an existing ES cluster without explicit user approval.
 - Never treat the existing es01–es09 cluster or any discovered VM as disposable.
 - No secrets in Git. Redact secrets from logs.
@@ -23,4 +24,6 @@
 See ARCHITECTURE.md §11.
 
 ## Commands (to be filled in as phases land)
-`docker compose -f deploy/docker-compose.yml up`, `pytest backend/tests`, `npm --prefix frontend test`
+Backend: `cd backend && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]' && .venv/bin/python -m pytest`
+Frontend: `cd frontend && npm install && npm test`
+Deploy: `cd deploy && cp .env.example .env` (edit), then `docker compose --env-file .env up -d --build`

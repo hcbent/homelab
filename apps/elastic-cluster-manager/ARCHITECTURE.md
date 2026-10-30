@@ -26,7 +26,7 @@ provisioning/  Terraform runner: render → plan → (approved) apply/import/des
 config/        Ansible runner: inventory generation, playbook invocation
 es/            Elasticsearch REST client + lifecycle procedures (safe removal, upgrades)
 jobs/          Procrastinate tasks, operation state machine, locks
-secrets/       Encryption, redaction, credential access
+crypto.py      Encryption, redaction, credential access (not named "secrets": the parent .gitignore would hide it)
 network/       IP allocation/validation, optional UniFi adapter
 monitoring/    Empty extension-point interface (v1 has no implementation)
 ```

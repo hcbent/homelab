@@ -1,0 +1,4 @@
+# EXAMPLE ONLY. Review and add to the Caddyfile on infra yourself; this app never edits it.
+ecm.lab.thewortmans.org {
+	reverse_proxy 127.0.0.1:8480
+}
