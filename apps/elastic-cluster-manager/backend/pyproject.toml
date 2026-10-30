@@ -13,10 +13,11 @@ dependencies = [
   "procrastinate[psycopg]>=3.10",
   "argon2-cffi>=23",
   "cryptography>=43",
+  "httpx>=0.28",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9", "httpx>=0.28", "ruff>=0.17"]
+dev = ["pytest>=9", "ruff>=0.17"]
 
 [build-system]
 requires = ["setuptools>=68"]
