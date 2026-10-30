@@ -1,0 +1,33 @@
+[project]
+name = "ecm-backend"
+version = "0.1.0"
+description = "Elasticsearch Cluster Manager backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.162",
+  "uvicorn[standard]>=0.54",
+  "pydantic-settings>=2.5",
+  "sqlalchemy>=2.1",
+  "psycopg[binary,pool]>=3.3",
+  "alembic>=1.20",
+  "procrastinate[psycopg]>=3.10",
+  "argon2-cffi>=23",
+  "cryptography>=43",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "httpx>=0.28", "ruff>=0.17"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
