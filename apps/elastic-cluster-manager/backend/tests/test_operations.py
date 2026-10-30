@@ -59,3 +59,18 @@ def test_demo_job_end_to_end(logged_in, session):
     assert d["state"] == "succeeded"
     assert d["progress"] == {"done": 3, "total": 3}
     assert any("phase work" in line["line"] for line in d["logs"])
+
+
+def test_enqueue_failure_marks_operation_failed(logged_in, session, monkeypatch):
+    from sqlalchemy import select
+
+    from app import jobs
+
+    async def boom(**_):
+        raise RuntimeError("connector pool is not open")
+
+    monkeypatch.setattr(jobs.demo_noop, "defer_async", boom)
+    r = logged_in.post("/api/operations/demo", headers={"x-ecm-csrf": "1"})
+    assert r.status_code == 503
+    op = session.scalar(select(Operation))
+    assert op.state == "failed" and "not open" in op.error

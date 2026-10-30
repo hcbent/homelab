@@ -43,13 +43,18 @@ def get_operation(op_id: str, db: Session = Depends(get_db), _: User = Depends(a
 
 
 @router.post("/demo", status_code=202)
-def start_demo(db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
+async def start_demo(db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
     """Harmless job used to verify the worker and durable execution end to end."""
     from app.jobs import DEMO_PHASES, demo_noop
     try:
         op = operations.create_operation(db, "demo.noop", DEMO_PHASES, actor=user.username)
     except operations.OperationConflict as e:
         raise HTTPException(409, str(e)) from e
-    demo_noop.defer(operation_id=op.id)
+    try:
+        await demo_noop.defer_async(operation_id=op.id)
+    except Exception as e:
+        operations.fail_operation(db, op.id, f"Could not enqueue job: {e}")
+        audit.record(db, user.username, "operation.enqueue_failed", "operation", op.id)
+        raise HTTPException(503, "Could not enqueue job") from e
     audit.record(db, user.username, "operation.start", "operation", op.id, kind="demo.noop")
     return {"id": op.id}

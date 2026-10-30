@@ -66,5 +66,12 @@ def run_phases(db: Session, op_id: str, handlers: dict[str, Callable[[], None]])
     db.commit()
 
 
+def fail_operation(db: Session, op_id: str, message: str) -> None:
+    """Mark an operation failed outside run_phases (e.g. the job could not be enqueued)."""
+    op = db.get(Operation, op_id)
+    op.state, op.error, op.finished_at = "failed", redact(message), _now()
+    db.commit()
+
+
 def is_active(state: str) -> bool:
     return state in ACTIVE_STATES
