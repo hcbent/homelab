@@ -1,0 +1,27 @@
+{
+ "cluster_name": "fixture-b",
+ "nodes": {
+  "bbbbbbbbn00": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.50",
+   "ip": "192.0.2.50",
+   "name": "fxb-01",
+   "roles": [
+    "master",
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.50:9300",
+   "version": "9.5.6"
+  }
+ }
+}

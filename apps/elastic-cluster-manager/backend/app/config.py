@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 12
     login_max_failures: int = 5
     login_lockout_seconds: int = 300
+    # Background discovery refresh, in minutes (1-59)
+    sync_interval_minutes: int = 5
 
     # Defaults offered by the wizard in later phases. Never assumed to exist.
     default_template_vmid: int | None = None

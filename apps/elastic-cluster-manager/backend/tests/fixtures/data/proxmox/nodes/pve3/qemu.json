@@ -1,0 +1,64 @@
+{
+ "data": [
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-03",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 303
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-06",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 306
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-09",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 309
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "dup-a",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 501
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "dup-b",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 502
+  }
+ ]
+}

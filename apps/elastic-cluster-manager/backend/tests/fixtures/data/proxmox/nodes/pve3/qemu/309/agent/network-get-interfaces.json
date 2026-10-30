@@ -1,0 +1,28 @@
+{
+ "data": {
+  "result": [
+   {
+    "hardware-address": "00:00:00:00:00:00",
+    "ip-addresses": [
+     {
+      "ip-address": "127.0.0.1",
+      "ip-address-type": "ipv4",
+      "prefix": 8
+     }
+    ],
+    "name": "lo"
+   },
+   {
+    "hardware-address": "bc:24:11:00:01:35",
+    "ip-addresses": [
+     {
+      "ip-address": "192.0.2.19",
+      "ip-address-type": "ipv4",
+      "prefix": 24
+     }
+    ],
+    "name": "eth0"
+   }
+  ]
+ }
+}

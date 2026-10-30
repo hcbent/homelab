@@ -1,0 +1,170 @@
+{
+ "cluster_name": "fixture-a",
+ "nodes": {
+  "aaaaaaaan00": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.11",
+   "ip": "192.0.2.11",
+   "name": "fxa-01",
+   "roles": [
+    "master"
+   ],
+   "transport_address": "192.0.2.11:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan01": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.12",
+   "ip": "192.0.2.12",
+   "name": "fxa-02",
+   "roles": [
+    "master"
+   ],
+   "transport_address": "192.0.2.12:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan02": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.13",
+   "ip": "192.0.2.13",
+   "name": "fxa-03",
+   "roles": [
+    "master"
+   ],
+   "transport_address": "192.0.2.13:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan03": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.14",
+   "ip": "192.0.2.14",
+   "name": "fxa-04",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.14:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan04": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.15",
+   "ip": "192.0.2.15",
+   "name": "fxa-05",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.15:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan05": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.16",
+   "ip": "192.0.2.16",
+   "name": "fxa-06",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.16:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan06": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.17",
+   "ip": "192.0.2.17",
+   "name": "fxa-07",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.17:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan07": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.18",
+   "ip": "192.0.2.18",
+   "name": "fxa-08",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.18:9300",
+   "version": "9.5.6"
+  },
+  "aaaaaaaan08": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.19",
+   "ip": "192.0.2.19",
+   "name": "fxa-09",
+   "roles": [
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.19:9300",
+   "version": "9.5.6"
+  }
+ }
+}

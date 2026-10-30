@@ -1,0 +1,64 @@
+{
+ "data": [
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-01",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 301
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-04",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 304
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "fxa-07",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 307
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "web",
+   "status": "running",
+   "template": 0,
+   "uptime": 5000,
+   "vmid": 200
+  },
+  {
+   "cpu": 0.07,
+   "cpus": 4,
+   "maxdisk": 34359738368,
+   "maxmem": 17179869184,
+   "mem": 9663676416,
+   "name": "ubuntu-template",
+   "status": "stopped",
+   "template": 1,
+   "uptime": 5000,
+   "vmid": 8000
+  }
+ ]
+}

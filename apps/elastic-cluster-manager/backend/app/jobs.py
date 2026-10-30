@@ -27,3 +27,16 @@ def demo_noop(operation_id: str) -> None:
     """Placeholder job proving durable execution. Real provisioning jobs follow this shape."""
     with session_factory()() as db:
         run_phases(db, operation_id, demo_handlers(db, operation_id))
+
+
+_minutes = min(max(get_settings().sync_interval_minutes, 1), 59)
+
+
+@queue.periodic(cron=f"*/{_minutes} * * * *")
+@queue.task(name="discovery.sync_all")
+def sync_all(timestamp: int) -> None:
+    """Read-only refresh of Proxmox and every registered Elasticsearch cluster."""
+    from app.discovery.sync import sync_everything
+
+    with session_factory()() as db:
+        sync_everything(db)

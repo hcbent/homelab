@@ -1,0 +1,149 @@
+{
+ "cluster_name": "fixture-a",
+ "nodes": {
+  "aaaaaaaan00": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 3693671874,
+     "heap_used_percent": 43
+    }
+   },
+   "name": "fxa-01"
+  },
+  "aaaaaaaan01": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 3951369912,
+     "heap_used_percent": 46
+    }
+   },
+   "name": "fxa-02"
+  },
+  "aaaaaaaan02": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 4209067950,
+     "heap_used_percent": 49
+    }
+   },
+   "name": "fxa-03"
+  },
+  "aaaaaaaan03": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 4466765987,
+     "heap_used_percent": 52
+    }
+   },
+   "name": "fxa-04"
+  },
+  "aaaaaaaan04": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 4724464025,
+     "heap_used_percent": 55
+    }
+   },
+   "name": "fxa-05"
+  },
+  "aaaaaaaan05": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 4982162063,
+     "heap_used_percent": 58
+    }
+   },
+   "name": "fxa-06"
+  },
+  "aaaaaaaan06": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 5239860101,
+     "heap_used_percent": 61
+    }
+   },
+   "name": "fxa-07"
+  },
+  "aaaaaaaan07": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 5497558138,
+     "heap_used_percent": 64
+    }
+   },
+   "name": "fxa-08"
+  },
+  "aaaaaaaan08": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 322122547200,
+     "total_in_bytes": 536870912000
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 5755256176,
+     "heap_used_percent": 67
+    }
+   },
+   "name": "fxa-09"
+  }
+ }
+}

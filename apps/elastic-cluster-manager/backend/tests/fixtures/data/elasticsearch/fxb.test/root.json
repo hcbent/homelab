@@ -1,0 +1,9 @@
+{
+ "cluster_name": "fixture-b",
+ "cluster_uuid": "bbbbbbbbbbbbbbbbbbbbbb",
+ "name": "fxb-01",
+ "tagline": "You Know, for Search",
+ "version": {
+  "number": "9.5.6"
+ }
+}

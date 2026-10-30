@@ -1,0 +1,9 @@
+{
+ "cluster_name": "fixture-a",
+ "cluster_uuid": "aaaaaaaaaaaaaaaaaaaaaa",
+ "name": "fxa-01",
+ "tagline": "You Know, for Search",
+ "version": {
+  "number": "9.5.6"
+ }
+}

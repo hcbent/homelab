@@ -29,3 +29,6 @@ __pycache__/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Test fixtures are synthetic and must be committed (the data/ rule above is for runtime data)
+!backend/tests/fixtures/data/

@@ -1,0 +1,146 @@
+[
+ {
+  "index": "logs-0",
+  "node": "fxa-04",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-04",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-04",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-0",
+  "node": "fxa-05",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-05",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-05",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-0",
+  "node": "fxa-06",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-06",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-06",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-0",
+  "node": "fxa-07",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-07",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-07",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-0",
+  "node": "fxa-08",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-08",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-08",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-0",
+  "node": "fxa-09",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxa-09",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxa-09",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ }
+]

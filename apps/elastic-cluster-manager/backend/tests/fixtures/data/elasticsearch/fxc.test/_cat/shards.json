@@ -1,0 +1,66 @@
+[
+ {
+  "index": "logs-0",
+  "node": "fxc-01",
+  "prirep": "p",
+  "shard": "0",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-1",
+  "node": "fxc-01",
+  "prirep": "p",
+  "shard": "1",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "logs-2",
+  "node": "fxc-01",
+  "prirep": "p",
+  "shard": "2",
+  "state": "STARTED",
+  "store": "1gb"
+ },
+ {
+  "index": "broken",
+  "node": null,
+  "prirep": "r",
+  "shard": "0",
+  "state": "UNASSIGNED",
+  "store": null
+ },
+ {
+  "index": "broken",
+  "node": null,
+  "prirep": "r",
+  "shard": "1",
+  "state": "UNASSIGNED",
+  "store": null
+ },
+ {
+  "index": "broken",
+  "node": null,
+  "prirep": "r",
+  "shard": "2",
+  "state": "UNASSIGNED",
+  "store": null
+ },
+ {
+  "index": "broken",
+  "node": null,
+  "prirep": "r",
+  "shard": "3",
+  "state": "UNASSIGNED",
+  "store": null
+ },
+ {
+  "index": "broken",
+  "node": null,
+  "prirep": "r",
+  "shard": "4",
+  "state": "UNASSIGNED",
+  "store": null
+ }
+]

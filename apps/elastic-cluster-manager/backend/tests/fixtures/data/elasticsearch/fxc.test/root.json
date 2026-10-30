@@ -1,0 +1,9 @@
+{
+ "cluster_name": "fixture-c",
+ "cluster_uuid": "cccccccccccccccccccccc",
+ "name": "fxc-01",
+ "tagline": "You Know, for Search",
+ "version": {
+  "number": "8.19.24"
+ }
+}

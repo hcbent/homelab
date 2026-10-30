@@ -1,0 +1,27 @@
+{
+ "cluster_name": "fixture-c",
+ "nodes": {
+  "ccccccccn00": {
+   "attributes": {
+    "ml.machine_memory": "17179869184"
+   },
+   "host": "192.0.2.99",
+   "ip": "192.0.2.99",
+   "name": "fxc-01",
+   "roles": [
+    "master",
+    "data",
+    "data_content",
+    "data_hot",
+    "data_warm",
+    "data_cold",
+    "ingest",
+    "remote_cluster_client",
+    "transform",
+    "ml"
+   ],
+   "transport_address": "192.0.2.99:9300",
+   "version": "8.19.24"
+  }
+ }
+}

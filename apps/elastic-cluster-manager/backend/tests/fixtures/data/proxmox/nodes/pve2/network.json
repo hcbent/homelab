@@ -1,0 +1,16 @@
+{
+ "data": [
+  {
+   "active": 1,
+   "bridge_vlan_aware": 1,
+   "cidr": "192.0.2.5/24",
+   "iface": "vmbr0",
+   "type": "bridge"
+  },
+  {
+   "active": 1,
+   "iface": "eno1",
+   "type": "eth"
+  }
+ ]
+}

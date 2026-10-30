@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app import auth
 from app.api import auth as auth_api
+from app.api import discovery as discovery_api
 from app.api import operations as ops_api
 from app.config import get_settings
 from app.crypto import install_log_redaction, register_secret
@@ -33,6 +34,7 @@ app = FastAPI(title="Elasticsearch Cluster Manager", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(auth_api.router)
 app.include_router(ops_api.router)
+app.include_router(discovery_api.router)
 
 
 @app.get("/api/health")

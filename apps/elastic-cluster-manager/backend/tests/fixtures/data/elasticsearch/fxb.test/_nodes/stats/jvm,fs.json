@@ -1,0 +1,21 @@
+{
+ "cluster_name": "fixture-b",
+ "nodes": {
+  "bbbbbbbbn00": {
+   "fs": {
+    "total": {
+     "available_in_bytes": 164926744166,
+     "total_in_bytes": 274877906944
+    }
+   },
+   "jvm": {
+    "mem": {
+     "heap_max_in_bytes": 8589934592,
+     "heap_used_in_bytes": 4724464025,
+     "heap_used_percent": 55
+    }
+   },
+   "name": "fxb-01"
+  }
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "data": {
+  "cores": 2,
+  "memory": 2048,
+  "name": "ubuntu-template",
+  "scsi0": "tank:base-8000-disk-0,size=10G",
+  "template": 1
+ }
+}

@@ -1,0 +1,8 @@
+{
+ "active_primary_shards": 3,
+ "cluster_name": "fixture-c",
+ "number_of_data_nodes": 1,
+ "number_of_nodes": 1,
+ "status": "red",
+ "unassigned_shards": 5
+}

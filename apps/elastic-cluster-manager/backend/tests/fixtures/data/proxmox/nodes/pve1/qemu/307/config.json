@@ -1,0 +1,18 @@
+{
+ "data": {
+  "agent": "1",
+  "cipassword": "**********",
+  "cores": 4,
+  "ide2": "tank:vm-307-cloudinit,media=cdrom",
+  "ipconfig0": "ip=dhcp",
+  "memory": 16384,
+  "name": "fxa-07",
+  "net0": "virtio=BC:24:11:00:01:33,bridge=vmbr0,tag=10",
+  "ostype": "l26",
+  "scsi0": "tank:vm-307-disk-0,size=32G",
+  "scsi1": "tank:vm-307-disk-1,size=256G",
+  "sockets": 1,
+  "sshkeys": "ssh-ed25519%20AAAAFAKE%20fixture",
+  "tags": "elasticsearch"
+ }
+}
