@@ -1,10 +1,14 @@
+import { EuiLoadingSpinner, EuiPageTemplate, EuiSkipLink } from "@elastic/eui";
 import { useEffect, useState } from "react";
+import { AppHeader } from "./AppHeader";
 import { api, User } from "./api";
 import { ClusterDetailView } from "./ClusterDetailView";
 import { Dashboard } from "./Dashboard";
+import { Help } from "./Help";
 import { InfrastructureView } from "./InfrastructureView";
 import { Login } from "./Login";
 import { Operations } from "./Operations";
+import { ThemeProvider } from "./theme";
 
 function useHash() {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -16,7 +20,7 @@ function useHash() {
   return hash;
 }
 
-export default function App() {
+function Shell() {
   const [user, setUser] = useState<User | null>(null);
   const [checked, setChecked] = useState(false);
   const hash = useHash();
@@ -25,31 +29,34 @@ export default function App() {
     api<User>("/api/auth/me").then(setUser).catch(() => {}).finally(() => setChecked(true));
   }, []);
 
-  if (!checked) return null;
+  if (!checked) return <div className="ecm-boot" role="status" aria-label="Loading"><EuiLoadingSpinner size="xl" /></div>;
   if (!user) return <Login onLogin={setUser} />;
 
-  const cluster = hash.match(/^#\/clusters\/(\w+)/);
-  const link = (href: string, label: string) => (
-    <a href={href} className={hash === href ? "font-medium underline" : ""}>{label}</a>);
+  const cluster = hash.match(/^#\/clusters\/([\w-]+)/);
 
   return (
-    <div className="mx-auto max-w-6xl p-4">
-      <header className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <h1 className="text-xl font-semibold">Elastic Cluster Manager</h1>
-          <nav className="flex gap-4 text-sm">
-            {link("#/", "Clusters")}{link("#/infrastructure", "Infrastructure")}{link("#/operations", "Operations")}
-          </nav>
-        </div>
-        <button className="text-sm underline" onClick={async () => {
+    <>
+      <EuiSkipLink destinationId="main">Skip to content</EuiSkipLink>
+      <div className="ecm-sticky">
+        <AppHeader hash={hash} username={user.username} onSignOut={async () => {
           await api("/api/auth/logout", { method: "POST" });
           setUser(null);
-        }}>Sign out ({user.username})</button>
-      </header>
-      {cluster ? <ClusterDetailView id={cluster[1]} />
-        : hash === "#/infrastructure" ? <InfrastructureView />
-        : hash === "#/operations" ? <Operations />
-        : <Dashboard />}
-    </div>
+        }} />
+      </div>
+      <EuiPageTemplate restrictWidth={1440} offset={0} minHeight="calc(100vh - 48px)" paddingSize="l"
+        panelled={false} grow={false} mainProps={{ id: "main" }}>
+        <EuiPageTemplate.Section color="transparent" className="ecm-page">
+          {cluster ? <ClusterDetailView key={cluster[1]} id={cluster[1]} />
+            : hash === "#/infrastructure" ? <InfrastructureView />
+            : hash === "#/operations" ? <Operations />
+            : hash === "#/help" ? <Help />
+            : <Dashboard />}
+        </EuiPageTemplate.Section>
+      </EuiPageTemplate>
+    </>
   );
+}
+
+export default function App() {
+  return <ThemeProvider><Shell /></ThemeProvider>;
 }

@@ -1,23 +1,19 @@
-const HEALTH: Record<string, string> = {
-  green: "bg-green-100 text-green-800", yellow: "bg-yellow-100 text-yellow-800",
-  red: "bg-red-100 text-red-800",
-};
-const LINK: Record<string, string> = {
-  verified: "bg-green-100 text-green-800", probable: "bg-yellow-100 text-yellow-800",
-  unlinked: "bg-slate-100 text-slate-700",
-};
+import { EuiBadge, EuiHealth } from "@elastic/eui";
+
+// Status is always a dot plus a text label, never colour alone.
+const HEALTH: Record<string, string> = { green: "success", yellow: "warning", red: "danger" };
+const LINK: Record<string, string> = { verified: "success", probable: "warning", unlinked: "subdued" };
 
 export const HealthBadge = ({ status }: { status: string | null }) => (
-  <span className={`rounded px-2 py-0.5 text-xs font-medium ${HEALTH[status ?? ""] ?? "bg-slate-100"}`}>
-    {status ?? "unknown"}
-  </span>
+  <EuiHealth color={HEALTH[status ?? ""] ?? "subdued"}>{status ?? "unknown"}</EuiHealth>
 );
 
 export const LinkBadge = ({ confidence }: { confidence: string }) => (
-  <span title={confidence === "probable" ? "Name match only; not trusted for ownership" : undefined}
-    className={`rounded px-2 py-0.5 text-xs ${LINK[confidence]}`}>{confidence}</span>
+  <div title={confidence === "probable" ? "Name match only; not trusted for ownership" : undefined}>
+    <EuiHealth color={LINK[confidence] ?? "subdued"}>{confidence}</EuiHealth>
+  </div>
 );
 
 export const OwnershipBadge = ({ value }: { value: string }) => (
-  <span className="rounded border px-2 py-0.5 text-xs">{value}</span>
+  <EuiBadge color="hollow">{value}</EuiBadge>
 );

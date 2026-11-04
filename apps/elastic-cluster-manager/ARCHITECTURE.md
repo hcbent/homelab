@@ -6,7 +6,7 @@ Status legend: **PLANNED** = designed only. Nothing is built.
 
 | Layer | Choice | Rationale |
 |---|---|---|
-| Frontend | React + TS + Vite + Tailwind + shadcn/ui | As specified |
+| Frontend | React + TS + Vite + Elastic UI (EUI) | Changed from Tailwind + shadcn/ui; see docs/DECISIONS.md |
 | API | FastAPI + Pydantic v2 + SQLAlchemy 2 + Alembic | As specified |
 | DB | PostgreSQL 16 | As specified. Also the job queue and the Terraform state backend. |
 | Jobs | **Procrastinate** (Postgres-backed), not Celery or RQ | Durable and survives restarts, with retries and no Redis. One fewer service. Per-cluster serialization is enforced by the app (see §5). |

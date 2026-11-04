@@ -1,106 +1,208 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, ClusterDetail } from "./api";
+import {
+  EuiBasicTable, EuiBasicTableColumn, EuiButton, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiHealth,
+  EuiIcon, EuiLink, EuiLoadingSpinner, EuiPanel, EuiTab, EuiTabs, EuiText,
+} from "@elastic/eui";
+import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "react";
+import { api, ApiError, ClusterDetail, NodeRow } from "./api";
 import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
 import { ago, bytes, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
+import { useReveals } from "./reveal";
 import { useInterval } from "./useInterval";
 
 const TABS = ["Nodes", "Shards", "Settings", "Infrastructure", "Operations"] as const;
 type Tab = (typeof TABS)[number];
 
+/** Up to three roles with their node counts; nodes with no roles are coordinating only. */
+function roleCounts(nodes: NodeRow[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const n of nodes) {
+    for (const r of n.roles.length ? n.roles : ["coordinating only"]) counts.set(r, (counts.get(r) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+}
+
+function Card({ area, icon, title, index, children }: {
+  area: string; icon: string; title: string; index: number; children: ReactNode;
+}) {
+  return (
+    <EuiPanel hasBorder hasShadow={false} paddingSize="l" borderRadius="m" data-reveal="rise"
+      data-reveal-delay={index * 80} className={`ecm-card ecm-card--${area}`}
+      style={{ "--i": index } as CSSProperties}>
+      <header className="ecm-card__head">
+        <span className="ecm-seat ecm-seat--small" aria-hidden="true"><EuiIcon type={icon} /></span>
+        <h3 className="ecm-card__title">{title}</h3>
+      </header>
+      {children}
+    </EuiPanel>
+  );
+}
+
+const NotAvailable = ({ why }: { why: string }) => (
+  <p className="ecm-muted"><strong>Not available.</strong> {why}</p>);
+
 export function ClusterDetailView({ id }: { id: string }) {
   const [c, setC] = useState<ClusterDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Nodes");
   const [seconds, setSeconds] = useState(() => storedNumber("ecm.refresh", 30));
   const [syncErr, setSyncErr] = useState<string | null>(null);
-  const load = useCallback(() => { api<ClusterDetail>(`/api/clusters/${id}`).then(setC).catch(() => {}); }, [id]);
+  const [syncing, setSyncing] = useState(false);
+  const load = useCallback(() => {
+    api<ClusterDetail>(`/api/clusters/${id}`).then((d) => { setC(d); setLoadError(null); })
+      .catch((e) => setLoadError(e instanceof ApiError ? e.message : String(e)));
+  }, [id]);
   useEffect(load, [load]);
   useInterval(load, seconds);
+  useReveals(c !== null);
 
   async function syncNow() {
     setSyncErr(null);
+    setSyncing(true);
     try { await api(`/api/clusters/${id}/sync`, { method: "POST" }); }
     catch (e) { setSyncErr(e instanceof ApiError ? e.message : String(e)); }
+    setSyncing(false);
     load();
   }
 
-  if (!c) return <p>Loading…</p>;
+  if (!c) {
+    return loadError ? (
+      <EuiCallOut color="danger" role="alert" iconType="warning" title="Could not load this cluster">
+        <p>{loadError}</p>
+        <EuiButton size="s" onClick={load}>Retry</EuiButton>{" "}
+        <EuiLink href="#/">Back to clusters</EuiLink>
+      </EuiCallOut>
+    ) : <p role="status"><EuiLoadingSpinner size="m" /> Loading cluster…</p>;
+  }
+
+  const linked = c.node_list.filter((n) => n.link.vm);
+  const roles = roleCounts(c.node_list);
+  const syncFailed = Boolean(syncErr || c.last_sync_error);
+
+  const nodeColumns: EuiBasicTableColumn<NodeRow>[] = [
+    { name: "Node", render: (n: NodeRow) => (
+      <div className="ecm-stack"><span className="ecm-mono">{n.name}</span><div className="ecm-mono ecm-small">{n.ip}</div></div>) },
+    { name: "Roles", render: (n: NodeRow) => <span className="ecm-small">{n.roles.join(", ") || "coordinating only"}</span> },
+    { name: "Heap", render: (n: NodeRow) => `${n.heap_used_pct ?? "—"}%` },
+    { name: "Disk free", render: (n: NodeRow) => `${bytes(n.disk_avail_bytes)} / ${bytes(n.disk_total_bytes)}` },
+    { field: "shard_count", name: "Shards" },
+    { name: "VM link", render: (n: NodeRow) => (
+      <div className="ecm-stack">
+        <LinkBadge confidence={n.link.confidence} />
+        {n.link.vm && <div className="ecm-small ecm-mono">{n.link.vm.pve_node} · VM {n.link.vm.vmid}</div>}
+        {n.link.confidence === "unlinked" && n.link.evidence.reason === "ambiguous" &&
+          <div className="ecm-small">ambiguous address</div>}
+      </div>) },
+  ];
+  const vmColumns: EuiBasicTableColumn<NodeRow>[] = [
+    { name: "Node", render: (n: NodeRow) => <span className="ecm-mono">{n.name}</span> },
+    { name: "Proxmox host", render: (n: NodeRow) => <span className="ecm-mono">{n.link.vm!.pve_node}</span> },
+    { name: "VM", render: (n: NodeRow) => <span className="ecm-mono">{n.link.vm!.vmid} {n.link.vm!.name}</span> },
+    { name: "vCPU", render: (n: NodeRow) => n.link.vm!.cpu_cores },
+    { name: "RAM", render: (n: NodeRow) => `${n.link.vm!.memory_mb} MB` },
+    { name: "Disks", render: (n: NodeRow) =>
+      <span className="ecm-mono ecm-small">{n.link.vm!.disks.map((d) => `${d.slot}:${d.size_gb ?? "?"}G`).join(" ")}</span> },
+  ];
+
   return (
-    <section>
-      <a href="#/" className="text-sm underline">← Clusters</a>
-      <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-medium">{c.name} <HealthBadge status={c.health} />{" "}
-          <OwnershipBadge value={c.ownership} /></h2>
-        <div className="flex items-center gap-3">
+    <section aria-labelledby="detail-title">
+      <EuiLink href="#/" className="ecm-back">← Clusters</EuiLink>
+      <div className="ecm-detail-bar">
+        <div className="ecm-title">
+          <h1 id="detail-title" className="ecm-title__name ecm-mono">{c.name}</h1>
+          <div className="ecm-title__badges"><HealthBadge status={c.health} /><OwnershipBadge value={c.ownership} /></div>
+        </div>
+        <div className="ecm-detail-bar__actions">
           <RefreshControl seconds={seconds} onChange={setSeconds} onNow={load} />
-          <button className="rounded border px-2 py-1 text-sm" onClick={syncNow}>Sync now</button>
+          <EuiButton onClick={syncNow} isLoading={syncing}>Sync now</EuiButton>
         </div>
       </div>
-      {(syncErr || c.last_sync_error) && (
-        <p role="alert" className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">
-          {syncErr ?? c.last_sync_error} (last successful sync {ago(c.last_sync_at)})</p>)}
+      {syncFailed && (
+        <EuiCallOut color="danger" role="alert" iconType="warning" size="s" className="ecm-gap"
+          title={`${syncErr ?? c.last_sync_error} (last successful sync ${ago(c.last_sync_at)})`} />)}
 
-      <div className="mb-4 grid gap-3 text-sm md:grid-cols-3">
-        <div className="rounded border p-3"><h3 className="font-medium">Elasticsearch reports</h3>
-          <p>Version {c.version} · {c.nodes} nodes ({c.data_nodes} data)</p>
-          <p>Storage {c.storage.used_pct ?? "—"}% of {bytes(c.storage.total_bytes)}</p>
-          <p className="font-mono text-xs">{c.uuid}</p></div>
-        <div className="rounded border p-3"><h3 className="font-medium">Proxmox reports</h3>
-          <p>Hosts: {c.infrastructure.proxmox_hosts.join(", ") || "none linked"}</p>
-          <p>{c.infrastructure.verified_links}/{c.infrastructure.total_nodes} nodes verified to a VM</p></div>
-        <div className="rounded border p-3"><h3 className="font-medium">Desired state</h3>
-          <p>{c.desired.managed ? "Managed by this application" : "None"}</p>
-          {c.desired.note && <p className="text-slate-500">{c.desired.note}</p>}</div>
+      <div className="ecm-feature-head">
+        <h2 className="ecm-h2">Inside this cluster.</h2>
+        <p className="ecm-lede ecm-lede--small">Health, nodes, linked VMs and storage from the last sync.</p>
       </div>
 
-      <div role="tablist" className="mb-3 flex gap-1 border-b">
+      <div className="ecm-bento">
+        <Card area="nodes" icon="compute" title="Nodes" index={0}>
+          <div className="ecm-card__value">
+            <span className="ecm-card__numeral">{c.nodes}</span><HealthBadge status={c.health} />
+          </div>
+          <p className="ecm-card__desc">{c.data_nodes} data nodes · Elasticsearch {c.version ?? "version unknown"}
+            {c.jvm_heap_used_pct != null && <> · JVM heap {c.jvm_heap_used_pct}%</>}</p>
+          {roles.length > 0 && <EuiDescriptionList compressed type="column" className="ecm-roles"
+            listItems={roles.map(([role, n]) => ({ title: role, description: `${n} ${n === 1 ? "node" : "nodes"}` }))} />}
+          {c.uuid && <p className="ecm-mono ecm-small">{c.uuid}</p>}
+        </Card>
+        <Card area="vms" icon="storage" title="Virtual machines" index={1}>
+          <div className="ecm-card__value"><span className="ecm-card__numeral">{linked.length}</span>
+            <span className="ecm-small">of {c.infrastructure.total_nodes} nodes linked to a VM</span></div>
+          <p className="ecm-card__desc">Proxmox hosts: {c.infrastructure.proxmox_hosts.join(", ") || "none linked"}</p>
+          {linked.length > 0 && (
+            <ul className="ecm-chips">
+              {linked.slice(0, 4).map((n) => <li key={n.id} className="ecm-mono">{n.link.vm!.name}</li>)}
+            </ul>)}
+        </Card>
+        <Card area="storage" icon="database" title="Storage" index={2}>
+          {c.storage.used_pct == null
+            ? <NotAvailable why="Elasticsearch did not report storage in the last sync." />
+            : (<>
+              <div className="ecm-card__value"><span className="ecm-card__numeral">{c.storage.used_pct}%</span></div>
+              <p className="ecm-card__desc">used of {bytes(c.storage.total_bytes)}</p>
+            </>)}
+        </Card>
+        <Card area="sync" icon="clock" title="Last sync" index={3}>
+          <div className="ecm-card__value"><span className="ecm-card__numeral ecm-card__numeral--text">{ago(c.last_sync_at)}</span></div>
+          <div className="ecm-card__desc">
+            <EuiHealth color={c.last_sync_error ? "danger" : "success"}>
+              {c.last_sync_error ? "Failed" : "Succeeded"}</EuiHealth></div>
+        </Card>
+      </div>
+
+      <EuiText size="s" className="ecm-desired">
+        <strong>Desired state:</strong> {c.desired.managed ? "Managed by this application" : "None"}
+        {c.desired.note && <span className="ecm-muted"> · {c.desired.note}</span>}
+      </EuiText>
+
+      <EuiTabs className="ecm-tabs" aria-label="Cluster detail sections">
         {TABS.map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-            className={`px-3 py-1 text-sm ${tab === t ? "border-b-2 border-slate-900 font-medium" : ""}`}>{t}</button>))}
-      </div>
+          <EuiTab key={t} isSelected={tab === t} onClick={() => setTab(t)}>{t}</EuiTab>))}
+      </EuiTabs>
 
-      {tab === "Nodes" && (
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr><th>Node</th><th>Roles</th><th>Heap</th><th>Disk free</th><th>Shards</th><th>VM link</th></tr></thead>
-          <tbody>{c.node_list.map((n) => (
-            <tr key={n.id} className="border-t align-top">
-              <td>{n.name}<div className="text-xs text-slate-500">{n.ip}</div></td>
-              <td className="max-w-xs text-xs">{n.roles.join(", ") || "coordinating only"}</td>
-              <td>{n.heap_used_pct ?? "—"}%</td>
-              <td>{bytes(n.disk_avail_bytes)} / {bytes(n.disk_total_bytes)}</td>
-              <td>{n.shard_count}</td>
-              <td><LinkBadge confidence={n.link.confidence} />
-                {n.link.vm && <div className="text-xs">{n.link.vm.pve_node} · VM {n.link.vm.vmid}</div>}
-                {n.link.confidence === "unlinked" && n.link.evidence.reason === "ambiguous" &&
-                  <div className="text-xs text-slate-500">ambiguous address</div>}</td>
-            </tr>))}</tbody></table></div>)}
+      <EuiPanel hasBorder hasShadow={false} paddingSize="l" borderRadius="m" className="ecm-tabpanel" data-reveal="slide">
+        {tab === "Nodes" && (
+          <EuiBasicTable tableCaption="Nodes" items={c.node_list} columns={nodeColumns} responsiveBreakpoint="m"
+            noItemsMessage="No nodes were reported in the last sync." />)}
 
-      {tab === "Shards" && (
-        <div className="grid gap-4 text-sm md:grid-cols-2">
-          <div><h3 className="font-medium">By state</h3>
-            <ul>{Object.entries(c.elasticsearch.shards.by_state).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul>
-            {c.elasticsearch.shards.unassigned.length > 0 && (
-              <p className="mt-2 text-red-700">Unassigned: {c.elasticsearch.shards.unassigned.join(", ")}</p>)}</div>
-          <div><h3 className="font-medium">Distribution by node</h3>
-            <ul>{Object.entries(c.elasticsearch.shards.by_node).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul></div>
-        </div>)}
+        {tab === "Shards" && (
+          <div className="ecm-two">
+            <div><h3 className="ecm-h3">By state</h3>
+              <EuiDescriptionList type="column" compressed
+                listItems={Object.entries(c.elasticsearch.shards.by_state).map(([k, v]) => ({ title: k, description: String(v) }))} />
+              {c.elasticsearch.shards.unassigned.length > 0 && (
+                <div className="ecm-gap"><EuiHealth color="danger">
+                  Unassigned: {c.elasticsearch.shards.unassigned.join(", ")}</EuiHealth></div>)}
+            </div>
+            <div><h3 className="ecm-h3">Distribution by node</h3>
+              <EuiDescriptionList type="column" compressed
+                listItems={Object.entries(c.elasticsearch.shards.by_node).map(([k, v]) => ({ title: k, description: String(v) }))} />
+            </div>
+          </div>)}
 
-      {tab === "Settings" && (
-        <pre className="overflow-x-auto rounded bg-slate-50 p-3 text-xs">
-          {JSON.stringify(c.elasticsearch.settings, null, 2)}</pre>)}
+        {tab === "Settings" && (
+          <EuiCodeBlock language="json" isCopyable={false} overflowHeight={420} paddingSize="m">
+            {JSON.stringify(c.elasticsearch.settings, null, 2)}</EuiCodeBlock>)}
 
-      {tab === "Infrastructure" && (
-        <table className="w-full text-left text-sm">
-          <thead><tr><th>Node</th><th>Proxmox host</th><th>VM</th><th>vCPU</th><th>RAM</th><th>Disks</th></tr></thead>
-          <tbody>{c.node_list.filter((n) => n.link.vm).map((n) => (
-            <tr key={n.id} className="border-t"><td>{n.name}</td>
-              <td>{n.link.vm!.pve_node}</td><td>{n.link.vm!.vmid} {n.link.vm!.name}</td>
-              <td>{n.link.vm!.cpu_cores}</td><td>{n.link.vm!.memory_mb} MB</td>
-              <td>{n.link.vm!.disks.map((d) => `${d.slot}:${d.size_gb ?? "?"}G`).join(" ")}</td></tr>))}</tbody>
-        </table>)}
+        {tab === "Infrastructure" && (
+          <EuiBasicTable tableCaption="Linked virtual machines" items={linked} columns={vmColumns} responsiveBreakpoint="m"
+            noItemsMessage="No nodes are linked to a VM yet." />)}
 
-      {tab === "Operations" && <p className="text-sm text-slate-500">
-        Operations and provisioning history for this cluster arrive with phases 4–5.</p>}
+        {tab === "Operations" && <p className="ecm-muted">
+          Operations and provisioning history for this cluster arrive with phases 4–5.</p>}
+      </EuiPanel>
     </section>
   );
 }

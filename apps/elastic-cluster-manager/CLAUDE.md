@@ -1,6 +1,6 @@
 # CLAUDE.md — Elasticsearch Cluster Manager
 
-**Status:** Phase 1 done. Phase 2 (foundation) deployed and verified on infra. Phase 3 (read-only discovery + dashboard) implemented and tested against synthetic fixtures only; NOT yet run against live Proxmox/Elasticsearch. Phases 4+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
+**Status:** Phase 1 done. Phase 2 (foundation) deployed and verified on infra. Phase 3 (read-only discovery + dashboard) implemented and tested against synthetic fixtures only; NOT yet run against live Proxmox/Elasticsearch. Frontend converted to EUI (see `docs/DECISIONS.md`). Phases 4+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
 
 ## Rules (hard)
 - Never commit secrets. Real env files are gitignored. Commit only `*.example`/`*.template` copies with placeholders. Don't name source files/dirs with `secret`, `token`, or `password` (the parent .gitignore silently ignores them).
@@ -13,7 +13,7 @@
 
 ## Conventions
 - Backend: Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, pytest, ruff. Routes are thin. Logic lives in services behind interfaces (`ProxmoxClient`, `ESClient`, `TerraformRunner`, `AnsibleRunner`, `DnsProvider`).
-- Frontend: React + TS strict, Vite, Tailwind, shadcn/ui, Vitest.
+- Frontend: React + TS strict, Vite, Elastic UI (EUI, Borealis theme), Vitest. Styles live in `src/index.css`; no Tailwind. Self-hosted Inter and Roboto Mono in `public/fonts/`.
 - Default ES roles means **omit** `node.roles`. Coordinating-only is `node.roles: []`.
 - `cluster.initial_master_nodes` only on the first bootstrap, never after `bootstrapped_at` is set.
 - One Terraform state per cluster. Plans containing delete or replace are rejected during adoption.

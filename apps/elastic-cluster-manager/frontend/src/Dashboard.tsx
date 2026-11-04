@@ -1,104 +1,145 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ApiError, ClusterSummary } from "./api";
+import {
+  EuiBadge, EuiBasicTableColumn, EuiButton, EuiButtonEmpty, EuiCallOut, EuiEmptyPrompt,
+  EuiInMemoryTable, EuiLink,
+} from "@elastic/eui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, ClusterSummary, Infrastructure } from "./api";
 import { HealthBadge, OwnershipBadge } from "./Badges";
-import { ago, bytes, storedNumber } from "./format";
+import { ago, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
+import { StatTile } from "./StatTile";
 import { useInterval } from "./useInterval";
 
-function RegisterForm({ onDone }: { onDone: () => void }) {
-  const [url, setUrl] = useState("");
-  const [key, setKey] = useState("");
-  const [ca, setCa] = useState("");
-  const [insecure, setInsecure] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+const RANK: Record<string, number> = { green: 1, yellow: 2, red: 3 };
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    try {
-      await api("/api/clusters/register", { method: "POST", body: JSON.stringify({
-        urls: [url], api_key: key, ca_pem: ca || null, verify_tls: !insecure }) });
-      setUrl(""); setKey(""); setCa("");
-      onDone();
-    } catch (e2) {
-      setErr(e2 instanceof ApiError ? e2.message : String(e2));
-    }
-  }
-  return (
-    <form onSubmit={submit} className="mb-6 space-y-2 rounded border p-4 text-sm">
-      <h3 className="font-medium">Register an existing cluster (read-only)</h3>
-      <label className="block">Endpoint URL
-        <input className="mt-1 w-full rounded border p-1" value={url} placeholder="https://es01.example:9200"
-          onChange={(e) => setUrl(e.target.value)} />
-      </label>
-      <label className="block">API key (encoded)
-        <input type="password" className="mt-1 w-full rounded border p-1" value={key}
-          onChange={(e) => setKey(e.target.value)} autoComplete="off" />
-      </label>
-      <label className="block">CA certificate (PEM, optional)
-        <textarea className="mt-1 w-full rounded border p-1 font-mono text-xs" rows={3} value={ca}
-          onChange={(e) => setCa(e.target.value)} />
-      </label>
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={insecure} onChange={(e) => setInsecure(e.target.checked)} />
-        Skip TLS verification (not recommended)
-      </label>
-      {err && <p role="alert" className="text-red-600">{err}</p>}
-      <button className="rounded bg-slate-900 px-3 py-1 text-white">Register</button>
-    </form>
-  );
+/** The fields a refresh can change; timestamps are excluded so every poll does not flag every row. */
+function fingerprint(c: ClusterSummary) {
+  return JSON.stringify([c.health, c.version, c.nodes, c.data_nodes, c.ownership, c.infrastructure,
+    c.storage.used_pct, c.jvm_heap_used_pct, c.last_sync_error]);
 }
 
 export function Dashboard() {
   const [rows, setRows] = useState<ClusterSummary[] | null>(null);
+  const [vms, setVms] = useState<number | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(() => storedNumber("ecm.refresh", 30));
-  const [adding, setAdding] = useState(false);
-  const load = useCallback(() => { api<ClusterSummary[]>("/api/clusters").then(setRows).catch(() => {}); }, []);
+  const [changed, setChanged] = useState<string[]>([]);
+  const seen = useRef<Map<string, string>>(new Map());
+  const timer = useRef<number>();
+
+  const load = useCallback(() => {
+    api<ClusterSummary[]>("/api/clusters").then((next) => {
+      const before = seen.current;
+      const after = new Map(next.map((c) => [c.id, fingerprint(c)]));
+      const flagged = next.filter((c) => before.has(c.id) && before.get(c.id) !== after.get(c.id)).map((c) => c.id);
+      seen.current = after;
+      setRows(next);
+      setLoadError(null);
+      if (flagged.length) {
+        setChanged(flagged);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setChanged([]), 1500);
+      }
+    }).catch((e) => setLoadError(e instanceof ApiError ? e.message : String(e)));
+    api<Infrastructure>("/api/infrastructure")
+      .then((d) => setVms(Array.isArray(d.vms) ? d.vms.length : null))
+      .catch(() => setVms(null));
+  }, []);
   useEffect(load, [load]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
   useInterval(load, seconds);
 
+  const loading = rows === null && !loadError;
+  const list = rows ?? [];
+  const nodeTotal = list.reduce((n, c) => n + c.nodes, 0);
+  const worst = list.reduce<string | null>((w, c) => (RANK[c.health ?? ""] > (RANK[w ?? ""] ?? 0) ? c.health : w), null);
+  const lastSync = list.map((c) => c.last_sync_at).filter(Boolean).sort().pop() ?? null;
+  const empty = rows?.length === 0;
+
+  const columns: EuiBasicTableColumn<ClusterSummary>[] = [
+    { field: "name", name: "Name", sortable: true, render: (_: string, c: ClusterSummary) => (
+      <div className="ecm-stack">
+        <EuiLink href={`#/clusters/${c.id}`} className="ecm-mono ecm-nowrap">{c.name}</EuiLink>
+        <div className="ecm-mono ecm-small ecm-clip" title={`Cluster UUID ${c.uuid ?? ""}`}>{c.uuid}</div>
+      </div>) },
+    { field: "health", name: "Health", sortable: true, render: (h: ClusterSummary["health"]) => <HealthBadge status={h} /> },
+    { field: "version", name: "Version", render: (v: string | null) => v ? <EuiBadge color="hollow">{v}</EuiBadge> : "—" },
+    { name: "Nodes (data)", sortable: (c: ClusterSummary) => c.nodes,
+      render: (c: ClusterSummary) => `${c.nodes} (${c.data_nodes})` },
+    { name: "Infrastructure", render: (c: ClusterSummary) => (
+      <div className="ecm-stack">
+        {c.infrastructure.proxmox_hosts.length
+          ? <span className="ecm-mono">{c.infrastructure.proxmox_hosts.join(", ")}</span>
+          : <span className="ecm-muted ecm-nowrap">Not linked</span>}
+        <div className="ecm-small">{c.infrastructure.verified_links}/{c.infrastructure.total_nodes} nodes linked</div>
+      </div>) },
+    { field: "ownership", name: "Ownership", render: (o: string) => <OwnershipBadge value={o} /> },
+    { name: "Last sync", sortable: (c: ClusterSummary) => c.last_sync_at ?? "", render: (c: ClusterSummary) => (
+      <div className="ecm-stack">
+        <span className="ecm-nowrap">{ago(c.last_sync_at)}</span>
+        {c.last_sync_error && <div role="alert" className="ecm-error-text">{c.last_sync_error}</div>}
+      </div>) },
+  ];
+
   return (
-    <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-medium">Clusters</h2>
-        <div className="flex items-center gap-4">
-          <RefreshControl seconds={seconds} onChange={setSeconds} onNow={load} />
-          <button className="rounded border px-3 py-1 text-sm" onClick={() => setAdding(!adding)}>
-            Register cluster
-          </button>
+    <>
+      <section className="ecm-summary" aria-labelledby="summary-title">
+        <div className="ecm-summary__intro">
+          <h2 id="summary-title" className="ecm-h2">What the last sync saw.</h2>
+          <p className="ecm-lede ecm-lede--small">
+            Counts come from the most recent read-only sync of Proxmox and Elasticsearch.</p>
         </div>
-      </div>
-      {adding && <RegisterForm onDone={() => { setAdding(false); load(); }} />}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead><tr>
-            <th>Name</th><th>Health</th><th>Version</th><th>Nodes (data)</th><th>Infrastructure</th>
-            <th>Storage</th><th>JVM heap</th><th>Status</th><th>Last sync</th>
-          </tr></thead>
-          <tbody>
-            {rows?.map((c) => (
-              <tr key={c.id} className="border-t align-top">
-                <td><a className="underline" href={`#/clusters/${c.id}`}>{c.name}</a>
-                  <div className="font-mono text-xs text-slate-500" title="Cluster UUID">{c.uuid}</div></td>
-                <td><HealthBadge status={c.health} /></td>
-                <td>{c.version}</td>
-                <td>{c.nodes} ({c.data_nodes})</td>
-                <td>{c.infrastructure.proxmox_hosts.join(", ") || "—"}
-                  <div className="text-xs text-slate-500">
-                    {c.infrastructure.verified_links}/{c.infrastructure.total_nodes} nodes linked</div></td>
-                <td>{c.storage.used_pct ?? "—"}% <span className="text-xs text-slate-500">
-                  of {bytes(c.storage.total_bytes)}</span></td>
-                <td>{c.jvm_heap_used_pct ?? "—"}%</td>
-                <td><OwnershipBadge value={c.ownership} /></td>
-                <td>{ago(c.last_sync_at)}
-                  {c.last_sync_error && <div role="alert" className="text-xs text-red-600">{c.last_sync_error}</div>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows?.length === 0 && <p className="mt-2 text-sm text-slate-500">
-        No clusters yet. Register an existing cluster to inspect it. Nothing is changed on it.</p>}
-    </section>
+        <div className="ecm-summary__tiles">
+          <StatTile index={0} loading={loading} icon="cluster" label="Clusters" value={list.length}
+            health={worst ? <HealthBadge status={worst} /> : undefined}
+            description={empty
+              ? <>Add a connection to start discovery. <EuiLink href="#/infrastructure">Go to Infrastructure</EuiLink></>
+              : "Registered with ECM"} />
+          <StatTile index={1} loading={loading} icon="compute" label="Nodes" value={nodeTotal}
+            description={empty ? "Add a connection to start discovery." : "Seen in the last sync"} />
+          <StatTile index={2} loading={loading || vms === undefined} icon="storage" label="Virtual machines"
+            value={vms ?? "—"}
+            description={vms === null ? "Not available: could not read Proxmox data."
+              : empty ? "Add a connection to start discovery." : "Seen on Proxmox"} />
+        </div>
+        <div className="ecm-summary__caption">
+          <span>Last sync {ago(lastSync)}</span>
+          <RefreshControl seconds={seconds} onChange={setSeconds} onNow={load} />
+        </div>
+      </section>
+
+      <section id="clusters" className="ecm-about" aria-labelledby="clusters-title">
+        <p className="ecm-eyebrow"><span className="ecm-square" aria-hidden="true" />Clusters</p>
+        <div className="ecm-about__main">
+          <h2 id="clusters-title" className="ecm-h2">Every registered cluster, with the machines behind it.</h2>
+          <p className="ecm-lede ecm-lede--small">Open a cluster to see its nodes, linked VMs and storage.</p>
+          {loadError && (
+            <EuiCallOut color="danger" role="alert" iconType="warning" title="Could not load clusters"
+              className="ecm-gap">
+              <p>{loadError}</p>
+              <EuiButton size="s" onClick={load}>Retry</EuiButton>
+            </EuiCallOut>)}
+          <div className="ecm-table">
+            {empty ? (
+              <EuiEmptyPrompt iconType="database" titleSize="s" title={<h3>No clusters registered</h3>}
+                body={<p>Add a connection to start discovery.</p>}
+                actions={<EuiButton fill href="#/infrastructure">Add connection</EuiButton>} />
+            ) : (
+              <>
+                <div className="ecm-sr" role="status">
+                  {changed.length ? `${changed.length} cluster${changed.length > 1 ? "s" : ""} updated` : ""}</div>
+                <EuiInMemoryTable<ClusterSummary> tableCaption="Registered clusters" items={list} columns={columns}
+                  loading={loading} itemId="id" sorting={{ sort: { field: "name", direction: "asc" } }}
+                  search={{ box: { incremental: true, placeholder: "Search clusters", "aria-label": "Search clusters" } }}
+                  rowProps={(c) => ({ className: changed.includes(c.id) ? "ecm-row-changed" : undefined })}
+                  responsiveBreakpoint="m" tableLayout="auto" />
+              </>)}
+          </div>
+          {!empty && <EuiButtonEmpty iconType="plusInCircle" href="#/infrastructure" className="ecm-gap">
+            Add connection</EuiButtonEmpty>}
+        </div>
+      </section>
+    </>
   );
 }
+
