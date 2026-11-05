@@ -97,9 +97,9 @@ export function Operations() {
           body={<p>Jobs started from ECM appear here with their state and phase.</p>} />)}
       {current && (
         <div className="ecm-ops__rail">
-          <div className="ecm-ops__side ecm-ops__side--prev">{side(prev, "Previous")}</div>
+          <div className="ecm-ops__side ecm-ops__side--prev">{side(prev, "Newer")}</div>
           <OperationCard op={current} />
-          <div className="ecm-ops__side ecm-ops__side--next">{side(next, "Next")}</div>
+          <div className="ecm-ops__side ecm-ops__side--next">{side(next, "Older")}</div>
         </div>)}
     </section>
   );
