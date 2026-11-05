@@ -5,7 +5,7 @@
 ## Rules (hard)
 - Never commit secrets. Real env files are gitignored. Commit only `*.example`/`*.template` copies with placeholders. Don't name source files/dirs with `secret`, `token`, or `password` (the parent .gitignore silently ignores them).
 - Never run `terraform apply`/`destroy`, infrastructure-changing Ansible, or anything that mutates Proxmox or an existing ES cluster without explicit user approval.
-- Never treat the existing es01–es09 cluster or any discovered VM as disposable.
+- Never treat the existing live cluster (es01–es06) or any discovered VM as disposable.
 - No secrets in Git. Redact secrets from logs.
 - Keep this directory independent of the parent repo: no paths outside `apps/elastic-cluster-manager/`.
 - No Kubernetes dependencies. Docker only hosts the management app.

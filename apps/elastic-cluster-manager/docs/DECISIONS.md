@@ -16,7 +16,7 @@
 4. **Template:** selected by **VMID, default 8000**, as a setting (`ECM_DEFAULT_TEMPLATE_VMID`). `ECM_DEFAULT_TEMPLATE_NAME=ubuntu-25.04` is the fallback. Open question for the spike: confirm 8000 is a template on which node.
 5. **Network:** VLAN 10, `192.168.10.0/24`. A DHCP-excluded static range is still to be chosen by the user. UniFi version is still unknown.
 6. **Hosting:** Caddy on `infra.lab.thewortmans.org`. The app is `ecm.lab.thewortmans.org`.
-7. **es01–es09 is live.** Read-only discovery and adoption target only.
+7. **The existing cluster (es01–es06) is live.** Read-only discovery and adoption target only.
 8. **Admin credential:** an Argon2id hash in the `ECM_ADMIN_PASSWORD_HASH` environment variable. This is more secure than a plaintext password variable, and a first-run page would be an open window before setup.
 9. **Secrets policy (hard rule):** secrets are never committed. Real env files are gitignored. Only `*.example` or `*.template` copies with placeholders are committed.
 
