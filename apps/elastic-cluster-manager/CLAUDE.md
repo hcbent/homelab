@@ -1,6 +1,6 @@
 # CLAUDE.md — Elasticsearch Cluster Manager
 
-**Status:** Phase 1 done. Phase 2 (foundation) deployed and verified on infra. Phase 3 (read-only discovery + dashboard) implemented and tested against synthetic fixtures only; NOT yet run against live Proxmox/Elasticsearch. Frontend converted to EUI (see `docs/DECISIONS.md`). Phases 4+ not started. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
+**Status:** Phase 1 done. Phase 2 (foundation) deployed and verified on infra. Phase 3 (read-only discovery + dashboard) implemented and tested against synthetic fixtures only; NOT yet run against live Proxmox/Elasticsearch. Frontend converted to EUI (see `docs/DECISIONS.md`). Phase 3 and Milestone 0 (provider spike, go for bpg/proxmox, see `spike/FINDINGS.md`) are verified on live infrastructure. Phase 4 has started: the pure desired-state package is done, the rest is not. See `ARCHITECTURE.md`, `docs/REPO_AUDIT.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`.
 
 ## Rules (hard)
 - Never commit secrets. Real env files are gitignored. Commit only `*.example`/`*.template` copies with placeholders. Don't name source files/dirs with `secret`, `token`, or `password` (the parent .gitignore silently ignores them).

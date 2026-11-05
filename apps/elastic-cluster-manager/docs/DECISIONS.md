@@ -46,3 +46,13 @@
   - The wizard step strip is `EuiStepsHorizontal`, not a custom 3x2 grid.
   - The sign-in headline wraps to three lines below about 1100px, because the required copy is longer than the reference headline.
 - **Browser evidence (Chromium via Playwright against the production build, mocked API, 1440, 820 and 390 px wide):** fonts loaded and `document.fonts.check` true for Inter 400 to 700 and Roboto Mono 400 and 500; no horizontal overflow on any screen; every interactive target at least 44 by 44; the sign-in entrance and dashboard tile stagger run once and do not replay on refresh; below-the-fold reveals stay hidden until reached, then play once; rapid scroll down and up twice, reload at a scrolled position, resize and a reduced-motion toggle during playback all leave every reachable section visible; reduced motion runs no entrance animations.
+
+## Phase 4 implementation notes (in progress)
+- **Done, pure and tested:** `backend/app/desired/` holds the desired-state models, validation, topology presets and the two config rules. No database, API or Proxmox access yet.
+- **Roles:** `default` omits `node.roles`, `coordinating` renders `[]`, `custom` renders an explicit sorted list. Custom needs a non-empty list of valid roles, and `voting_only` needs `master`.
+- **Bootstrap:** `cluster.initial_master_nodes` is rendered only for the `create` operation while `bootstrapped_at` is unset, and lists only electable master nodes (not `voting_only`). A single-node cluster uses `discovery.type: single-node` and never `initial_master_nodes`.
+- **Cluster rules (errors):** at least one electable master and one data node; a multi-node cluster needs at least 3 master-eligible nodes; unique node names and addresses; a node that holds data needs `data_disk_gb`; heap is at most half of RAM and at most 31 GB. Settings that ECM renders itself (`node.roles`, `cluster.name`, discovery and path settings, and similar) cannot be overridden through `extra_settings`.
+- **Warnings (advisory):** an even master-eligible count, master-eligible nodes pinned to the same Proxmox host, and the single-node yellow-health note.
+- **Presets:** `single_node`, `three_node` (all default roles) and `dedicated_masters` (3 master-only nodes plus N data and ingest nodes, optional coordinating nodes). Defaults are overridable and still validated.
+- **Not started:** version catalog, placement scoring, network profiles and IP allocation, the Terraform runner and its approval flow, Ansible roles, the wizard backend and the dry-run mode.
+
