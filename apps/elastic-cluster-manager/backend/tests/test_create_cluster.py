@@ -549,7 +549,7 @@ def test_a_stored_create_from_before_the_setting_existed_still_renders_with_host
     from app.provisioning.operation import render_input
     _, op, _ = plan(session)
     params = {k: v for k, v in op.params.items() if k != "cpu_type"}
-    assert render_input(params, "b4c557d86a5c400f9943ec3b1830a73f", "https://pve.test:8006", False).cpu_type == "host"
+    assert render_input(params, "0123456789abcdef0123456789abcdef", "https://pve.test:8006", False).cpu_type == "host"
 
 
 def test_post_clusters_takes_a_cpu_type_and_refuses_a_bad_one(logged_in, session, pve, monkeypatch):
