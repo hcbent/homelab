@@ -26,14 +26,14 @@ services:
       retries: 10
 
   migrate:
-    build: {context: ../backend}
+    build: {context: ../backend, target: app}
     command: python -m app.migrate
     environment: *app-env
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"
 
   api:
-    build: {context: ../backend}
+    build: {context: ../backend, target: app}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment: *app-env
     depends_on: {migrate: {condition: service_completed_successfully}}
@@ -41,13 +41,21 @@ services:
     # Bound to the compose network only; Caddy reaches it through `web`.
 
   worker:
-    build: {context: ../backend}
+    # The only image with Terraform and the vendored provider (see backend/Dockerfile).
+    build: {context: ../backend, target: worker}
     command: procrastinate --app=app.jobs.queue worker
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # Where Terraform keeps state (one schema per cluster). Handed to Terraform as PG_CONN_STR and nowhere
+      # else. Defaults to ECM's own database; override with ECM_TF_STATE_URL to use a separate one.
+      ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-postgresql://ecm:${POSTGRES_PASSWORD}@postgres:5432/ecm}
     depends_on: {migrate: {condition: service_completed_successfully}}
     restart: unless-stopped
     volumes:
-      - appdata:/data   # per-cluster working dirs, state snapshots (later phases)
+      - appdata:/data   # state snapshots (later phases)
+      # Terraform workspaces. A separate volume, because appdata already exists on deployed hosts owned by
+      # root, while a new volume takes the ownership the image gives /data/clusters (the ecm user).
+      - clusters:/data/clusters
 
   web:
     build: {context: ../frontend}
@@ -59,3 +67,4 @@ services:
 volumes:
   pgdata:
   appdata:
+  clusters:
