@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.dburl import libpq_url
+
 
 class Settings(BaseSettings):
     """All configuration comes from ECM_* environment variables (see deploy/.env.example)."""
@@ -27,7 +29,8 @@ class Settings(BaseSettings):
     terraform_plugin_dir: str | None = None
     tf_workspace_root: str = "/data/clusters"
     # libpq URL of the database that holds Terraform state (one schema per cluster). Handed to Terraform as
-    # PG_CONN_STR and nowhere else. Empty means Terraform operations cannot run.
+    # PG_CONN_STR and nowhere else. Empty means "use ECM's own database" (see tf_state_conninfo). If you set it,
+    # percent-encode any of # / ? @ : % in the password.
     tf_state_url: SecretStr = SecretStr("")
 
     # Proxmox VMIDs handed out to new nodes (DECISIONS: disposable VMs use 5xx)
@@ -38,6 +41,12 @@ class Settings(BaseSettings):
     default_template_vmid: int | None = None
     default_template_name: str | None = None
     default_storage: str = "tank"
+
+
+def tf_state_conninfo(settings: Settings) -> str:
+    """The connection string Terraform keeps its state in: the explicit setting, else ECM's own database, built
+    from its parts so a password with special characters survives. Empty when neither is available."""
+    return settings.tf_state_url.get_secret_value() or libpq_url(settings.database_url)
 
 
 @lru_cache

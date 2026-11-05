@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app import audit, crypto
-from app.config import get_settings
+from app.config import get_settings, tf_state_conninfo
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
 from app.models import Cluster, Credential, Operation, ProxmoxConnection
@@ -176,9 +176,9 @@ class _Handlers:
         """The only credentials Terraform gets: the Proxmox token and the state database."""
         conn = _connection(self.db, self.op.params)
         secret = crypto.decrypt(self.db.get(Credential, conn.credential_id).ciphertext)
-        state_url = get_settings().tf_state_url.get_secret_value()
+        state_url = tf_state_conninfo(get_settings())
         if not state_url:
-            raise TerraformError("ECM_TF_STATE_URL is not set, so Terraform state has nowhere to live")
+            raise TerraformError("Terraform state has nowhere to live: set ECM_TF_STATE_URL, or run ECM on PostgreSQL")
         return {"PROXMOX_VE_API_TOKEN": f"{conn.token_id}={secret}", "PG_CONN_STR": state_url}
 
     def _fresh(self) -> Operation:

@@ -11,6 +11,7 @@ Safety properties, each covered by a test:
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -18,10 +19,31 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
+from urllib.parse import unquote
 
 from app.crypto import redact, register_secret
 from app.provisioning.plan import PlanSummary, summarize_plan
 from app.provisioning.workspace import PLAN_FILE, Workspace
+
+
+def _url_password(value: str) -> list[str]:
+    """What to mask from a URL such as postgresql://user:pw@host/db: the password as written and decoded, and
+    the pieces of it a URL parser may stop at and echo back.
+
+    This is deliberately lenient. A password with a raw # / or ? makes a strict parser see no userinfo at all,
+    and Terraform then prints the part of the URL it kept, which is the start of the password. So the userinfo
+    is everything up to the last @, and the password is split at the characters that end a URL component.
+    """
+    scheme_end = value.find("://")
+    if scheme_end < 0:
+        return []
+    userinfo, at, _ = value[scheme_end + 3:].rpartition("@")
+    if not at or ":" not in userinfo:
+        return []
+    password = userinfo.split(":", 1)[1]
+    forms = {password, unquote(password)}  # as written, and decoded
+    pieces = {piece for form in forms for piece in re.split(r"[#/?]", form)}
+    return sorted(p for p in forms | pieces if p)
 
 
 class TerraformError(Exception):
@@ -74,6 +96,8 @@ class CliTerraformRunner:
     def _env(self, ws: Workspace, extra: Mapping[str, str]) -> dict[str, str]:
         for value in extra.values():
             register_secret(value)  # anything Terraform echoes back is masked
+            for part in _url_password(value):
+                register_secret(part)  # and so is the password on its own, in case only a piece is echoed
         home = ws.dir / ".tfhome"
         home.mkdir(exist_ok=True)
         env = {

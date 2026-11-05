@@ -46,9 +46,10 @@ services:
     command: procrastinate --app=app.jobs.queue worker
     environment:
       <<: *app-env
-      # Where Terraform keeps state (one schema per cluster). Handed to Terraform as PG_CONN_STR and nowhere
-      # else. Defaults to ECM's own database; override with ECM_TF_STATE_URL to use a separate one.
-      ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-postgresql://ecm:${POSTGRES_PASSWORD}@postgres:5432/ecm}
+      # Where Terraform keeps state (one schema per cluster). Empty means ECM's own database, which the app
+      # builds from ECM_DATABASE_URL with every part percent-encoded (a password with # or @ is fine). Set
+      # ECM_TF_STATE_URL in .env to use a separate database. Handed to Terraform as PG_CONN_STR and nowhere else.
+      ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-}
     depends_on: {migrate: {condition: service_completed_successfully}}
     restart: unless-stopped
     volumes:
