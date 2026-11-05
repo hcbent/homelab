@@ -476,3 +476,16 @@ def test_the_plan_says_why_a_host_was_not_used(session, pve):
     notes = plan(session)[2].warnings
     assert any(w.startswith("pve1 was not used: not enough free RAM") for w in notes)
     assert any("master quorum" in w for w in notes)                  # the consequence, and now its cause
+
+
+# ---- one token for two jobs ----------------------------------------------------------------------------
+
+def test_the_plan_nudges_towards_a_separate_terraform_token_until_there_is_one(session, pve):
+    assert any("one token for both discovery and Terraform" in w for w in plan(session)[2].warnings)
+
+    cred = Credential(kind="proxmox_token", name="tf", ciphertext=crypto.encrypt("terraform-secret-1111"))
+    session.add(cred)
+    session.flush()
+    pve.terraform_credential_id, pve.terraform_token_id = cred.id, "tf@pve!terraform"
+    session.commit()
+    assert not any("one token for both" in w for w in plan(session, name="lab-c")[2].warnings)

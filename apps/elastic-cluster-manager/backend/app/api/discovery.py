@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, HttpUrl, StringConstraints
@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import audit, auth, crypto
+from app.config import get_settings
 from app.db import get_db
 from app.discovery import factory, proxmox, sync
 from app.discovery.es import is_data_node
@@ -43,6 +44,7 @@ class ProxmoxIn(BaseModel):
 
 def _conn(c: ProxmoxConnection) -> dict:  # never includes the secret
     return {"id": c.id, "name": c.name, "api_url": c.api_url, "token_id": c.token_id,
+            "terraform_token_id": c.terraform_token_id,  # None means Terraform uses the discovery token
             "verify_tls": c.tls_verify, "last_sync_at": c.last_sync_at,
             "last_sync_error": c.last_sync_error}
 
@@ -74,6 +76,10 @@ def add_connection(body: ProxmoxIn, db: Session = Depends(get_db),
 class ProxmoxCredentialIn(BaseModel):
     token_secret: Trimmed = Field(min_length=8)
     token_id: Trimmed | None = Field(default=None, min_length=3, description="only if the token itself changed")
+    # "discovery" is the token ECM reads Proxmox with. "terraform" is the narrower one Terraform creates VMs with.
+    purpose: Literal["discovery", "terraform"] = "discovery"
+    pool_id: str = Field(default="ecm", min_length=1, max_length=64)  # terraform: the pool it must be able to use
+    datastore: str | None = None  # terraform: where it creates disks (default ECM_DEFAULT_STORAGE)
 
 
 @router.put("/proxmox/{conn_id}/credential")
@@ -84,6 +90,8 @@ def replace_proxmox_credential(conn_id: str, body: ProxmoxCredentialIn, db: Sess
     conn = db.get(ProxmoxConnection, conn_id)
     if not conn:
         raise HTTPException(404, "Not found")
+    if body.purpose == "terraform":
+        return _replace_terraform_token(db, conn, body, user)
     token_id = body.token_id or conn.token_id
     try:
         nodes = factory.proxmox_client_for(conn, token_id, body.token_secret).nodes()
@@ -108,6 +116,46 @@ def replace_proxmox_credential(conn_id: str, body: ProxmoxCredentialIn, db: Sess
     except DiscoveryError:
         pass
     return _conn(conn)
+
+
+def _replace_terraform_token(db: Session, conn: ProxmoxConnection, body: ProxmoxCredentialIn, user: User) -> dict:
+    """Set or replace the token Terraform uses. It is checked with a read-only request for what it may do, and must
+    be able to create VMs in the pool; the rest is advice. A failed check changes nothing."""
+    token_id = body.token_id or conn.terraform_token_id
+    if not token_id:
+        raise HTTPException(422, "send token_id: this connection has no separate Terraform token yet")
+    datastore = body.datastore or get_settings().default_storage
+
+    def refuse(code: int, message: str):
+        audit.record(db, user.username, "proxmox.credential_rejected", "proxmox_connection", conn.id,
+                     token_id=token_id, purpose="terraform")
+        raise HTTPException(code, message)
+
+    try:
+        perms = factory.proxmox_client_for(conn, token_id, body.token_secret).permissions()
+    except DiscoveryError as e:
+        if e.status in (401, 403):
+            refuse(422, f"Proxmox rejected that token, so nothing was changed ({e})")
+        refuse(502, f"Could not reach Proxmox to test the token, so nothing was changed ({e})")
+    problems, advice = proxmox.check_terraform_rights(perms, body.pool_id, datastore)
+    if problems:
+        refuse(422, f"Proxmox accepted that token, but {'; '.join(problems)}. Nothing was changed")
+
+    cred = db.get(Credential, conn.terraform_credential_id) if conn.terraform_credential_id else None
+    if cred is None:
+        cred = Credential(kind="proxmox_token", name=f"proxmox-terraform:{conn.name}",
+                          ciphertext=crypto.encrypt(body.token_secret))
+        db.add(cred)
+        db.flush()
+        conn.terraform_credential_id = cred.id
+    else:
+        cred.ciphertext = crypto.encrypt(body.token_secret)
+        cred.rotated_at = datetime.now(UTC)
+    conn.terraform_token_id = token_id
+    db.commit()
+    audit.record(db, user.username, "proxmox.credential_replace", "proxmox_connection", conn.id,
+                 token_id=token_id, purpose="terraform")
+    return {**_conn(conn), "warnings": advice}
 
 
 @router.post("/proxmox/{conn_id}/sync")

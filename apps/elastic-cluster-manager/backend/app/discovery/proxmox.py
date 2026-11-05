@@ -28,6 +28,10 @@ class ProxmoxClient:
     def nodes(self) -> list[dict]:
         return self._get("/nodes", "list nodes")
 
+    def permissions(self) -> dict:
+        """What this token may do, as {path: {privilege: 1}}. Always allowed, and read-only."""
+        return self._get("/access/permissions", "read the token's permissions")
+
     def vms(self, node: str) -> list[dict]:
         return self._get(f"/nodes/{node}/qemu", f"list VMs on {node}")
 
@@ -156,6 +160,46 @@ def check_node_usage(nodes: list[dict]) -> None:
         raise InsufficientRights(
             "Proxmox reports no CPU or memory for any online node, so this API token cannot audit them; it needs "
             "the Sys.Audit privilege, for example the PVEAuditor role on /")
+
+
+def has_privilege(perms: dict, path: str, privilege: str) -> bool:
+    """Whether the token holds a privilege on a path.
+
+    Proxmox reports the effective privileges per path. A path that is listed is authoritative, so an explicit
+    entry on /pool/ecm replaces what / grants (it does not add to it). Only a path that is not listed falls back
+    to its nearest listed parent.
+    """
+    parts = [p for p in path.strip("/").split("/") if p]
+    for depth in range(len(parts), -1, -1):
+        here = "/" + "/".join(parts[:depth])
+        if here in perms:
+            return privilege in (perms[here] or {})
+    return False
+
+
+# Rights that let a token change permissions or system settings. Terraform needs none of them.
+_TOO_BROAD = ("Permissions.Modify", "User.Modify", "Sys.Modify")
+
+
+def check_terraform_rights(perms: dict, pool_id: str, datastore: str) -> tuple[list[str], list[str]]:
+    """(problems that make the token unusable for creating VMs, advice that does not block it).
+
+    The one hard requirement is creating VMs in the pool, which is where ECM puts everything it makes (a token
+    with rights on single VMIDs loses them when a VM is destroyed; see spike/FINDINGS.md). The rest is advice,
+    because the exact set Terraform needs depends on the VM configuration and Proxmox version.
+    """
+    problems: list[str] = []
+    advice: list[str] = []
+    if not has_privilege(perms, f"/pool/{pool_id}", "VM.Allocate"):
+        problems.append(f"it cannot create VMs in the pool '{pool_id}' (no VM.Allocate on /pool/{pool_id}); "
+                        "check that the pool exists and the token has rights on it")
+    if not has_privilege(perms, f"/storage/{datastore}", "Datastore.AllocateSpace"):
+        advice.append(f"it has no Datastore.AllocateSpace on /storage/{datastore}, so creating disks there will fail")
+    broad = [p for p in _TOO_BROAD if has_privilege(perms, "/", p)]
+    if broad:
+        advice.append(f"it can also change permissions or system settings ({', '.join(broad)}); Terraform does not "
+                      "need that, so a narrower token is safer")
+    return problems, advice
 
 
 def collect(client: ProxmoxClient) -> InfraSnapshot:

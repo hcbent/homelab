@@ -90,6 +90,9 @@ class ProxmoxConnection(Base):
     api_url: Mapped[str] = mapped_column(String(255))
     token_id: Mapped[str] = mapped_column(String(255))  # user@realm!name, not secret
     credential_id: Mapped[str] = mapped_column(ForeignKey("credentials.id"))
+    # Terraform's own, narrower token (pool-scoped). Unset means Terraform falls back to the discovery token above.
+    terraform_token_id: Mapped[str | None] = mapped_column(String(255))
+    terraform_credential_id: Mapped[str | None] = mapped_column(ForeignKey("credentials.id"))
     tls_verify: Mapped[bool] = mapped_column(Boolean, default=True)
     tls_ca_pem: Mapped[str | None] = mapped_column(Text)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -310,6 +310,10 @@ def resolve(db: Session, req: CreateRequest, own_cluster: str | None = None) -> 
 
     notes = list(warnings(state)) + [i.message for i in placement.issues if i.severity == "warning"]
     notes += [f"{host} was not used: {'; '.join(why)}" for host, why in sorted(placement.excluded.items())]
+    if not (conn.terraform_credential_id and conn.terraform_token_id):
+        notes.append("this Proxmox connection uses one token for both discovery and Terraform, so that token needs "
+                     "read access everywhere and write access to the pool; give Terraform its own narrower token "
+                     "(PUT /api/proxmox/{id}/credential with purpose terraform)")
     visible = db.scalar(select(func.count()).select_from(Vm).where(Vm.connection_id == conn.id,
                                                                      Vm.is_template.is_(False)))
     if not visible:

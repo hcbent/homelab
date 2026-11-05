@@ -173,13 +173,20 @@ class _Handlers:
         return render_workspace(render_input(self.op.params, self.cluster_id, conn.api_url, not conn.tls_verify))
 
     def _env(self) -> Mapping[str, str]:
-        """The only credentials Terraform gets: the Proxmox token and the state database."""
+        """The only credentials Terraform gets: the Proxmox token and the state database.
+
+        The token is the connection's own Terraform token when it has one (narrow, pool-scoped), and otherwise the
+        discovery token, so connections set up before the split keep working.
+        """
         conn = _connection(self.db, self.op.params)
-        secret = crypto.decrypt(self.db.get(Credential, conn.credential_id).ciphertext)
+        separate = bool(conn.terraform_credential_id and conn.terraform_token_id)
+        credential_id = conn.terraform_credential_id if separate else conn.credential_id
+        token_id = conn.terraform_token_id if separate else conn.token_id
+        secret = crypto.decrypt(self.db.get(Credential, credential_id).ciphertext)
         state_url = tf_state_conninfo(get_settings())
         if not state_url:
             raise TerraformError("Terraform state has nowhere to live: set ECM_TF_STATE_URL, or run ECM on PostgreSQL")
-        return {"PROXMOX_VE_API_TOKEN": f"{conn.token_id}={secret}", "PG_CONN_STR": state_url}
+        return {"PROXMOX_VE_API_TOKEN": f"{token_id}={secret}", "PG_CONN_STR": state_url}
 
     def _fresh(self) -> Operation:
         self.db.refresh(self.op)
