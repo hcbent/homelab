@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     # PG_CONN_STR and nowhere else. Empty means "use ECM's own database" (see tf_state_conninfo). If you set it,
     # percent-encode any of # / ? @ : % in the password.
     tf_state_url: SecretStr = SecretStr("")
+    # TLS for the derived state connection. Terraform's driver requires TLS by default, but the Postgres in the
+    # compose stack does not offer it, and the connection never leaves the compose network. Use "require" or
+    # "verify-full" for a database that does. Ignored when ECM_TF_STATE_URL is set, which is used as written.
+    tf_state_sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "disable"
 
     # Proxmox VMIDs handed out to new nodes (DECISIONS: disposable VMs use 5xx)
     vmid_range_start: int = 500
@@ -46,7 +51,7 @@ class Settings(BaseSettings):
 def tf_state_conninfo(settings: Settings) -> str:
     """The connection string Terraform keeps its state in: the explicit setting, else ECM's own database, built
     from its parts so a password with special characters survives. Empty when neither is available."""
-    return settings.tf_state_url.get_secret_value() or libpq_url(settings.database_url)
+    return settings.tf_state_url.get_secret_value() or libpq_url(settings.database_url, settings.tf_state_sslmode)
 
 
 @lru_cache

@@ -8,8 +8,11 @@ from urllib.parse import quote, urlencode
 from sqlalchemy.engine import make_url
 
 
-def libpq_url(sqlalchemy_url: str) -> str:
+def libpq_url(sqlalchemy_url: str, sslmode: str | None = None) -> str:
     """postgresql+psycopg://user:pw@host:5432/db  ->  postgresql://user:pw@host:5432/db, encoded.
+
+    `sslmode` is used when the URL does not choose one. That matters for Terraform: its Postgres driver (lib/pq)
+    requires TLS unless told otherwise, and does not understand "prefer" or "allow", which psycopg does.
 
     Returns an empty string for anything that is not PostgreSQL (the tests run on SQLite).
     """
@@ -27,5 +30,8 @@ def libpq_url(sqlalchemy_url: str) -> str:
         host = f"[{host}]"
     port = f":{url.port}" if url.port else ""
     database = "/" + quote(url.database, safe="") if url.database else ""
-    query = "?" + urlencode(dict(url.query), doseq=True) if url.query else ""
+    options = dict(url.query)
+    if sslmode and options.get("sslmode") in (None, "prefer", "allow"):
+        options["sslmode"] = sslmode
+    query = "?" + urlencode(options, doseq=True) if options else ""
     return f"postgresql://{auth}{host}{port}{database}{query}"

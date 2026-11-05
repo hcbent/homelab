@@ -144,3 +144,83 @@ def test_values_without_a_password_register_nothing(tmp_path, monkeypatch, value
     monkeypatch.setattr(crypto, "_known", set())
     CliTerraformRunner()._env(Workspace(tmp_path), {"PG_CONN_STR": value})
     assert crypto._known <= {value}                                  # only the whole value, if long enough
+
+
+# ---- TLS: Terraform's driver requires it unless told otherwise --------------------------------------------
+
+def derived(database_url, **kw):
+    return tf_state_conninfo(Settings(database_url=database_url, tf_state_url="", **kw))
+
+
+def test_the_derived_url_disables_tls_by_default_because_the_bundled_postgres_has_none():
+    assert urlsplit(derived("postgresql+psycopg://ecm:pw-1234@postgres:5432/ecm")).query == "sslmode=disable"
+
+
+def test_the_sslmode_is_configurable_and_validated():
+    assert urlsplit(derived("postgresql+psycopg://u:p@db/x", tf_state_sslmode="verify-full")).query == "sslmode=verify-full"
+    with pytest.raises(ValueError):
+        Settings(tf_state_sslmode="prefer")                          # lib/pq does not understand it
+
+
+@pytest.mark.parametrize("chosen, expected", [("require", "require"), ("verify-full", "verify-full"),
+                                              ("disable", "disable"), ("prefer", "disable"), ("allow", "disable")])
+def test_an_sslmode_in_the_database_url_wins_unless_the_driver_cannot_use_it(chosen, expected):
+    url = derived(f"postgresql+psycopg://u:p@db/x?sslmode={chosen}")
+    assert urlsplit(url).query == f"sslmode={expected}"              # psycopg's prefer/allow become the setting
+
+
+def test_other_query_options_are_kept_alongside_it():
+    assert urlsplit(derived("postgresql+psycopg://u:p@db/x?application_name=ecm")).query == (
+        "application_name=ecm&sslmode=disable")
+
+
+def test_an_explicit_state_url_is_used_exactly_as_written():
+    written = "postgresql://tf:other@elsewhere/tfstate"
+    assert tf_state_conninfo(Settings(database_url="postgresql+psycopg://u:p@db/x", tf_state_url=written)) == written
+
+
+class FakePostgres:
+    """A server like the bundled Postgres: it refuses TLS, and answers a plain startup with an error."""
+
+    def __init__(self):
+        import socketserver
+        import threading
+        self.first: list[str] = []
+        owner = self
+
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self):
+                code = int.from_bytes(self.request.recv(8)[4:8], "big")
+                owner.first.append("ssl-request" if code == 80877103 else "startup")
+                if code == 80877103:
+                    self.request.sendall(b"N")
+                else:
+                    body = b"SFATAL\x00C28000\x00Mfake server stop\x00\x00"
+                    self.request.sendall(b"E" + (len(body) + 4).to_bytes(4, "big") + body)
+
+        self.server = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@needs_terraform
+def test_without_sslmode_terraform_asks_for_tls_and_fails_exactly_as_it_did_on_infra(tmp_path, monkeypatch):
+    with FakePostgres() as pg:
+        message = init_error(tmp_path, f"postgresql://ecm:pw-1234@127.0.0.1:{pg.port}/ecm", monkeypatch)
+    assert "SSL is not enabled on the server" in message and pg.first == ["ssl-request"]
+
+
+@needs_terraform
+def test_the_derived_url_makes_terraform_skip_tls_and_reach_the_server(tmp_path, monkeypatch):
+    with FakePostgres() as pg:
+        url = derived(f"postgresql+psycopg://ecm:pw-1234@127.0.0.1:{pg.port}/ecm")
+        message = init_error(tmp_path, url, monkeypatch)
+    assert "SSL is not enabled" not in message and "fake server stop" in message   # it got past the TLS step
+    assert pg.first == ["startup"]

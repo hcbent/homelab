@@ -50,6 +50,7 @@ services:
       # builds from ECM_DATABASE_URL with every part percent-encoded (a password with # or @ is fine). Set
       # ECM_TF_STATE_URL in .env to use a separate database. Handed to Terraform as PG_CONN_STR and nowhere else.
       ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-}
+      ECM_TF_STATE_SSLMODE: ${ECM_TF_STATE_SSLMODE:-disable}
     depends_on: {migrate: {condition: service_completed_successfully}}
     restart: unless-stopped
     volumes:

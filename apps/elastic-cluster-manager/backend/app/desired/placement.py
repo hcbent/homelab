@@ -70,6 +70,7 @@ class PlacementIssue:
 @dataclass
 class PlacementResult:
     assignments: dict[str, Placement] = field(default_factory=dict)
+    excluded: dict[str, list[str]] = field(default_factory=dict)  # host -> why it took nothing (only unused hosts)
     issues: list[PlacementIssue] = field(default_factory=list)
     quorum_safe: bool = True
 
@@ -197,6 +198,7 @@ def recommend_placement(
     cluster: Counter = Counter(existing_node_counts or {})
     result = PlacementResult()
     known = {h.name for h in hosts}
+    why_not: dict[str, list[str]] = {}
 
     # Pinned nodes are inflexible, so they claim capacity first. Then masters, then the rest by RAM.
     def order(n: NodeSpec) -> tuple:
@@ -215,6 +217,7 @@ def recommend_placement(
             reasons, score = ledger.evaluate(h, node)
             if reasons:
                 rejected[h.name] = reasons
+                why_not.setdefault(h.name, reasons)
             else:
                 fits.append((h, score))
 
@@ -238,6 +241,8 @@ def recommend_placement(
 
     result.assignments = {n.name: result.assignments[n.name]
                           for n in state.nodes if n.name in result.assignments}
+    used = {p.host for p in result.assignments.values()}
+    result.excluded = {h: r for h, r in why_not.items() if h not in used}
     _quorum_findings(result, masters)
     return result
 

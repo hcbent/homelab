@@ -194,3 +194,27 @@ def test_host_views_from_stored_rows():
     assert list(p1.datastores) == ["tank"] and p1.datastores["tank"].shared   # inactive storage dropped
     assert views["pve2"].online and not views["pve2"].usage_known     # listed, but its capacity is unknown
     assert not views["pve3"].online
+
+
+# ---- saying why a host was not used --------------------------------------------------------------------
+
+def test_a_host_that_took_nothing_says_why():
+    hosts = [host("pve1", mem_used_gib=186), host("pve2"), host("pve3")]
+    got = recommend_placement(three_node(), hosts)
+    assert "pve1" not in got.hosts.values()
+    assert any("not enough free RAM" in why for why in got.excluded["pve1"])
+
+
+def test_a_host_that_was_used_is_not_listed_even_if_it_refused_a_later_node():
+    """pve1 has room for one master but not for the coordinating node after it, so it refuses once and is used."""
+    state = build_desired_state(TopologyPreset.three_node, "lab-b", "9.4.3", coordinating_nodes=1)
+    hosts = [host("pve1", mem_gib=12, mem_used_gib=1), host("pve2"), host("pve3")]
+    got = recommend_placement(state, hosts)
+    assert got.ok and "pve1" in got.hosts.values()                    # it took a master...
+    assert got.hosts["lab-b-04"] != "pve1"                            # ...but could not take the fourth node
+    assert got.excluded == {}                                         # so it is not reported as unused
+
+
+def test_an_offline_host_is_reported_as_offline():
+    got = recommend_placement(three_node(), [host("pve1"), host("pve2"), host("pve3", online=False)])
+    assert got.excluded == {"pve3": ["host is offline"]}

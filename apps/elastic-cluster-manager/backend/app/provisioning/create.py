@@ -309,6 +309,7 @@ def resolve(db: Session, req: CreateRequest, own_cluster: str | None = None) -> 
         raise CreateInvalid(str(exc)) from exc
 
     notes = list(warnings(state)) + [i.message for i in placement.issues if i.severity == "warning"]
+    notes += [f"{host} was not used: {'; '.join(why)}" for host, why in sorted(placement.excluded.items())]
     visible = db.scalar(select(func.count()).select_from(Vm).where(Vm.connection_id == conn.id,
                                                                      Vm.is_template.is_(False)))
     if not visible:

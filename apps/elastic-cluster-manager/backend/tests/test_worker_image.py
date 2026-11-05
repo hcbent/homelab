@@ -93,7 +93,8 @@ def test_compose_builds_the_worker_from_the_worker_stage_and_the_rest_from_the_l
     worker = re.search(r"^  worker:\n(.*?)(?=^  \w|\Z)", COMPOSE, re.MULTILINE | re.DOTALL).group(1)
     assert "ECM_TF_STATE_URL" in worker and "clusters:/data/clusters" in worker
     api = re.search(r"^  api:\n(.*?)(?=^  \w|\Z)", COMPOSE, re.MULTILINE | re.DOTALL).group(1)
-    assert "ECM_TF_STATE_URL" not in api                      # only the worker may hold the state credentials
+    assert "ECM_TF_STATE_URL" not in api and "ECM_TF_STATE_SSLMODE" not in api   # only the worker holds these
+    assert "ECM_TF_STATE_SSLMODE" in worker
 
 
 # ---- the plugin directory layout, against the real Terraform CLI ----------------------------------------

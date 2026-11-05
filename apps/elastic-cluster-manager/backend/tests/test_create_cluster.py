@@ -467,3 +467,12 @@ def test_that_warning_goes_away_once_a_vm_is_visible(session, pve):
     session.add(Vm(connection_id=pve.id, pve_node="pve1", vmid=301, name="other-vm", status="running"))
     session.commit()
     assert not any("can see no VMs" in w for w in plan(session)[2].warnings)
+
+
+def test_the_plan_says_why_a_host_was_not_used(session, pve):
+    for node in session.scalars(select(PveNode).where(PveNode.name == "pve1")):
+        node.usage = {**node.usage, "mem": 186 * GIB}
+    session.commit()
+    notes = plan(session)[2].warnings
+    assert any(w.startswith("pve1 was not used: not enough free RAM") for w in notes)
+    assert any("master quorum" in w for w in notes)                  # the consequence, and now its cause
