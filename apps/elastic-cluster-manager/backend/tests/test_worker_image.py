@@ -86,6 +86,13 @@ def test_the_worker_points_the_app_at_the_vendored_provider_and_a_workspace_the_
     assert "chown ecm /data/clusters" in worker
 
 
+def test_the_build_checks_as_the_app_user_that_terraform_can_read_its_provider_and_write_workspaces():
+    """The check must run after USER ecm, so it tests what the running worker will be able to do."""
+    after_user = stage("worker").split("USER ecm", 1)[1]
+    assert "terraform version" in after_user and "-name '*.zip' -readable" in after_user
+    assert "test -w /data/clusters" in after_user
+
+
 def test_compose_builds_the_worker_from_the_worker_stage_and_the_rest_from_the_lean_one():
     for service, target in (("migrate", "app"), ("api", "app"), ("worker", "worker")):
         block = re.search(rf"^  {service}:\n(.*?)(?=^  \w|\Z)", COMPOSE, re.MULTILINE | re.DOTALL).group(1)

@@ -75,6 +75,7 @@ def fetch(url: str, sha256: str, dest: str | Path, *, attempts: int = 5, delay: 
             if digest.hexdigest() != expected:
                 raise ChecksumMismatch(
                     f"checksum mismatch for {url}: expected {expected}, got {digest.hexdigest()}")
+            tmp.chmod(0o644)  # mkstemp makes it owner-only; the app user must be able to read what a build fetched
             tmp.replace(dest)
             return expected
         except FetchError:  # includes ChecksumMismatch: never retried

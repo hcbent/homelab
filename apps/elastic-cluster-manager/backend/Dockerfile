@@ -53,6 +53,10 @@ RUN terraform version \
 ENV ECM_TERRAFORM_PLUGIN_DIR=/opt/ecm/terraform-providers \
     ECM_TF_WORKSPACE_ROOT=/data/clusters
 USER ecm
+# Fail the build, not the first job, if the app user cannot read what Terraform needs or write its workspaces.
+RUN terraform version >/dev/null \
+    && test -n "$(find "$ECM_TERRAFORM_PLUGIN_DIR" -name '*.zip' -readable)" \
+    && test -w /data/clusters
 
 
 # ---- The API and migration image: no Terraform ------------------------------------------------------------

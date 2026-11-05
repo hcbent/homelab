@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import io
+import os
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -65,6 +66,16 @@ def leftovers(tmp_path):
 def test_a_matching_download_is_kept(tmp_path):
     dest = fetch(tmp_path, serving(BODY))
     assert dest.read_bytes() == BODY and leftovers(tmp_path) == ["tool.zip"]
+
+
+def test_a_downloaded_file_is_readable_by_the_user_the_app_runs_as(tmp_path):
+    """mkstemp creates owner-only files. A root-only provider zip is what made terraform init fail on infra."""
+    previous = os.umask(0o077)                                       # even under a strict umask
+    try:
+        dest = fetch(tmp_path, serving(BODY))
+    finally:
+        os.umask(previous)
+    assert dest.stat().st_mode & 0o777 == 0o644
 
 
 def test_a_wrong_checksum_leaves_nothing_behind_and_is_not_retried(tmp_path):
