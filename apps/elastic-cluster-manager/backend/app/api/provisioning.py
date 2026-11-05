@@ -4,7 +4,13 @@ from sqlalchemy.orm import Session
 
 from app import audit, auth, operations
 from app.db import get_db
-from app.desired import ArtifactsApiCatalog, CatalogError, VersionCatalog, check_target_version
+from app.desired import (
+    ArtifactsApiCatalog,
+    CatalogError,
+    VersionCatalog,
+    available_versions,
+    check_target_version,
+)
 from app.models import User
 from app.provisioning import create as plan_create
 from app.provisioning.operation import OperationRefused
@@ -31,7 +37,12 @@ async def create_cluster(body: plan_create.CreateRequest, db: Session = Depends(
     except CatalogError as e:
         raise HTTPException(503, f"{e}; the version cannot be verified right now") from e
     if problems:
-        raise HTTPException(422, "; ".join(problems))
+        try:  # the list is cached by now, so this is not a second fetch; say which versions would work
+            newest = (await run_in_threadpool(available_versions, catalog))[:6]
+        except CatalogError:
+            newest = []
+        hint = f". Newest published: {', '.join(newest)}" if newest else ""
+        raise HTTPException(422, "; ".join(problems) + hint)
 
     try:
         cluster, op, resolved = plan_create.create_cluster_operation(db, body, user.username)

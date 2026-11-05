@@ -367,6 +367,7 @@ def test_post_with_dry_run_false_makes_an_approvable_operation(api, session):
 def test_post_refuses_an_unpublished_version(api):
     r = api.post("/api/clusters", json={**BODY, "version": "9.9.9"}, headers=H)
     assert r.status_code == 422 and "not a published" in r.json()["detail"]
+    assert r.json()["detail"].endswith("Newest published: 9.4.3, 9.3.1")      # it says what would work
 
 
 def test_post_says_so_when_the_version_list_is_unreachable(api):
