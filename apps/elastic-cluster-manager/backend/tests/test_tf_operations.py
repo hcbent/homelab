@@ -366,8 +366,8 @@ def test_cleanup_is_a_separate_approved_destroy_limited_to_what_the_create_left(
     world.destroy_changes = [(a, "delete") for a in ADDRS[:2]]
 
     with pytest.raises(OperationRefused, match="type the cluster name"):
-        start_cleanup(session, failed_op_id=failed.id, confirm_name="nope", actor="admin")
-    cleanup = start_cleanup(session, failed_op_id=failed.id, confirm_name="lab-b", actor="admin")
+        start_cleanup(session, create_op_id=failed.id, confirm_name="nope", actor="admin")
+    cleanup = start_cleanup(session, create_op_id=failed.id, confirm_name="lab-b", actor="admin")
     assert cleanup.kind == "tf.destroy" and cleanup.parent_op_id == failed.id
 
     cleanup = run(session, world, cleanup)
@@ -384,16 +384,16 @@ def test_cleanup_is_a_separate_approved_destroy_limited_to_what_the_create_left(
 def test_cleanup_refuses_a_plan_that_deletes_something_the_create_did_not_make(session, world, cluster, conn):
     failed = reach_failed_apply(session, world, cluster, conn)
     world.destroy_changes = [(a, "delete") for a in ADDRS[:2]] + [("proxmox_virtual_environment_vm.es01", "delete")]
-    cleanup = start_cleanup(session, failed_op_id=failed.id, confirm_name="lab-b", actor="admin")
+    cleanup = start_cleanup(session, create_op_id=failed.id, confirm_name="lab-b", actor="admin")
     with pytest.raises(PlanRejected, match="es01"):
         run(session, world, cleanup)
     assert cleanup.state == "failed" and cleanup.plan_digest is None
 
 
-def test_cleanup_is_refused_unless_a_create_failed_and_left_something(session, world, cluster, conn):
+def test_cleanup_waits_for_the_create_to_finish_and_needs_something_left_to_remove(session, world, cluster, conn):
     ok = run(session, world, begin(session, cluster, conn))
-    with pytest.raises(OperationRefused, match="only for a failed create"):
-        start_cleanup(session, failed_op_id=ok.id, confirm_name="lab-b", actor="admin")
+    with pytest.raises(OperationRefused, match="once it has finished"):
+        start_cleanup(session, create_op_id=ok.id, confirm_name="lab-b", actor="admin")
     operations.cancel_operation(session, ok.id)
 
     world.init_error = "boom"
@@ -401,7 +401,7 @@ def test_cleanup_is_refused_unless_a_create_failed_and_left_something(session, w
     with pytest.raises(TerraformError):
         run(session, world, early)
     with pytest.raises(OperationRefused, match="nothing to clean up"):
-        start_cleanup(session, failed_op_id=early.id, confirm_name="lab-b", actor="admin")
+        start_cleanup(session, create_op_id=early.id, confirm_name="lab-b", actor="admin")
 
 
 def test_nothing_is_provisioned_or_cleaned_up_on_a_cluster_ecm_did_not_create(session, world, conn):
@@ -538,3 +538,81 @@ def test_cancel_retry_and_cleanup_endpoints(logged_in, session, world, cluster, 
     with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
         assert logged_in.post(f"/api/operations/{failed.id}/retry", headers=H).status_code == 202
         assert len(q.connector.jobs) == 1
+
+
+# ---- tearing down a create that succeeded --------------------------------------------------------------
+
+def reach_success(session, world, cluster, conn):
+    """A real create that was approved and applied."""
+    op = run(session, world, begin(session, cluster, conn))
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    return run(session, world, op)
+
+
+def finish_teardown(session, world, create):
+    teardown = start_cleanup(session, create_op_id=create.id, confirm_name="lab-b", actor="admin")
+    teardown = run(session, world, teardown)
+    world.apply_outcome = ApplyOutcome(True, None, [], {})
+    operations.approve_operation(session, teardown.id, teardown.plan_digest, "admin")
+    return run(session, world, teardown)
+
+
+def test_a_create_that_succeeded_can_be_torn_down_with_the_same_guards(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    assert created.state == "succeeded" and created.result["resources_in_state"] == ADDRS
+
+    with pytest.raises(OperationRefused, match="type the cluster name"):
+        start_cleanup(session, create_op_id=created.id, confirm_name="nope", actor="admin")
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    assert teardown.kind == "tf.destroy" and teardown.parent_op_id == created.id
+
+    teardown = run(session, world, teardown)
+    assert teardown.state == "pending_approval" and world.calls[-1] == "plan-destroy"
+    assert teardown.plan_summary["deletes"] == 3 and teardown.plan_summary["adds"] == 0
+    assert world.calls.count("apply") == 1                    # nothing is destroyed until it is approved
+
+    world.apply_outcome = ApplyOutcome(True, None, [], {})
+    operations.approve_operation(session, teardown.id, teardown.plan_digest, "admin")
+    teardown = run(session, world, teardown)
+    assert teardown.state == "succeeded" and teardown.result["resources_in_state"] == []
+    assert world.calls.count("apply") == 2
+
+    started = [e for e in session.scalars(select(AuditEvent).where(AuditEvent.action == "operation.start"))
+               if e.details.get("kind") == "tf.destroy"]
+    assert started[0].details["parent_state"] == "succeeded" and started[0].details["resources"] == 3
+
+
+def test_a_create_cannot_be_torn_down_twice(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    assert finish_teardown(session, world, created).state == "succeeded"
+    with pytest.raises(OperationRefused, match="already been cleaned up"):
+        start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+
+
+def test_tearing_down_a_successful_create_is_still_limited_to_what_it_made(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    world.destroy_changes = [(a, "delete") for a in ADDRS] + [("proxmox_virtual_environment_vm.es01", "delete")]
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    with pytest.raises(PlanRejected, match="es01"):
+        run(session, world, teardown)
+    assert teardown.state == "failed" and teardown.plan_digest is None
+    assert world.calls.count("apply") == 1                    # and nothing was destroyed
+
+
+def test_a_dry_run_has_nothing_to_tear_down(session, world, cluster, conn):
+    dry = run(session, world, begin(session, cluster, conn, dry_run=True))
+    assert dry.state == "succeeded"
+    with pytest.raises(OperationRefused, match="nothing to clean up"):
+        start_cleanup(session, create_op_id=dry.id, confirm_name="lab-b", actor="admin")
+
+
+def test_the_cleanup_endpoint_tears_down_a_successful_create(logged_in, session, world, cluster, conn):
+    from procrastinate import testing
+
+    from app import jobs
+    created = reach_success(session, world, cluster, conn)
+    with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
+        r = logged_in.post(f"/api/operations/{created.id}/cleanup", json={"confirm_name": "lab-b"}, headers=H)
+        assert r.status_code == 202 and len(q.connector.jobs) == 1
+    detail = logged_in.get(f"/api/operations/{r.json()['id']}").json()
+    assert detail["kind"] == "tf.destroy" and detail["parent_op_id"] == created.id

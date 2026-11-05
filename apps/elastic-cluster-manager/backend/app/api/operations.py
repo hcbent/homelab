@@ -131,9 +131,10 @@ async def retry(op_id: str, db: Session = Depends(get_db), user: User = Depends(
 @router.post("/{op_id}/cleanup", status_code=202)
 async def cleanup(op_id: str, body: CleanupBody, db: Session = Depends(get_db),
                   user: User = Depends(auth.current_user)):
-    """Start a destroy of what a failed create left behind. It plans first and needs its own approval."""
+    """Start a destroy of what a create made: the partial result of a failed one, or everything a successful one
+    built. It plans first, needs the cluster name typed, and needs its own approval."""
     try:
-        op = tf.start_cleanup(db, failed_op_id=op_id, confirm_name=body.confirm_name, actor=user.username)
+        op = tf.start_cleanup(db, create_op_id=op_id, confirm_name=body.confirm_name, actor=user.username)
     except tf.OperationRefused as e:
         raise HTTPException(409, str(e)) from e
     except operations.OperationConflict as e:

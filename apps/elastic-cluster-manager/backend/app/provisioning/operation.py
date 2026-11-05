@@ -1,4 +1,4 @@
-"""Terraform operations: tf.create, and tf.destroy used only to clean up a failed create.
+"""Terraform operations: tf.create, and tf.destroy used to clean up or tear down a create that has finished.
 
 Phases:  render, init, plan, approval, apply   (a dry run stops after plan)
 
@@ -11,13 +11,15 @@ Phases:  render, init, plan, approval, apply   (a dry run stops after plan)
     that saved plan file and nothing else.
 
 Nothing here destroys on failure. A failed create keeps its partial state and records what exists. Cleaning
-it up is a separate tf.destroy operation that a person starts by typing the cluster name, that has its own
-plan and its own approval, and that may only delete resources the failed create left in state.
+it up, or tearing down a create that succeeded, is a separate tf.destroy operation that a person starts by
+typing the cluster name, that has its own plan and its own approval, and that may only delete resources the
+create recorded in state.
 """
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import audit, crypto
@@ -114,28 +116,33 @@ def start_create(db: Session, *, cluster_id: str, params: dict, actor: str, dry_
     return op
 
 
-def start_cleanup(db: Session, *, failed_op_id: str, confirm_name: str, actor: str) -> Operation:
-    """Create the destroy operation that removes what a failed create left behind.
+def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: str) -> Operation:
+    """Create the destroy operation that removes what a create made: the partial result of one that failed, or
+    everything a create that succeeded built.
 
-    Allowed only for a failed tf.create whose apply left resources in state, on a managed cluster, and only
-    after the person types the cluster name. The plan it produces can delete nothing else (see _plan).
+    Allowed only for a finished tf.create whose apply left resources in state, on a managed cluster, once, and
+    only after the person types the cluster name. The plan it produces can delete nothing the create did not
+    record (see _outside_the_create), and it needs its own approval.
     """
-    parent = db.get(Operation, failed_op_id)
+    parent = db.get(Operation, create_op_id)
     if parent is None or parent.kind != CREATE:
-        raise OperationRefused("cleanup applies to a failed create operation")
-    if parent.state != "failed":
-        raise OperationRefused(f"the create is {parent.state}; cleanup is only for a failed create")
+        raise OperationRefused("cleanup applies to a create operation")
+    if parent.state not in ("failed", "succeeded"):
+        raise OperationRefused(f"the create is {parent.state}; it can be cleaned up once it has finished")
     cluster = _managed_cluster(db, parent.cluster_id)
     if confirm_name != cluster.name:
         raise OperationRefused("type the cluster name exactly to confirm the cleanup")
+    if db.scalar(select(Operation.id).where(Operation.parent_op_id == parent.id, Operation.kind == DESTROY,
+                                            Operation.state == "succeeded")):
+        raise OperationRefused("this create has already been cleaned up")
     left = (parent.result or {}).get("resources_in_state") or []
     if not left:
-        raise OperationRefused("the failed create left nothing in Terraform state, so there is nothing to clean up")
+        raise OperationRefused("the create left nothing in Terraform state, so there is nothing to clean up")
     _check_params(db, cluster.id, parent.params)
     op = create_operation(db, DESTROY, PHASES, cluster_id=cluster.id, params=parent.params, actor=actor,
                           parent_op_id=parent.id)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=DESTROY, parent=parent.id,
-                 resources=len(left))
+                 parent_state=parent.state, resources=len(left))
     return op
 
 
@@ -205,7 +212,7 @@ class _Handlers:
         outcome = self.runner.plan(ws, self._env(), destroy=self.kind == DESTROY)
         problems = check_plan_safety(outcome.summary, self.plan_kind)
         if self.kind == DESTROY:
-            problems += self._outside_the_failed_create(outcome.summary)
+            problems += self._outside_the_create(outcome.summary)
         if problems:
             ws.discard_plan()
             raise PlanRejected("; ".join(problems))
@@ -217,11 +224,11 @@ class _Handlers:
         log(self.db, op.id, f"plan {stored.approval_digest}: {outcome.summary.adds} to add, "
                             f"{outcome.summary.updates} to change, {outcome.summary.deletes} to destroy")
 
-    def _outside_the_failed_create(self, summary) -> list[str]:
-        """A cleanup may only delete what the failed create left in state."""
+    def _outside_the_create(self, summary) -> list[str]:
+        """A cleanup may only delete what the create it belongs to recorded in state."""
         parent = self.db.get(Operation, self.op.parent_op_id or "")
         mine = set((parent.result or {}).get("resources_in_state") or []) if parent else set()
-        return [f"cleanup would delete {c.address}, which the failed create did not make"
+        return [f"cleanup would delete {c.address}, which that create did not make"
                 for c in summary.changes if c.action == "delete" and c.address not in mine]
 
     def _nothing_to_do(self) -> bool:

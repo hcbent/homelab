@@ -489,3 +489,43 @@ def test_the_plan_nudges_towards_a_separate_terraform_token_until_there_is_one(s
     pve.terraform_credential_id, pve.terraform_token_id = cred.id, "tf@pve!terraform"
     session.commit()
     assert not any("one token for both" in w for w in plan(session, name="lab-c")[2].warnings)
+
+
+# ---- after a teardown ----------------------------------------------------------------------------------
+
+def test_a_torn_down_create_frees_its_addresses_and_its_name_at_once(session, pve):
+    cluster, op, first = plan(session, name="lab-a", dry_run=False)
+    finish(session, op, "succeeded", finished_at=datetime.now(UTC), result={"resources_in_state": ["vm.a"]})
+    held = plan(session, name="lab-b", dry_run=False)[2]
+    assert not set(held.addresses.values()) & set(first.addresses.values())       # held while it exists
+    with pytest.raises(CreateConflict, match="already ran"):
+        plan(session, name="lab-a", dry_run=False)                                  # and the name is taken
+
+    session.add(Operation(kind="tf.destroy", cluster_id=cluster.id, parent_op_id=op.id, state="succeeded"))
+    session.commit()
+    freed = plan(session, name="lab-c", dry_run=False)[2]
+    assert set(freed.addresses.values()) & set(first.addresses.values())            # free again, though recent
+    again, _, _ = plan(session, name="lab-a", dry_run=False)
+    assert again.id == cluster.id                                                    # the same cluster, planned anew
+
+
+def test_a_teardown_that_failed_part_way_keeps_the_name_and_the_addresses(session, pve):
+    cluster, op, first = plan(session, name="lab-a", dry_run=False)
+    finish(session, op, "succeeded", finished_at=datetime.now(UTC), result={"resources_in_state": ["vm.a"]})
+    session.add(Operation(kind="tf.destroy", cluster_id=cluster.id, parent_op_id=op.id, state="failed",
+                          result={"resources_in_state": ["vm.a"]}))
+    session.commit()
+    with pytest.raises(CreateConflict, match="already ran"):
+        plan(session, name="lab-a", dry_run=False)
+    assert not set(plan(session, name="lab-b", dry_run=False)[2].addresses.values()) & set(first.addresses.values())
+
+
+def test_a_failed_teardown_followed_by_a_successful_one_leaves_nothing_to_block_the_name(session, pve):
+    """A destroy never blocks by itself: the create it belongs to decides whether anything remains."""
+    cluster, op, _ = plan(session, name="lab-a", dry_run=False)
+    finish(session, op, "succeeded", finished_at=datetime.now(UTC), result={"resources_in_state": ["vm.a"]})
+    session.add(Operation(kind="tf.destroy", cluster_id=cluster.id, parent_op_id=op.id, state="failed",
+                          result={"resources_in_state": ["vm.a"]}))
+    session.add(Operation(kind="tf.destroy", cluster_id=cluster.id, parent_op_id=op.id, state="succeeded"))
+    session.commit()
+    assert plan(session, name="lab-a", dry_run=False)[0].id == cluster.id

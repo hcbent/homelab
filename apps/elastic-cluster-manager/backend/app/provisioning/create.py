@@ -192,10 +192,15 @@ def _cluster_for(db: Session, name: str) -> Cluster | None:
     if len(same) > 1 or same[0].ownership != "managed":
         raise CreateConflict(f"a cluster named {name!r} already exists")
     cluster = same[0]
-    for op in db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)):
+    ops = list(db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)))
+    torn_down = {o.parent_op_id for o in ops if o.kind == DESTROY and o.state == "succeeded"}
+    for op in ops:
         if op.state in ACTIVE_STATES:
             raise CreateConflict(f"{name!r} has an operation in progress; finish or cancel it first")
-        nothing_applied = op.dry_run or op.state == "cancelled" or (op.state == "failed" and not op.result)
+        nothing_applied = (
+            op.dry_run or op.state == "cancelled" or (op.state == "failed" and not op.result)
+            or (op.kind == CREATE and op.id in torn_down)            # torn down since: nothing is left
+            or op.kind == DESTROY)  # a destroy never blocks by itself: its create decides whether anything remains
         if not nothing_applied:
             raise CreateConflict(
                 f"a create for {name!r} already ran and may have made VMs; retry or clean it up from its "
@@ -276,9 +281,10 @@ def _reservations(db: Session, own_cluster: str | None) -> tuple[set[str], set[i
         if op.kind != CREATE or op.dry_run or op.cluster_id == own_cluster:
             continue
         finished = _aware(op.finished_at)
-        holds = (op.state in ACTIVE_STATES
-                 or (op.state == "failed" and bool(op.result) and op.id not in cleaned)
-                 or (op.state == "succeeded" and finished is not None and now - finished < RESERVATION_GRACE))
+        holds = op.id not in cleaned and (  # a create that was torn down holds nothing, however recent
+            op.state in ACTIVE_STATES
+            or (op.state == "failed" and bool(op.result))
+            or (op.state == "succeeded" and finished is not None and now - finished < RESERVATION_GRACE))
         if holds:
             addresses.update((op.params.get("addresses") or {}).values())
             vmids.update(int(v) for v in (op.params.get("vm_ids") or {}).values())
