@@ -8,6 +8,7 @@ from app.api import auth as auth_api
 from app.api import discovery as discovery_api
 from app.api import network as network_api
 from app.api import operations as ops_api
+from app.api import provisioning as provisioning_api
 from app.config import get_settings
 from app.crypto import install_log_redaction, register_secret
 from app.db import session_factory
@@ -39,6 +40,7 @@ app.include_router(auth_api.router)
 app.include_router(ops_api.router)
 app.include_router(discovery_api.router)
 app.include_router(network_api.router)
+app.include_router(provisioning_api.router)
 
 
 @app.get("/api/health")

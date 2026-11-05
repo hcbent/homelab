@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # PG_CONN_STR and nowhere else. Empty means Terraform operations cannot run.
     tf_state_url: SecretStr = SecretStr("")
 
+    # Proxmox VMIDs handed out to new nodes (DECISIONS: disposable VMs use 5xx)
+    vmid_range_start: int = 500
+    vmid_range_end: int = 599
+
     # Defaults offered by the wizard in later phases. Never assumed to exist.
     default_template_vmid: int | None = None
     default_template_name: str | None = None
