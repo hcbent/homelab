@@ -4,6 +4,7 @@ import {
 } from "@elastic/eui";
 import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "react";
 import { AddConnection, ConnectionType } from "./AddConnection";
+import { NetworkSettings } from "./NetworkSettings";
 import { api, ApiError, ClusterSummary, Infrastructure, Vm } from "./api";
 import { HealthBadge } from "./Badges";
 import { ago, bytes, cpuText, memText, storedNumber } from "./format";
@@ -128,6 +129,8 @@ export function InfrastructureView() {
       </section>
 
       <AddConnection type={type} onTypeChange={setType} onDone={load} />
+
+      <NetworkSettings />
 
       <section className="ecm-inventory" aria-labelledby="inventory-title">
         <h2 id="inventory-title" className="ecm-h2">Proxmox inventory</h2>

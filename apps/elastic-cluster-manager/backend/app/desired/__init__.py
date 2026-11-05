@@ -7,6 +7,7 @@ from .models import (
     default_heap_mb,
     warnings,
 )
+from .network import AllocationError, NetworkProfile, allocate_addresses, cloud_init_ipv4
 from .placement import (
     HostView,
     PlacementConfig,
@@ -28,10 +29,12 @@ from .versions import (
 )
 
 __all__ = [
+    "AllocationError",
     "ArtifactsApiCatalog",
     "CatalogError",
     "DesiredState",
     "HostView",
+    "NetworkProfile",
     "NodeSpec",
     "PlacementConfig",
     "PlacementResult",
@@ -40,10 +43,12 @@ __all__ = [
     "TopologyPreset",
     "Version",
     "VersionCatalog",
+    "allocate_addresses",
     "available_versions",
     "build_desired_state",
     "check_target_version",
     "check_upgrade",
+    "cloud_init_ipv4",
     "default_heap_mb",
     "discovery_settings",
     "expand_preset",

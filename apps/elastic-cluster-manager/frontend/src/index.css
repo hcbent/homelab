@@ -89,7 +89,7 @@ section { scroll-margin-top: 64px; }
 :focus-visible { outline-offset: 2px; }
 
 /* ---------- 44px hit areas for every interactive target ---------- */
-.euiButton, .euiButtonEmpty, .euiButtonIcon, .euiFieldText, .euiFieldPassword, .euiFieldSearch, .euiSelect, .euiTab,
+.euiButton, .euiButtonEmpty, .euiButtonIcon, .euiFieldText, .euiFieldNumber, .euiFieldPassword, .euiFieldSearch, .euiSelect, .euiTab,
 .euiHeaderLink, .euiHeaderSectionItemButton, .euiTableHeaderButton, .euiAccordion__button,
 .euiPopover button { min-height: 44px; }
 .euiButtonIcon, .euiTab, .euiHeaderSectionItemButton { min-width: 44px !important; min-inline-size: 44px !important; }
@@ -192,6 +192,17 @@ section { scroll-margin-top: 64px; }
 .ecm-checklist li { position: relative; padding-left: 28px; font-size: 15px; line-height: 22px; color: var(--ecm-text); }
 .ecm-checklist li::before { content: ""; position: absolute; left: 0; top: 6px; width: 10px; height: 10px; background: var(--ecm-accent); }
 
+/* ---------- Network settings (one bordered panel per profile, range first) ---------- */
+.ecm-network { padding: 8px 0 56px; display: flex; flex-direction: column; gap: 16px; }
+.ecm-network .ecm-h2 { padding-bottom: 20px; border-bottom: 1px solid var(--ecm-border); }
+.ecm-network__lede { align-self: center; text-align: center; }
+.ecm-network__panel { background: var(--ecm-surface); border: 1px solid var(--ecm-border); border-radius: var(--ecm-radius); padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.ecm-network__form { display: flex; flex-direction: column; gap: 12px; max-width: 960px; }
+.ecm-network__range, .ecm-network__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.ecm-network__hint { margin-top: -4px; }
+/* EUI spaces adjacent form rows with a top margin, which would push the second grid column down. */
+.ecm-network__form .euiFormRow { margin-block-start: 0 !important; }
+
 /* ---------- Operation log (creatiie: one tall centred card, neighbours clipped at the edges) ---------- */
 .ecm-ops { display: flex; flex-direction: column; gap: 24px; padding: 8px 0 56px; overflow-x: clip; }
 .ecm-ops__head { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
@@ -276,6 +287,7 @@ section { scroll-margin-top: 64px; }
   .ecm-pricing__panels { grid-template-columns: 1fr; gap: 16px; }
   .ecm-connection { min-height: 0; }
   .ecm-contact__panel { grid-template-columns: 1fr; }
+  .ecm-network__range, .ecm-network__grid { grid-template-columns: 1fr; }
   .ecm-contact__side { border-right: 0; border-bottom: 1px solid var(--ecm-border); }
   .ecm-two { grid-template-columns: 1fr; gap: 24px; }
   .ecm-wizard__top, .ecm-wizard__panels { grid-template-columns: 1fr; gap: 16px; }

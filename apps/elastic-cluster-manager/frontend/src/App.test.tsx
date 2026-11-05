@@ -139,6 +139,109 @@ test("infrastructure lists both connection panels with their state", async () =>
   expect(screen.getByRole("link", { name: "verified" })).toHaveAttribute("href", "#/clusters/c1");
 });
 
+const PROFILE = {
+  id: "np1", name: "default", bridge: "vmbr0", vlan: 10, cidr: "192.0.2.0/24", gateway: "192.0.2.1",
+  dns: ["192.0.2.1"], search_domain: "lab.example.org", range_start: "192.0.2.110", range_end: "192.0.2.149", dhcp_start: "192.0.2.150" as string | null,
+  dhcp_end: "192.0.2.254" as string | null, pool_size: 40, in_use_in_range: [] as { ip: string; source: string; name: string }[],
+};
+
+async function openNetworkSettings(profile: typeof PROFILE, put?: (body: Record<string, unknown>) => [number, unknown]) {
+  window.location.hash = "#/infrastructure";
+  const puts: Record<string, unknown>[] = [];
+  mockFetch((url, init) => {
+    if (url.endsWith("/me")) return ME;
+    if (url.endsWith("/api/network-profiles") && !init?.method) return [200, [profile]];
+    if (url.includes("/api/network-profiles/") && init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      puts.push(body);
+      return put ? put(body) : [200, { ...profile, ...body, pool_size: 20 }];
+    }
+    if (url.endsWith("/api/infrastructure")) return [200, INFRA];
+    return [200, [CLUSTER]];
+  });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Network for new nodes." });
+  return puts;
+}
+
+test("network settings show the allocation range and let the user change it", async () => {
+  const puts = await openNetworkSettings(PROFILE);
+  const start = await screen.findByLabelText("Allocation range start");
+  expect(start).toHaveValue("192.0.2.110");
+  expect(screen.getByLabelText("Allocation range end")).toHaveValue("192.0.2.149");
+  expect(screen.getByLabelText("DHCP range start (optional)")).toHaveValue("192.0.2.150");
+  expect(screen.getByLabelText("DHCP range end (optional)")).toHaveValue("192.0.2.254");
+  expect(screen.getByText(/40 addresses\./)).toBeInTheDocument();
+  expect(screen.getByText(/Kept clear of your DHCP range 192\.0\.2\.150-192\.0\.2\.254/)).toBeInTheDocument();
+
+  await userEvent.clear(start);
+  await userEvent.type(start, "192.0.2.200");
+  await userEvent.clear(screen.getByLabelText("Allocation range end"));
+  await userEvent.type(screen.getByLabelText("Allocation range end"), "192.0.2.219");
+  await userEvent.click(screen.getByRole("button", { name: "Save network settings" }));
+
+  expect(await screen.findByText(/Saved\. New clusters will use this range\./)).toBeInTheDocument();
+  expect(puts).toHaveLength(1);
+  expect(puts[0]).toMatchObject({ range_start: "192.0.2.200", range_end: "192.0.2.219", dns: ["192.0.2.1"],
+    vlan: 10, bridge: "vmbr0", search_domain: "lab.example.org",
+    dhcp_start: "192.0.2.150", dhcp_end: "192.0.2.254" });
+  // computed fields from the server are never sent back
+  expect(Object.keys(puts[0])).not.toEqual(expect.arrayContaining(["id", "pool_size", "in_use_in_range"]));
+  expect(screen.getByText(/20 addresses\./)).toBeInTheDocument();      // pool size from the server response
+});
+
+test("DNS servers are sent as a list and an empty VLAN and domain become null", async () => {
+  const puts = await openNetworkSettings(PROFILE);
+  const dns = await screen.findByLabelText("DNS servers");
+  await userEvent.clear(dns);
+  await userEvent.type(dns, "192.0.2.1, 192.0.2.2 ,");
+  await userEvent.clear(screen.getByLabelText("VLAN"));
+  await userEvent.clear(screen.getByLabelText("Search domain"));
+  await userEvent.click(screen.getByRole("button", { name: "Save network settings" }));
+  await screen.findByText(/Saved\./);
+  expect(puts[0]).toMatchObject({ dns: ["192.0.2.1", "192.0.2.2"], vlan: null, search_domain: null });
+});
+
+test("the DHCP range is optional, and clearing it sends null; without it the hint warns", async () => {
+  const puts = await openNetworkSettings({ ...PROFILE, dhcp_start: null, dhcp_end: null });
+  expect(await screen.findByText(/ECM cannot check this unless you enter the DHCP range/)).toBeInTheDocument();
+  expect(screen.getByLabelText("DHCP range start (optional)")).toHaveValue("");
+  await userEvent.click(screen.getByRole("button", { name: "Save network settings" }));
+  await screen.findByText(/Saved\./);
+  expect(puts[0]).toMatchObject({ dhcp_start: null, dhcp_end: null });
+});
+
+test("a server validation error is shown in plain words", async () => {
+  await openNetworkSettings(PROFILE, () => [422, { detail: [
+    { type: "value_error", loc: ["body"], msg: "Value error, range_start must not be after range_end" }] }]);
+  await userEvent.click(await screen.findByRole("button", { name: "Save network settings" }));
+  const form = screen.getByRole("form", { name: "Network profile default" });
+  const alert = await within(form).findByRole("alert");
+  expect(alert).toHaveTextContent("range_start must not be after range_end");
+  expect(alert).not.toHaveTextContent("Value error");
+  expect(alert).not.toHaveTextContent("[object");
+  expect(screen.queryByText(/Saved\./)).not.toBeInTheDocument();
+});
+
+test("addresses already in use inside the range are listed as a warning", async () => {
+  await openNetworkSettings({ ...PROFILE, in_use_in_range: [
+    { ip: "192.0.2.120", source: "proxmox", name: "plex" },
+    { ip: "192.0.2.130", source: "elasticsearch", name: "lab-02" }] });
+  expect(await screen.findByText("2 addresses in this range already in use")).toBeInTheDocument();
+  expect(screen.getByText(/192\.0\.2\.120 · plex · Proxmox/)).toBeInTheDocument();
+  expect(screen.getByText(/192\.0\.2\.130 · lab-02 · Elasticsearch/)).toBeInTheDocument();
+});
+
+test("network settings failing to load shows the cause and a retry", async () => {
+  window.location.hash = "#/infrastructure";
+  mockFetch((url) => url.endsWith("/me") ? ME
+    : url.endsWith("/api/network-profiles") ? [500, { detail: "database unavailable" }]
+    : url.endsWith("/api/infrastructure") ? [200, INFRA] : [200, [CLUSTER]]);
+  render(<App />);
+  expect(await screen.findByText("Could not load network settings")).toBeInTheDocument();
+  expect(screen.getByText("database unavailable")).toBeInTheDocument();
+});
+
 test("cluster detail separates the sources and shows link confidence", async () => {
   window.location.hash = "#/clusters/c1";
   const detail = { ...CLUSTER, last_sync_error: null,

@@ -4,6 +4,17 @@ export class ApiError extends Error {
   }
 }
 
+/** FastAPI sends a string for most errors and a list of {msg} objects for validation failures. */
+function describe(detail: unknown): string | undefined {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => (typeof d?.msg === "string" ? d.msg.replace(/^Value error, /, "") : null))
+      .filter(Boolean);
+    return msgs.length ? msgs.join("; ") : undefined;
+  }
+  return undefined;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -12,7 +23,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? res.statusText);
+    throw new ApiError(res.status, describe(body.detail) ?? res.statusText);
   }
   return res.json();
 }
@@ -64,4 +75,12 @@ export interface Infrastructure {
   storages: { node: string; name: string; type: string; shared: boolean; total: number;
               used: number; avail: number }[];
   templates: Vm[]; vms: Vm[];
+}
+
+export interface InUseAddress { ip: string; source: "proxmox" | "elasticsearch"; name: string }
+export interface NetworkProfile {
+  id: string; name: string; bridge: string; vlan: number | null; cidr: string; gateway: string;
+  dns: string[]; search_domain: string | null; range_start: string; range_end: string;
+  dhcp_start: string | null; dhcp_end: string | null;
+  pool_size: number; in_use_in_range: InUseAddress[];
 }

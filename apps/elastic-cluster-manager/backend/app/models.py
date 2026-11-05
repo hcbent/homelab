@@ -172,6 +172,26 @@ class EsNode(Base):
     __table_args__ = (UniqueConstraint("cluster_id", "es_node_id"),)
 
 
+class NetworkProfileRow(Base):
+    """A network ECM may place nodes on, and the address range it may allocate from. Editable in the UI."""
+
+    __tablename__ = "network_profiles"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    name: Mapped[str] = mapped_column(String(40), unique=True)
+    bridge: Mapped[str] = mapped_column(String(32), default="vmbr0")
+    vlan: Mapped[int | None] = mapped_column(Integer)
+    cidr: Mapped[str] = mapped_column(String(18))
+    gateway: Mapped[str] = mapped_column(String(15))
+    dns: Mapped[list] = mapped_column(JSON, default=list)
+    search_domain: Mapped[str | None] = mapped_column(String(253))
+    range_start: Mapped[str] = mapped_column(String(15))
+    range_end: Mapped[str] = mapped_column(String(15))
+    dhcp_start: Mapped[str | None] = mapped_column(String(15))
+    dhcp_end: Mapped[str | None] = mapped_column(String(15))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 ACTIVE_STATES = ("pending_approval", "running")
 _ACTIVE_SQL = text("state IN ('pending_approval', 'running')")
 
