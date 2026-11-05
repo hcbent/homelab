@@ -78,7 +78,8 @@ class ProxmoxCredentialIn(BaseModel):
     token_id: Trimmed | None = Field(default=None, min_length=3, description="only if the token itself changed")
     # "discovery" is the token ECM reads Proxmox with. "terraform" is the narrower one Terraform creates VMs with.
     purpose: Literal["discovery", "terraform"] = "discovery"
-    pool_id: str = Field(default="ecm", min_length=1, max_length=64)  # terraform: the pool it must be able to use
+    # terraform: the pool it must be able to use
+    pool_id: str = Field(default="ecm", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     datastore: str | None = None  # terraform: where it creates disks (default ECM_DEFAULT_STORAGE)
 
 
@@ -131,13 +132,15 @@ def _replace_terraform_token(db: Session, conn: ProxmoxConnection, body: Proxmox
                      token_id=token_id, purpose="terraform")
         raise HTTPException(code, message)
 
+    client = factory.proxmox_client_for(conn, token_id, body.token_secret)
     try:
-        perms = factory.proxmox_client_for(conn, token_id, body.token_secret).permissions()
+        perms = client.permissions()
     except DiscoveryError as e:
         if e.status in (401, 403):
             refuse(422, f"Proxmox rejected that token, so nothing was changed ({e})")
         refuse(502, f"Could not reach Proxmox to test the token, so nothing was changed ({e})")
-    problems, advice = proxmox.check_terraform_rights(perms, body.pool_id, datastore)
+    problems, advice = proxmox.check_terraform_rights(perms, body.pool_id, datastore,
+                                                      members=lambda: client.pool_member_ids(body.pool_id))
     if problems:
         refuse(422, f"Proxmox accepted that token, but {'; '.join(problems)}. Nothing was changed")
 

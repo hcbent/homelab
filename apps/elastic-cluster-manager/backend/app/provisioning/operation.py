@@ -26,6 +26,8 @@ from app import audit, crypto
 from app.config import get_settings, tf_state_conninfo
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
+from app.discovery import factory, proxmox
+from app.discovery.http import DiscoveryError
 from app.models import Cluster, Credential, Operation, ProxmoxConnection
 from app.operations import AwaitingApproval, create_operation, log, run_phases
 from app.provisioning.plan import check_plan_safety
@@ -49,6 +51,11 @@ class OperationRefused(Exception):
 
 class PlanRejected(Exception):
     """The plan does more than this kind of operation may do. It is never offered for approval."""
+
+
+class PreflightFailed(Exception):
+    """The token Terraform uses cannot do what this operation needs. Found before a plan is made, so nothing
+    reaches the approval step and no apply can fail half way for want of a permission."""
 
 
 class ApplyRefused(Exception):
@@ -180,17 +187,40 @@ class _Handlers:
         conn = _connection(self.db, self.op.params)
         return render_workspace(render_input(self.op.params, self.cluster_id, conn.api_url, not conn.tls_verify))
 
+    def _proxmox_token(self) -> tuple[str, str]:
+        conn = _connection(self.db, self.op.params)
+        separate = bool(conn.terraform_credential_id and conn.terraform_token_id)
+        credential_id = conn.terraform_credential_id if separate else conn.credential_id
+        token_id = conn.terraform_token_id if separate else conn.token_id
+        return token_id, crypto.decrypt(self.db.get(Credential, credential_id).ciphertext)
+
+    def _preflight(self) -> None:
+        """Check, with one read-only request, that the token Terraform will use has the rights this needs."""
+        conn = _connection(self.db, self.op.params)
+        token_id, secret = self._proxmox_token()
+        params = self.op.params
+        try:
+            perms = factory.proxmox_client_for(conn, token_id, secret).permissions()
+        except DiscoveryError as e:
+            if e.status in (401, 403):
+                raise PreflightFailed(f"Proxmox rejected the token Terraform uses ({e}); replace it, then retry") from e
+            raise PreflightFailed(f"could not reach Proxmox to check the token's rights ({e}); retry when it is "
+                                  "reachable") from e
+        problems = proxmox.preflight_problems(
+            perms, pool_id=params.get("pool_id", "ecm"), datastore=params.get("datastore_id", "tank"),
+            template_vmid=(params.get("template") or {}).get("vm_id"), creating=self.kind == CREATE)
+        if problems:
+            raise PreflightFailed(f"the token Terraform uses is missing rights this operation needs: "
+                                  f"{'; '.join(problems)}. Fix its permissions in Proxmox, then retry")
+        log(self.db, self.op.id, "the token Terraform uses has the rights this operation needs")
+
     def _env(self) -> Mapping[str, str]:
         """The only credentials Terraform gets: the Proxmox token and the state database.
 
         The token is the connection's own Terraform token when it has one (narrow, pool-scoped), and otherwise the
         discovery token, so connections set up before the split keep working.
         """
-        conn = _connection(self.db, self.op.params)
-        separate = bool(conn.terraform_credential_id and conn.terraform_token_id)
-        credential_id = conn.terraform_credential_id if separate else conn.credential_id
-        token_id = conn.terraform_token_id if separate else conn.token_id
-        secret = crypto.decrypt(self.db.get(Credential, credential_id).ciphertext)
+        token_id, secret = self._proxmox_token()
         state_url = tf_state_conninfo(get_settings())
         if not state_url:
             raise TerraformError("Terraform state has nowhere to live: set ECM_TF_STATE_URL, or run ECM on PostgreSQL")
@@ -209,6 +239,7 @@ class _Handlers:
         self.runner.init(existing_workspace(self.root, self.cluster_id), self._env())
 
     def plan(self) -> None:
+        self._preflight()  # before anything is planned: a plan only reads, so it cannot see lost write rights
         ws = existing_workspace(self.root, self.cluster_id)
         outcome = self.runner.plan(ws, self._env(), destroy=self.kind == DESTROY)
         problems = check_plan_safety(outcome.summary, self.plan_kind)

@@ -4,14 +4,17 @@ The fake writes a plan file whose bytes depend on what it plans, so the digests 
 a different plan gives a different digest.
 """
 import json
+import re
 from dataclasses import dataclass, field
 
+import httpx
 import pytest
 from sqlalchemy import select
 
 from app import config, crypto, operations
 from app.desired import TopologyPreset, build_desired_state
 from app.desired.network import NetworkProfile
+from app.discovery import factory
 from app.models import (
     AuditEvent,
     Cluster,
@@ -27,6 +30,7 @@ from app.provisioning.operation import (
     ApplyRefused,
     OperationRefused,
     PlanRejected,
+    PreflightFailed,
     run_operation,
     start_cleanup,
     start_create,
@@ -43,6 +47,11 @@ NODES = ["lab-b-01", "lab-b-02", "lab-b-03"]
 ADDRS = [f'module.node["{n}"].proxmox_virtual_environment_vm.node' for n in NODES]
 
 
+# What the token Terraform uses may do on the fake Proxmox, in the shape /access/permissions reports it.
+GOOD_PERMS = {"/pool/ecm": {"VM.Allocate": 1, "VM.Audit": 1}, "/storage/tank": {"Datastore.AllocateSpace": 1},
+              "/vms/8000": {"VM.Clone": 1}}
+
+
 def creates(addresses):
     return [(a, "create") for a in addresses]
 
@@ -57,6 +66,10 @@ class World:
     init_error: str | None = None
     calls: list = field(default_factory=list)
     envs: list = field(default_factory=list)
+    perms: dict = field(default_factory=lambda: {k: dict(v) for k, v in GOOD_PERMS.items()})
+    proxmox_status: int = 200
+    proxmox_down: bool = False
+    proxmox_seen: list = field(default_factory=list)
 
     def factory(self, line_log):
         return FakeRunner(line_log, self)
@@ -90,7 +103,18 @@ class FakeRunner:
 def world(session, tmp_path, monkeypatch):
     monkeypatch.setenv("ECM_TF_STATE_URL", "postgresql://tf:statepw1234@db/tfstate")
     config.get_settings.cache_clear()
-    return World(root=tmp_path / "clusters")
+    w = World(root=tmp_path / "clusters")
+
+    def proxmox(request):                      # the pre-flight asks Proxmox what the token may do
+        w.proxmox_seen.append((request.method, request.url.path, request.headers.get("authorization")))
+        if w.proxmox_down:
+            raise httpx.ConnectError("no route to host")
+        if w.proxmox_status != 200:
+            return httpx.Response(w.proxmox_status, json={"errors": "permission check failed"})
+        return httpx.Response(200, json={"data": w.perms})
+
+    monkeypatch.setattr(factory, "transport", httpx.MockTransport(proxmox))
+    return w
 
 
 @pytest.fixture
@@ -616,3 +640,87 @@ def test_the_cleanup_endpoint_tears_down_a_successful_create(logged_in, session,
         assert r.status_code == 202 and len(q.connector.jobs) == 1
     detail = logged_in.get(f"/api/operations/{r.json()['id']}").json()
     assert detail["kind"] == "tf.destroy" and detail["parent_op_id"] == created.id
+
+
+# ---- the pre-flight: the token must still have the rights before anything is planned ------------------------
+
+def test_a_plan_first_checks_the_token_with_one_read_only_request(session, world, cluster, conn):
+    op = run(session, world, begin(session, cluster, conn))
+    assert op.state == "pending_approval"
+    assert [(m, p) for m, p, _ in world.proxmox_seen] == [("GET", "/api2/json/access/permissions")]
+    assert any("has the rights this operation needs" in line.line for line in session.scalars(select(OperationLog)))
+
+
+def test_rights_inherited_from_a_parent_path_count(session, world, cluster, conn):
+    world.perms = {"/": {"VM.Allocate": 1, "VM.Clone": 1, "Datastore.AllocateSpace": 1}}
+    assert run(session, world, begin(session, cluster, conn)).state == "pending_approval"
+
+
+@pytest.mark.parametrize("missing, text", [
+    ("/pool/ecm", "VM.Allocate on /pool/ecm"),
+    ("/storage/tank", "Datastore.AllocateSpace on /storage/tank"),
+    ("/vms/8000", "VM.Clone on the template /vms/8000")])
+def test_a_create_is_refused_before_planning_when_the_token_lacks_a_right(session, world, cluster, conn, missing, text):
+    del world.perms[missing]
+    op = begin(session, cluster, conn)
+    with pytest.raises(PreflightFailed, match=re.escape(text)):
+        run(session, world, op)
+    assert op.state == "failed" and op.plan_digest is None and "Fix its permissions" in op.error
+    assert world.calls == ["init"]                                # nothing was planned, and nothing could be approved
+
+
+def test_a_pool_that_lost_its_rights_is_caught_before_the_plan(session, world, cluster, conn):
+    """For example a pool that was recreated by hand, which drops its permissions."""
+    world.perms = {}
+    with pytest.raises(PreflightFailed, match="does the pool exist"):
+        run(session, world, begin(session, cluster, conn))
+
+
+def test_a_dry_run_is_checked_too(session, world, cluster, conn):
+    del world.perms["/pool/ecm"]
+    with pytest.raises(PreflightFailed):
+        run(session, world, begin(session, cluster, conn, dry_run=True))
+
+
+def test_a_teardown_needs_only_the_right_to_manage_vms_in_the_pool(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    world.perms = {"/pool/ecm": {"VM.Allocate": 1}}             # no storage or template rights: it does not need them
+    teardown = run(session, world, start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin"))
+    assert teardown.state == "pending_approval" and world.calls[-1] == "plan-destroy"
+
+
+def test_a_teardown_is_refused_when_even_the_pool_right_is_gone(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    world.perms = {}
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    with pytest.raises(PreflightFailed):
+        run(session, world, teardown)
+    assert "plan-destroy" not in world.calls
+
+
+def test_a_rejected_token_and_an_unreachable_proxmox_fail_the_plan_clearly_and_a_retry_checks_again(
+        session, world, cluster, conn):
+    world.proxmox_status = 401
+    op = begin(session, cluster, conn)
+    with pytest.raises(PreflightFailed, match="rejected the token Terraform uses"):
+        run(session, world, op)
+
+    world.proxmox_status = 200                                  # the rights are fixed; retry checks again
+    operations.retry_operation(session, op.id)
+    op = run(session, world, op)
+    assert op.state == "pending_approval" and len(world.proxmox_seen) == 2
+    operations.cancel_operation(session, op.id)
+
+    world.proxmox_down = True
+    with pytest.raises(PreflightFailed, match="could not reach Proxmox to check"):
+        run(session, world, begin(session, cluster, conn))
+
+
+def test_the_preflight_uses_the_token_terraform_will_use(session, world, cluster, conn):
+    cred = Credential(kind="proxmox_token", name="tf", ciphertext=crypto.encrypt("terraform-secret-1111"))
+    session.add(cred)
+    session.flush()
+    conn.terraform_credential_id, conn.terraform_token_id = cred.id, "tf@pve!terraform"
+    session.commit()
+    run(session, world, begin(session, cluster, conn))
+    assert world.proxmox_seen[0][2] == "PVEAPIToken=tf@pve!terraform=terraform-secret-1111"

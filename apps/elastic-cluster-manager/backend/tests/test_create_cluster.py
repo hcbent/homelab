@@ -1,11 +1,13 @@
 """Planning a new cluster: from a request to an operation, using the discovery data ECM already holds."""
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from sqlalchemy import select
 
 from app import config, crypto
 from app.desired import CatalogError, StaticCatalog, TopologyPreset
+from app.discovery import factory
 from app.models import (
     AuditEvent,
     Cluster,
@@ -429,6 +431,8 @@ def test_a_planned_dry_run_runs_to_a_reviewable_plan_that_cannot_be_approved(ses
 
     monkeypatch.setenv("ECM_TF_STATE_URL", "postgresql://tf:statepw1234@db/tfstate")
     config.get_settings.cache_clear()
+    rights = {"/pool/ecm": {"VM.Allocate": 1}, "/storage/tank": {"Datastore.AllocateSpace": 1}, "/vms/8000": {"VM.Clone": 1}}
+    monkeypatch.setattr(factory, "transport", httpx.MockTransport(lambda r: httpx.Response(200, json={"data": rights})))
     _, op, resolved = plan(session)
 
     class FakeTerraform:

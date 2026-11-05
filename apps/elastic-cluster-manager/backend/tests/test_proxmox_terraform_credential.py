@@ -214,3 +214,79 @@ def test_terraform_runs_with_its_own_token_when_the_connection_has_one(session, 
 def test_without_a_separate_token_terraform_falls_back_to_the_discovery_token(session, tmp_path, monkeypatch):
     env = tf_env(session, tmp_path, make_connection(session, separate=False), monkeypatch)
     assert env["PROXMOX_VE_API_TOKEN"] == "ro@pve!ecm=discovery-secret-9999"
+
+
+# ---- advice about rights outside the pool ----------------------------------------------------------------
+
+def routed(by_path, seen=None):
+    """A Proxmox that answers per path; anything not listed is refused with 403."""
+    seen = seen if seen is not None else []
+
+    def handler(request):
+        seen.append(request.url.path)
+        body = by_path.get(request.url.path.removeprefix("/api2/json"))
+        return httpx.Response(200, json={"data": body}) if body is not None else httpx.Response(403, json={"errors": "x"})
+
+    transport = httpx.MockTransport(handler)
+    transport.seen = seen
+    return transport
+
+
+ALLOC = {"VM.Allocate": 1, "VM.Clone": 1, "VM.Audit": 1, "Pool.Audit": 1, "Datastore.AllocateSpace": 1}
+
+
+def test_a_token_that_can_create_vms_outside_the_pool_gets_advice_naming_where(logged_in, conn_id, monkeypatch):
+    """The shape seen on infra: the same rights on the pool, the storage and the template."""
+    perms = {"/pool": ALLOC, "/pool/ecm": ALLOC, "/storage/tank": ALLOC, "/vms/8000": ALLOC}
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": perms, "/pools/ecm": {"members": []}}))
+    r = put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET)
+    assert r.status_code == 200                                             # advice, never a refusal
+    advice = r.json()["warnings"]
+    assert len(advice) == 1 and "outside the pool 'ecm'" in advice[0]
+    assert all(path in advice[0] for path in ("/pool", "/storage/tank", "/vms/8000"))
+
+
+def test_a_token_limited_to_the_pool_gets_no_such_advice_and_costs_no_extra_request(logged_in, conn_id, monkeypatch):
+    seen: list = []
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": POOL_SCOPED}, seen))
+    r = put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET)
+    assert r.status_code == 200 and r.json()["warnings"] == []
+    assert seen == ["/api2/json/access/permissions"]                        # the pool's members were not needed
+
+
+def test_vms_that_are_in_the_pool_are_not_counted_as_outside_it(logged_in, conn_id, monkeypatch):
+    perms = {"/pool/ecm": ALLOC, "/storage/tank": {"Datastore.AllocateSpace": 1}, "/vms/500": ALLOC, "/vms/501": ALLOC}
+    members = {"members": [{"vmid": 500}, {"vmid": 501}]}
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": perms, "/pools/ecm": members}))
+    assert put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET).json()["warnings"] == []
+
+
+def test_a_vm_outside_the_pool_is_named(logged_in, conn_id, monkeypatch):
+    perms = {"/pool/ecm": ALLOC, "/storage/tank": {"Datastore.AllocateSpace": 1}, "/vms/500": ALLOC, "/vms/100": ALLOC}
+    monkeypatch.setattr(factory, "transport",
+                        routed({"/access/permissions": perms, "/pools/ecm": {"members": [{"vmid": 500}]}}))
+    advice = put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET).json()["warnings"]
+    assert len(advice) == 1 and "/vms/100" in advice[0] and "/vms/500" not in advice[0]
+
+
+def test_unreadable_pool_membership_never_produces_a_false_alarm(logged_in, conn_id, monkeypatch):
+    perms = {"/pool/ecm": ALLOC, "/storage/tank": {"Datastore.AllocateSpace": 1}, "/vms/500": ALLOC}
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": perms}))       # /pools/ecm is refused
+    assert put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET).json()["warnings"] == []
+
+
+@pytest.mark.parametrize("pool_id", ["a/b", "../x", "", "-lead", "x" * 65, "two words"])
+def test_a_pool_id_that_could_alter_the_request_path_is_refused_even_if_it_would_pass_the_rights_check(
+        logged_in, conn_id, monkeypatch, pool_id):
+    perms = {f"/pool/{pool_id}": ALLOC, "/storage/tank": {"Datastore.AllocateSpace": 1}}   # only validation can stop it
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": perms}))
+    assert put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET, pool_id=pool_id).status_code == 422
+
+
+def test_many_paths_outside_the_pool_are_summarised(logged_in, conn_id, monkeypatch):
+    perms = {"/pool/ecm": ALLOC, "/storage/tank": {"Datastore.AllocateSpace": 1},
+             **{f"/pool/other{n}": ALLOC for n in range(7)}}
+    monkeypatch.setattr(factory, "transport", routed({"/access/permissions": perms}))
+    advice = put(logged_in, conn_id, token_id=TF_ID, token_secret=TF_SECRET).json()["warnings"]
+    assert len(advice) == 1 and "and 2 more" in advice[0] and "/pool/other0" in advice[0]
+    assert "/pool/other6" not in advice[0]

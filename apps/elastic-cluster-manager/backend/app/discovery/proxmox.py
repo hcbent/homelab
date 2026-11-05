@@ -1,5 +1,6 @@
 """Read-only Proxmox VE API client and normalisation of what it reports."""
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
@@ -11,6 +12,7 @@ _DISK_KEY = re.compile(r"^(scsi|virtio|sata|ide)\d+$")
 _NET_KEY = re.compile(r"^net\d+$")
 _IPCONFIG_KEY = re.compile(r"^ipconfig\d+$")
 _SECRET_KEYS = ("cipassword", "sshkeys", "password")  # never stored
+_POOL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 class ProxmoxClient:
@@ -31,6 +33,14 @@ class ProxmoxClient:
     def permissions(self) -> dict:
         """What this token may do, as {path: {privilege: 1}}. Always allowed, and read-only."""
         return self._get("/access/permissions", "read the token's permissions")
+
+    def pool_member_ids(self, pool_id: str) -> set[int]:
+        """VMIDs of the VMs in a pool. Needs Pool.Audit on it."""
+        if not _POOL_ID.match(pool_id):
+            raise DiscoveryError(f"{pool_id!r} is not a valid pool id")
+        data = self._get(f"/pools/{pool_id}", f"read pool {pool_id}")
+        members = data.get("members", []) if isinstance(data, dict) else []
+        return {int(m["vmid"]) for m in members if isinstance(m, dict) and m.get("vmid") is not None}
 
     def vms(self, node: str) -> list[dict]:
         return self._get(f"/nodes/{node}/qemu", f"list VMs on {node}")
@@ -181,7 +191,29 @@ def has_privilege(perms: dict, path: str, privilege: str) -> bool:
 _TOO_BROAD = ("Permissions.Modify", "User.Modify", "Sys.Modify")
 
 
-def check_terraform_rights(perms: dict, pool_id: str, datastore: str) -> tuple[list[str], list[str]]:
+def vm_rights_outside_the_pool(perms: dict, pool_id: str, members: Callable[[], set[int]] | None = None) -> list[str]:
+    """Paths other than the pool where the token can create VMs (VM.Allocate).
+
+    A VM in the pool shows up at /vms/<id> with the pool's rights, so those are fine. The pool's members are only
+    fetched, through `members`, when a per-VM path has to be judged; if they cannot be read, per-VM paths are
+    ignored rather than guessed at, so structural grants (/, /pool, another pool, a storage) are what get flagged.
+    """
+    inside = f"/pool/{pool_id}"
+    paths = sorted(p for p, privs in perms.items()
+                   if "VM.Allocate" in (privs or {}) and p != inside and not p.startswith(inside + "/"))
+    per_vm = [p for p in paths if re.fullmatch(r"/vms/\d+", p)]
+    outside = [p for p in paths if p not in per_vm]
+    if per_vm and members is not None:
+        try:
+            member_ids = members()
+        except DiscoveryError:
+            return outside
+        outside += [p for p in per_vm if int(p.rsplit("/", 1)[1]) not in member_ids]
+    return sorted(outside)
+
+
+def check_terraform_rights(perms: dict, pool_id: str, datastore: str,
+                           members: Callable[[], set[int]] | None = None) -> tuple[list[str], list[str]]:
     """(problems that make the token unusable for creating VMs, advice that does not block it).
 
     The one hard requirement is creating VMs in the pool, which is where ECM puts everything it makes (a token
@@ -195,11 +227,35 @@ def check_terraform_rights(perms: dict, pool_id: str, datastore: str) -> tuple[l
                         "check that the pool exists and the token has rights on it")
     if not has_privilege(perms, f"/storage/{datastore}", "Datastore.AllocateSpace"):
         advice.append(f"it has no Datastore.AllocateSpace on /storage/{datastore}, so creating disks there will fail")
+    outside = vm_rights_outside_the_pool(perms, pool_id, members)
+    if outside:
+        shown = ", ".join(outside[:5]) + (f" and {len(outside) - 5} more" if len(outside) > 5 else "")
+        advice.append(f"it can also create VMs outside the pool '{pool_id}' (VM.Allocate on {shown}); a token "
+                      "limited to the pool is safer")
     broad = [p for p in _TOO_BROAD if has_privilege(perms, "/", p)]
     if broad:
         advice.append(f"it can also change permissions or system settings ({', '.join(broad)}); Terraform does not "
                       "need that, so a narrower token is safer")
     return problems, advice
+
+
+def preflight_problems(perms: dict, *, pool_id: str, datastore: str, template_vmid: int | None,
+                       creating: bool) -> list[str]:
+    """What the token lacks for the operation about to be planned. Empty means it can proceed.
+
+    A plan only reads, so it cannot notice lost write rights; an apply would then fail part way and leave partial
+    resources. Creating needs VM.Allocate on the pool, space on the datastore and VM.Clone on the template. Removing
+    needs only VM.Allocate on the pool, so a teardown is not refused for rights it never uses.
+    """
+    problems: list[str] = []
+    if not has_privilege(perms, f"/pool/{pool_id}", "VM.Allocate"):
+        problems.append(f"no VM.Allocate on /pool/{pool_id} (does the pool exist, and does the token have rights on it?)")
+    if creating:
+        if not has_privilege(perms, f"/storage/{datastore}", "Datastore.AllocateSpace"):
+            problems.append(f"no Datastore.AllocateSpace on /storage/{datastore}")
+        if template_vmid is not None and not has_privilege(perms, f"/vms/{template_vmid}", "VM.Clone"):
+            problems.append(f"no VM.Clone on the template /vms/{template_vmid}")
+    return problems
 
 
 def collect(client: ProxmoxClient) -> InfraSnapshot:
