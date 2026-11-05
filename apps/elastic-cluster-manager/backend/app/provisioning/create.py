@@ -94,6 +94,9 @@ class CreateRequest(BaseModel):
     template_vmid: int | None = None  # defaults to ECM_DEFAULT_TEMPLATE_VMID, then ECM_DEFAULT_TEMPLATE_NAME
     datastore: str | None = None  # defaults to ECM_DEFAULT_STORAGE
     pool_id: str = "ecm"
+    # host exposes the real CPU features (Elasticsearch machine learning needs SSE4.2). Use x86-64-v2-AES or a named
+    # model instead if the Proxmox hosts have different CPUs and VMs must live-migrate between them.
+    cpu_type: str = Field(default="host", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     # Plan only, and the plan can never be approved. Real creates are opt-in.
     dry_run: bool = True
 
@@ -337,6 +340,7 @@ def resolve(db: Session, req: CreateRequest, own_cluster: str | None = None) -> 
         "vm_ids": vm_ids, "profile": profile.model_dump(mode="json"),
         "template": {"node_name": template.pve_node, "vm_id": template.vmid},
         "proxmox_connection_id": conn.id, "datastore_id": datastore, "pool_id": req.pool_id,
+        "cpu_type": req.cpu_type,
     }
     return Resolved(state, params, placement.hosts, addresses, vm_ids, notes)
 

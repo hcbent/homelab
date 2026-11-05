@@ -247,3 +247,29 @@ def test_rendered_workspace_validates(tmp_path):
     out = subprocess.run([terraform, "validate", "-no-color"], cwd=tmp_path, capture_output=True,
                          text=True, timeout=60, check=False)
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# ---- the CPU type ----------------------------------------------------------------------------------
+
+def test_the_cpu_type_defaults_to_host_and_reaches_the_cpu_block():
+    files = render_workspace(make())
+    assert tfvars(files)["cpu_type"] == "host"
+    assert "    type  = var.cpu_type\n" in files["modules/es_node/main.tf"]
+    assert "  cpu_type      = var.cpu_type\n" in files["main.tf"]                   # the root hands it to the module
+
+
+def test_the_cpu_type_can_be_chosen_and_changes_the_digest():
+    default, chosen = render_workspace(make()), render_workspace(make(cpu_type="x86-64-v2-AES"))
+    assert tfvars(chosen)["cpu_type"] == "x86-64-v2-AES"
+    assert config_digest(default) != config_digest(chosen)                          # so an approval cannot carry over
+
+
+@pytest.mark.parametrize("cpu_type", ["", "host; rm -rf /", "two words", "-leading", "x" * 65, 'a"b'])
+def test_an_unsafe_cpu_type_is_rejected(cpu_type):
+    with pytest.raises(RenderError, match="cpu_type"):
+        render_workspace(make(cpu_type=cpu_type))
+
+
+def test_the_cpu_type_never_enters_the_hcl_text():
+    files = render_workspace(make(cpu_type="Skylake-Server"))
+    assert all("Skylake-Server" not in text for path, text in files.items() if path.endswith(".tf"))

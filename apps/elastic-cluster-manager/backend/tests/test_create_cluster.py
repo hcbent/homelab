@@ -529,3 +529,42 @@ def test_a_failed_teardown_followed_by_a_successful_one_leaves_nothing_to_block_
     session.add(Operation(kind="tf.destroy", cluster_id=cluster.id, parent_op_id=op.id, state="succeeded"))
     session.commit()
     assert plan(session, name="lab-a", dry_run=False)[0].id == cluster.id
+
+
+# ---- the CPU type --------------------------------------------------------------------------------------
+
+def test_a_create_asks_for_the_host_cpu_type_unless_told_otherwise(session, pve):
+    assert request().cpu_type == "host"
+    assert plan(session)[1].params["cpu_type"] == "host"
+    assert plan(session, name="lab-c", cpu_type="x86-64-v2-AES")[1].params["cpu_type"] == "x86-64-v2-AES"
+
+
+def test_a_cpu_type_that_is_not_one_is_refused_before_anything_is_planned(session, pve):
+    for bad in ("host; rm", "two words", ""):
+        with pytest.raises(ValueError):
+            request(cpu_type=bad)
+
+
+def test_a_stored_create_from_before_the_setting_existed_still_renders_with_host(session, pve):
+    from app.provisioning.operation import render_input
+    _, op, _ = plan(session)
+    params = {k: v for k, v in op.params.items() if k != "cpu_type"}
+    assert render_input(params, "b4c557d86a5c400f9943ec3b1830a73f", "https://pve.test:8006", False).cpu_type == "host"
+
+
+def test_post_clusters_takes_a_cpu_type_and_refuses_a_bad_one(logged_in, session, pve, monkeypatch):
+    from procrastinate import testing
+
+    from app import jobs
+    from app.api.provisioning import get_catalog
+    from app.main import app
+    app.dependency_overrides[get_catalog] = lambda: StaticCatalog(["9.4.3"])
+    try:
+        body = {"name": "lab-b", "version": "9.4.3", "preset": "three_node", "template_vmid": 8000}
+        assert logged_in.post("/api/clusters", json={**body, "cpu_type": "bad type"}, headers=H).status_code == 422
+        with jobs.queue.replace_connector(testing.InMemoryConnector()):
+            r = logged_in.post("/api/clusters", json={**body, "cpu_type": "x86-64-v3"}, headers=H)
+        assert r.status_code == 202
+        assert session.get(Operation, r.json()["operation_id"]).params["cpu_type"] == "x86-64-v3"
+    finally:
+        app.dependency_overrides.pop(get_catalog, None)

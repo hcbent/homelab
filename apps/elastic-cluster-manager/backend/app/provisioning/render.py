@@ -23,6 +23,7 @@ from app.provisioning.vmid import MIN_VMID
 _CLUSTER_ID = re.compile(r"^[a-f0-9]{8,32}$")
 _PVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _BRIDGE = re.compile(r"^[a-z][a-z0-9]{0,14}$")
+_CPU_TYPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")  # host, x86-64-v2-AES, Skylake-Server, custom-x
 MODULE_DIR = "modules/es_node"
 
 
@@ -50,6 +51,7 @@ class RenderInput:
     datastore_id: str = "tank"
     pool_id: str = "ecm"
     agent_enabled: bool = False
+    cpu_type: str = "host"
     state_backend: Literal["pg", "local"] = "pg"
 
 
@@ -60,6 +62,8 @@ def _check(inp: RenderInput) -> None:
                         ("template host", inp.template.node_name)):
         if not _PVE_NAME.match(value):
             raise RenderError(f"{what} {value!r} is not a valid Proxmox name")
+    if not _CPU_TYPE.match(inp.cpu_type):
+        raise RenderError(f"cpu_type {inp.cpu_type!r} is not a valid Proxmox CPU type such as host or x86-64-v2-AES")
     if not _BRIDGE.match(inp.profile.bridge):
         raise RenderError(f"bridge {inp.profile.bridge!r} is not a valid Linux bridge name")
     url = urlparse(inp.proxmox_endpoint)
@@ -124,6 +128,7 @@ def _tfvars(inp: RenderInput) -> dict:
         "dns_servers": list(inp.profile.dns),
         "search_domain": inp.profile.search_domain,
         "agent_enabled": inp.agent_enabled,
+        "cpu_type": inp.cpu_type,
         "nodes": nodes,
     }
 

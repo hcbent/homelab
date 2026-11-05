@@ -70,7 +70,8 @@ def render_input(params: dict, cluster_id: str, endpoint: str, insecure: bool) -
         profile=NetworkProfile.model_validate(params["profile"]),
         template=TemplateRef(params["template"]["node_name"], params["template"]["vm_id"]),
         proxmox_endpoint=endpoint, proxmox_insecure=insecure,
-        datastore_id=params.get("datastore_id", "tank"), pool_id=params.get("pool_id", "ecm"))
+        datastore_id=params.get("datastore_id", "tank"), pool_id=params.get("pool_id", "ecm"),
+        cpu_type=params.get("cpu_type", "host"))
 
 
 def _connection(db: Session, params: dict) -> ProxmoxConnection:

@@ -96,6 +96,12 @@ variable "agent_enabled" {
   default = false
 }
 
+variable "cpu_type" {
+  description = "Proxmox CPU type. host exposes the real CPU features, which Elasticsearch machine learning needs."
+  type        = string
+  default     = "host"
+}
+
 variable "nodes" {
   description = "One entry per Elasticsearch node, keyed by node name."
   type = map(object({
@@ -133,6 +139,7 @@ MAIN_TF = '''module "node" {
   dns_servers   = var.dns_servers
   search_domain = var.search_domain
   agent_enabled = var.agent_enabled
+  cpu_type      = var.cpu_type
 }
 '''
 
@@ -226,6 +233,11 @@ variable "agent_enabled" {
   type    = bool
   default = false
 }
+
+variable "cpu_type" {
+  type    = string
+  default = "host"
+}
 '''
 
 MODULE_MAIN_TF = '''resource "proxmox_virtual_environment_vm" "this" {
@@ -246,6 +258,7 @@ MODULE_MAIN_TF = '''resource "proxmox_virtual_environment_vm" "this" {
 
   cpu {
     cores = var.cores
+    type  = var.cpu_type
   }
 
   memory {
