@@ -130,6 +130,19 @@ def _usable(ip: str) -> bool:
     return not (ip.startswith(("127.", "169.254.", "fe80:")) or ip == "::1")
 
 
+# Interfaces created by container runtimes and hypervisors inside a guest. Their addresses (for example the
+# 172.17.0.1 gateway of docker0) describe an internal network, not the machine, so they must never be used as
+# evidence that a VM runs a given Elasticsearch node. Matching on the interface name avoids assuming an
+# address range, since a LAN may legitimately use 172.16.0.0/12.
+_VIRTUAL_IFACE_PREFIXES = ("lo", "docker", "br-", "veth", "virbr", "cni", "flannel", "cali", "cilium",
+                           "podman", "weave", "lxcbr", "kube-", "tunl")
+
+
+def is_virtual_interface(name: str | None) -> bool:
+    n = (name or "").lower()
+    return n == "lo" or n.startswith(_VIRTUAL_IFACE_PREFIXES[1:])
+
+
 def collect(client: ProxmoxClient) -> InfraSnapshot:
     snap = InfraSnapshot()
     snap.nodes = client.nodes()
@@ -147,6 +160,8 @@ def collect(client: ProxmoxClient) -> InfraSnapshot:
             ips: dict[str, str] = {ip: "cloud-init" for ip in static_ips(cfg)}
             if v.get("status") == "running" and not is_template:
                 for iface in client.vm_agent_interfaces(node, vmid):
+                    if is_virtual_interface(iface.get("name")):
+                        continue
                     for a in iface.get("ip-addresses", []):
                         ip = a.get("ip-address", "")
                         if _usable(ip):

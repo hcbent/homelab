@@ -74,3 +74,23 @@ def test_correlation_rules():
     assert (prob.vm_key, prob.confidence) == ("b", "probable")
     assert link_node("10.0.0.5", None, "nope", vms).confidence == "unlinked"   # templates ignored
     assert link_node(None, None, "nobody", vms).confidence == "unlinked"
+
+
+def test_container_bridge_addresses_are_not_vm_evidence():
+    assert all(proxmox.is_virtual_interface(n) for n in
+               ("lo", "docker0", "br-3f2a9c", "veth12ab", "virbr0", "cni0", "flannel.1", "cali123", "podman1"))
+    assert not any(proxmox.is_virtual_interface(n) for n in ("eth0", "ens18", "enp6s18", "bond0", "vmbr0", None))
+
+    class Stub:
+        def nodes(self): return [{"node": "pve1", "status": "online"}]
+        def networks(self, node): return []
+        def storages(self, node): return []
+        def vms(self, node): return [{"vmid": 116, "name": "docker", "status": "running"}]
+        def vm_config(self, node, vmid): return {"name": "docker", "cores": 2, "memory": 2048}
+        def vm_agent_interfaces(self, node, vmid):
+            def addr(ip): return {"ip-addresses": [{"ip-address": ip, "ip-address-type": "ipv4", "prefix": 24}]}
+            return [{"name": "ens18", **addr("192.0.2.10")}, {"name": "docker0", **addr("172.17.0.1")},
+                    {"name": "br-1a2b3c", **addr("172.18.0.1")}]
+
+    snap = proxmox.collect(Stub())
+    assert snap.vms[0].ips == [{"ip": "192.0.2.10", "source": "guest-agent"}]
