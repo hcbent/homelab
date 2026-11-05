@@ -1,11 +1,14 @@
+from datetime import UTC, datetime
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import audit, auth, crypto
 from app.db import get_db
-from app.discovery import sync
+from app.discovery import factory, sync
 from app.discovery.es import is_data_node
 from app.discovery.http import DiscoveryError
 from app.models import (
@@ -25,11 +28,15 @@ router = APIRouter(prefix="/api", tags=["discovery"],
 
 # ---------- Proxmox connections ----------
 
+# A pasted secret often carries a trailing newline or space, which Proxmox then rejects with a 401.
+Trimmed = Annotated[str, StringConstraints(strip_whitespace=True)]
+
+
 class ProxmoxIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     api_url: HttpUrl
-    token_id: str = Field(min_length=3, description="user@realm!tokenname")
-    token_secret: str = Field(min_length=8)
+    token_id: Trimmed = Field(min_length=3, description="user@realm!tokenname")
+    token_secret: Trimmed = Field(min_length=8)
     verify_tls: bool = True
     ca_pem: str | None = None
 
@@ -61,6 +68,42 @@ def add_connection(body: ProxmoxIn, db: Session = Depends(get_db),
     db.commit()
     audit.record(db, user.username, "proxmox.add", "proxmox_connection", conn.id, name=body.name,
                  tls_verify=body.verify_tls)
+    return _conn(conn)
+
+
+class ProxmoxCredentialIn(BaseModel):
+    token_secret: Trimmed = Field(min_length=8)
+    token_id: Trimmed | None = Field(default=None, min_length=3, description="only if the token itself changed")
+
+
+@router.put("/proxmox/{conn_id}/credential")
+def replace_proxmox_credential(conn_id: str, body: ProxmoxCredentialIn, db: Session = Depends(get_db),
+                               user: User = Depends(auth.current_user)):
+    """Replace a connection's token. The new one is tested against Proxmox (a read-only request) before
+    anything is saved, so a typo cannot overwrite a working token. The old secret is overwritten, not kept."""
+    conn = db.get(ProxmoxConnection, conn_id)
+    if not conn:
+        raise HTTPException(404, "Not found")
+    token_id = body.token_id or conn.token_id
+    try:
+        factory.proxmox_client_for(conn, token_id, body.token_secret).nodes()
+    except DiscoveryError as e:
+        audit.record(db, user.username, "proxmox.credential_rejected", "proxmox_connection", conn.id,
+                     token_id=token_id)
+        if e.status in (401, 403):
+            raise HTTPException(422, f"Proxmox rejected that token, so nothing was changed ({e})") from e
+        raise HTTPException(502, f"Could not reach Proxmox to test the token, so nothing was changed ({e})") from e
+    cred = db.get(Credential, conn.credential_id)
+    cred.ciphertext = crypto.encrypt(body.token_secret)
+    cred.rotated_at = datetime.now(UTC)
+    conn.token_id = token_id
+    db.commit()
+    audit.record(db, user.username, "proxmox.credential_replace", "proxmox_connection", conn.id,
+                 token_id=token_id)
+    try:
+        sync.sync_proxmox(db, conn)  # refresh now; a failure here is recorded on the connection, not raised
+    except DiscoveryError:
+        pass
     return _conn(conn)
 
 
