@@ -82,7 +82,7 @@ def test_container_bridge_addresses_are_not_vm_evidence():
     assert not any(proxmox.is_virtual_interface(n) for n in ("eth0", "ens18", "enp6s18", "bond0", "vmbr0", None))
 
     class Stub:
-        def nodes(self): return [{"node": "pve1", "status": "online"}]
+        def nodes(self): return [{"node": "pve1", "status": "online", "maxcpu": 4, "maxmem": 8 * 1024**3}]
         def networks(self, node): return []
         def storages(self, node): return []
         def vms(self, node): return [{"vmid": 116, "name": "docker", "status": "running"}]

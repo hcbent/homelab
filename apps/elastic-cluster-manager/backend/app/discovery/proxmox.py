@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from app.crypto import register_secret
-from app.discovery.http import DiscoveryError, build_client, get_json
+from app.discovery.http import DiscoveryError, InsufficientRights, build_client, get_json
 
 _DISK_KEY = re.compile(r"^(scsi|virtio|sata|ide)\d+$")
 _NET_KEY = re.compile(r"^net\d+$")
@@ -143,9 +143,25 @@ def is_virtual_interface(name: str | None) -> bool:
     return n == "lo" or n.startswith(_VIRTUAL_IFACE_PREFIXES[1:])
 
 
+def check_node_usage(nodes: list[dict]) -> None:
+    """Refuse a token that cannot audit the nodes.
+
+    For a node the token has no Sys.Audit right on, Proxmox still lists the node and its status but leaves out its
+    CPU and memory. If that holds for every online node, the token cannot be used for discovery or placement, and a
+    sync would replace the stored picture with a nearly empty one. A single node without figures is tolerated: it may
+    simply have just booted.
+    """
+    online = [n for n in nodes if n.get("status") == "online"]
+    if online and not any(n.get("maxcpu") is not None and n.get("maxmem") is not None for n in online):
+        raise InsufficientRights(
+            "Proxmox reports no CPU or memory for any online node, so this API token cannot audit them; it needs "
+            "the Sys.Audit privilege, for example the PVEAuditor role on /")
+
+
 def collect(client: ProxmoxClient) -> InfraSnapshot:
     snap = InfraSnapshot()
     snap.nodes = client.nodes()
+    check_node_usage(snap.nodes)  # before anything is stored: a refused sync leaves the last good data alone
     for n in snap.nodes:
         node = n["node"]
         if n.get("status") != "online":

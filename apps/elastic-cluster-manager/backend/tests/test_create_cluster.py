@@ -454,3 +454,16 @@ def test_a_planned_dry_run_runs_to_a_reviewable_plan_that_cannot_be_approved(ses
     assert op.state == "succeeded" and op.plan_summary["adds"] == 3 and op.plan_digest
     with pytest.raises(operations.ApprovalRefused, match="dry run"):
         operations.approve_operation(session, op.id, op.plan_digest, "admin")
+
+
+# ---- when ECM cannot see the machines that already exist ------------------------------------------------
+
+def test_it_warns_when_it_can_see_no_vms_at_all(session, pve):
+    warning = next(w for w in plan(session)[2].warnings if "can see no VMs" in w)
+    assert "PVEAuditor" in warning and "addresses, names and VMIDs" in warning
+
+
+def test_that_warning_goes_away_once_a_vm_is_visible(session, pve):
+    session.add(Vm(connection_id=pve.id, pve_node="pve1", vmid=301, name="other-vm", status="running"))
+    session.commit()
+    assert not any("can see no VMs" in w for w in plan(session)[2].warnings)

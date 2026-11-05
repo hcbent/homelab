@@ -192,4 +192,5 @@ def test_host_views_from_stored_rows():
     assert p1.online and p1.cores == 40 and p1.committed_vcpus == 8       # only the running, non-template VM
     assert p1.committed_mem == 16384 * 1024 * 1024
     assert list(p1.datastores) == ["tank"] and p1.datastores["tank"].shared   # inactive storage dropped
-    assert not views["pve2"].online and not views["pve3"].online
+    assert views["pve2"].online and not views["pve2"].usage_known     # listed, but its capacity is unknown
+    assert not views["pve3"].online

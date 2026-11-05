@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -309,6 +309,12 @@ def resolve(db: Session, req: CreateRequest, own_cluster: str | None = None) -> 
         raise CreateInvalid(str(exc)) from exc
 
     notes = list(warnings(state)) + [i.message for i in placement.issues if i.severity == "warning"]
+    visible = db.scalar(select(func.count()).select_from(Vm).where(Vm.connection_id == conn.id,
+                                                                     Vm.is_template.is_(False)))
+    if not visible:
+        notes.append("ECM can see no VMs on this Proxmox other than templates, so it cannot check this plan against "
+                     "existing machines (addresses, names and VMIDs in use). If VMs exist, the API token cannot see "
+                     "them: it needs the PVEAuditor role on /")
     synced = _aware(conn.last_sync_at)
     if conn.last_sync_error:
         notes.append(f"the last Proxmox sync failed ({conn.last_sync_error}); placement uses older data")

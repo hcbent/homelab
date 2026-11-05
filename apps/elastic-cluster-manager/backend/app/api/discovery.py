@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app import audit, auth, crypto
 from app.db import get_db
-from app.discovery import factory, sync
+from app.discovery import factory, proxmox, sync
 from app.discovery.es import is_data_node
-from app.discovery.http import DiscoveryError
+from app.discovery.http import DiscoveryError, InsufficientRights
 from app.models import (
     Cluster,
     Credential,
@@ -86,10 +86,13 @@ def replace_proxmox_credential(conn_id: str, body: ProxmoxCredentialIn, db: Sess
         raise HTTPException(404, "Not found")
     token_id = body.token_id or conn.token_id
     try:
-        factory.proxmox_client_for(conn, token_id, body.token_secret).nodes()
+        nodes = factory.proxmox_client_for(conn, token_id, body.token_secret).nodes()
+        proxmox.check_node_usage(nodes)  # accepted is not enough: it must be able to audit the nodes too
     except DiscoveryError as e:
         audit.record(db, user.username, "proxmox.credential_rejected", "proxmox_connection", conn.id,
                      token_id=token_id)
+        if isinstance(e, InsufficientRights):
+            raise HTTPException(422, f"Proxmox accepted that token, but {e}. Nothing was changed") from e
         if e.status in (401, 403):
             raise HTTPException(422, f"Proxmox rejected that token, so nothing was changed ({e})") from e
         raise HTTPException(502, f"Could not reach Proxmox to test the token, so nothing was changed ({e})") from e

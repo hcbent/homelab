@@ -37,6 +37,7 @@ class HostView:
     cores: int
     mem_total: int  # bytes
     mem_used: int  # bytes, as reported by Proxmox
+    usage_known: bool = True  # Proxmox reported this host's CPU and memory (it may not, without Sys.Audit)
     committed_vcpus: int = 0  # vCPUs configured on running VMs
     committed_mem: int = 0  # bytes configured on running VMs
     datastores: dict[str, Datastore] = field(default_factory=dict)
@@ -84,7 +85,7 @@ class PlacementResult:
 def host_views_from_rows(nodes: list[dict], storages: list[dict], vms: list[dict]) -> list[HostView]:
     """Build host views from the rows ECM stores (pve_nodes, pve_storages, vms), as dicts.
 
-    Templates and stopped VMs reserve nothing. A node with no usage data is treated as offline for placement,
+    Templates and stopped VMs reserve nothing. A node with no usage data is never used for placement,
     because its free capacity is unknown.
     """
     committed_cpu: Counter = Counter()
@@ -106,7 +107,7 @@ def host_views_from_rows(nodes: list[dict], storages: list[dict], vms: list[dict
             if s["node"] == n["name"] and s.get("active", True)
         }
         out.append(HostView(
-            name=n["name"], online=n.get("status") == "online" and known,
+            name=n["name"], online=n.get("status") == "online", usage_known=known,
             cores=int(usage.get("maxcpu") or 0), mem_total=int(usage.get("maxmem") or 0),
             mem_used=int(usage.get("mem") or 0), committed_vcpus=committed_cpu[n["name"]],
             committed_mem=committed_mem[n["name"]], datastores=stores))
@@ -138,7 +139,11 @@ class _Ledger:
         """Reasons the node does not fit here (empty when it fits) and its score if it does."""
         why: list[str] = []
         if not host.online:
-            return ["host is offline or reports no usage data"], 0.0
+            return ["host is offline"], 0.0
+        if not host.usage_known:
+            unknown = ("Proxmox reports no CPU or memory for this host, so its free capacity is unknown "
+                       "(the API token may lack the Sys.Audit privilege)")
+            return [unknown], 0.0
         ds = host.datastores.get(self.cfg.datastore)
         if ds is None:
             return [f"datastore '{self.cfg.datastore}' is not available on this host"], 0.0

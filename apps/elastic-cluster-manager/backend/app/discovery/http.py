@@ -10,6 +10,10 @@ class DiscoveryError(Exception):
         self.status = status
 
 
+class InsufficientRights(DiscoveryError):
+    """Proxmox accepted the token, but it may not see what discovery and placement need."""
+
+
 def build_client(base_url: str, headers: dict, *, verify: bool, ca_pem: str | None,
                  transport: httpx.BaseTransport | None, timeout: float = 15.0) -> httpx.Client:
     tls: ssl.SSLContext | bool = verify
