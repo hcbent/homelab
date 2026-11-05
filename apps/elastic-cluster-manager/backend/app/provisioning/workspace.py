@@ -36,6 +36,16 @@ class StoredPlan:
     summary: dict
     created_at: str
 
+    @property
+    def approval_digest(self) -> str:
+        """What the user approves. It covers the operation kind, the rendered configuration and the plan file,
+        so a change to any of them gives a different digest and the old approval no longer matches."""
+        h = hashlib.sha256()
+        for part in (self.operation_kind, self.digest, self.plan_sha256):
+            h.update(part.encode())
+            h.update(b"\0")
+        return h.hexdigest()
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -97,6 +107,20 @@ class Workspace:
         """Drop the stored plan (after an apply, or before re-planning). State and .terraform are kept."""
         for path in (self.plan_path, self.meta_path):
             path.unlink(missing_ok=True)
+
+
+def existing_workspace(root: Path, cluster_id: str) -> Workspace:
+    """The workspace as it is on disk, without rewriting anything.
+
+    Apply must use this, not open_workspace: re-rendering first would repair a tampered file and hide it from
+    the digest check.
+    """
+    if not _CLUSTER_ID.match(cluster_id):
+        raise WorkspaceError("cluster_id must be 8 to 32 lowercase hex characters")
+    base = (root / cluster_id / "tf").resolve()
+    if not base.is_dir():
+        raise WorkspaceError("the workspace does not exist; plan again")
+    return Workspace(base)
 
 
 def open_workspace(root: Path, cluster_id: str, rendered: dict[str, str]) -> Workspace:

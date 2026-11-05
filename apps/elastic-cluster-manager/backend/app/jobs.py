@@ -29,6 +29,15 @@ def demo_noop(operation_id: str) -> None:
         run_phases(db, operation_id, demo_handlers(db, operation_id))
 
 
+@queue.task(name="tf.run")  # no retry strategy: a Terraform run is retried only by a person, never automatically
+def tf_run(operation_id: str) -> None:
+    """Run or resume a Terraform operation: until it pauses for approval, finishes or fails."""
+    from app.provisioning.operation import run_operation
+
+    with session_factory()() as db:
+        run_operation(db, operation_id)
+
+
 _minutes = min(max(get_settings().sync_interval_minutes, 1), 59)
 
 

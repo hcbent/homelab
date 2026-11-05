@@ -210,6 +210,20 @@ class Operation(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
+    # Terraform operations: a dry run can plan but never be approved. A cleanup points at the failed create.
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_op_id: Mapped[str | None] = mapped_column(ForeignKey("operations.id"))
+    # The plan the user is asked to approve. plan_digest covers the operation kind, the rendered configuration
+    # and the plan file, so approving it approves exactly that plan and nothing an edit could swap in.
+    plan_digest: Mapped[str | None] = mapped_column(String(64))
+    plan_summary: Mapped[dict | None] = mapped_column(JSON)
+    approved_digest: Mapped[str | None] = mapped_column(String(64))
+    approved_by: Mapped[str | None] = mapped_column(String(100))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What the last apply left behind: resources in state, non-sensitive outputs and the error if it failed.
+    # Kept across retries, because cleanup is scoped to it.
+    result: Mapped[dict | None] = mapped_column(JSON)
+
     # At most one active mutating operation per cluster, enforced by the database.
     __table_args__ = (
         Index(

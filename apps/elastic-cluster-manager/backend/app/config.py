@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # Background discovery refresh, in minutes (1-59)
     sync_interval_minutes: int = 5
 
+    # Terraform. The worker image provides the binary and a vendored provider (plugin dir); nothing is downloaded.
+    terraform_binary: str = "terraform"
+    terraform_plugin_dir: str | None = None
+    tf_workspace_root: str = "/data/clusters"
+    # libpq URL of the database that holds Terraform state (one schema per cluster). Handed to Terraform as
+    # PG_CONN_STR and nowhere else. Empty means Terraform operations cannot run.
+    tf_state_url: SecretStr = SecretStr("")
+
     # Defaults offered by the wizard in later phases. Never assumed to exist.
     default_template_vmid: int | None = None
     default_template_name: str | None = None
