@@ -60,7 +60,7 @@ export interface Vm {
 export interface Infrastructure {
   connections: { id: string; name: string; api_url: string; last_sync_at: string | null;
                  last_sync_error: string | null }[];
-  nodes: { name: string; status: string; usage: Record<string, number> }[];
+  nodes: { name: string; status: string; usage: Partial<Record<string, number | null>> }[];
   storages: { node: string; name: string; type: string; shared: boolean; total: number;
               used: number; avail: number }[];
   templates: Vm[]; vms: Vm[];

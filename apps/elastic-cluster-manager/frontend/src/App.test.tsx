@@ -118,6 +118,16 @@ test("skipping TLS verification shows the audited warning before saving", async 
   expect(screen.getByText("Skipping verification is recorded in the audit log.")).toBeInTheDocument();
 });
 
+test("host usage shows 'Not available' instead of 0% of null when Proxmox sends none", async () => {
+  window.location.hash = "#/infrastructure";
+  const infra = { ...INFRA, nodes: [{ name: "pve1", status: "online", usage: {} }] };
+  mockFetch(route({ "/api/infrastructure": [200, infra], "/api/clusters": [200, [CLUSTER]] }));
+  render(<App />);
+  expect((await screen.findAllByText("pve1")).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Not available").length).toBeGreaterThanOrEqual(2);
+  expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+});
+
 test("infrastructure lists both connection panels with their state", async () => {
   window.location.hash = "#/infrastructure";
   mockFetch(route({ "/api/infrastructure": [200, INFRA], "/api/clusters": [200, [CLUSTER]] }));

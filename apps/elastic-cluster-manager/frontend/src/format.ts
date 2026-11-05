@@ -24,3 +24,15 @@ export function storedNumber(key: string, fallback: number): number {
 export function store(key: string, value: number) {
   try { localStorage.setItem(key, String(value)); } catch { /* private mode */ }
 }
+
+/** CPU as "12% of 16", or "Not available" when Proxmox sent no usage data (never "0% of null"). */
+export function cpuText(usage: { cpu?: number | null; maxcpu?: number | null }): string {
+  if (usage.cpu == null || usage.maxcpu == null) return "Not available";
+  return `${Math.round(usage.cpu * 100)}% of ${usage.maxcpu}`;
+}
+
+/** Memory as "3.0 GB / 8.0 GB", or "Not available" when either figure is missing. */
+export function memText(usage: { mem?: number | null; maxmem?: number | null }): string {
+  if (usage.mem == null || usage.maxmem == null) return "Not available";
+  return `${bytes(usage.mem)} / ${bytes(usage.maxmem)}`;
+}

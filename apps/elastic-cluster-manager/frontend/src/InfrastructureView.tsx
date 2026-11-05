@@ -6,7 +6,7 @@ import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "reac
 import { AddConnection, ConnectionType } from "./AddConnection";
 import { api, ApiError, ClusterSummary, Infrastructure, Vm } from "./api";
 import { HealthBadge } from "./Badges";
-import { ago, bytes, storedNumber } from "./format";
+import { ago, bytes, cpuText, memText, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
 import { useReveals } from "./reveal";
 import { useInterval } from "./useInterval";
@@ -65,8 +65,8 @@ export function InfrastructureView() {
   const hostColumns: EuiBasicTableColumn<Host>[] = [
     { name: "Host", render: (n: Host) => <span className="ecm-mono">{n.name}</span> },
     { field: "status", name: "Status" },
-    { name: "CPU", render: (n: Host) => `${Math.round((n.usage.cpu ?? 0) * 100)}% of ${n.usage.maxcpu}` },
-    { name: "Memory", render: (n: Host) => `${bytes(n.usage.mem)} / ${bytes(n.usage.maxmem)}` },
+    { name: "CPU", render: (n: Host) => <span className={n.usage.cpu == null ? "ecm-muted" : undefined}>{cpuText(n.usage)}</span> },
+    { name: "Memory", render: (n: Host) => <span className={n.usage.mem == null ? "ecm-muted" : undefined}>{memText(n.usage)}</span> },
   ];
   const poolColumns: EuiBasicTableColumn<Pool>[] = [
     { name: "Host", render: (s: Pool) => <span className="ecm-mono">{s.node}</span> },
