@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # "verify-full" for a database that does. Ignored when ECM_TF_STATE_URL is set, which is used as written.
     tf_state_sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "disable"
 
+    # How the worker reaches the VMs it configures with Ansible. The key is a file mounted into the worker; its
+    # contents are never read or stored by ECM, and Ansible is handed only this path.
+    ssh_user: str = "bret"
+    ssh_key_path: str = "/run/ecm/ssh/github_rsa"
+    # Where the worker image keeps the playbooks and roles (copied in at build time from infra/ansible).
+    ansible_dir: str = "/opt/ecm/ansible"
+
     # Proxmox VMIDs handed out to new nodes (DECISIONS: disposable VMs use 5xx)
     vmid_range_start: int = 500
     vmid_range_end: int = 599

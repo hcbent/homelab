@@ -41,8 +41,13 @@ services:
     # Bound to the compose network only; Caddy reaches it through `web`.
 
   worker:
-    # The only image with Terraform and the vendored provider (see backend/Dockerfile).
-    build: {context: ../backend, target: worker}
+    # The only image with Terraform, the vendored provider, Ansible and an SSH client (see backend/Dockerfile).
+    build:
+      context: ../backend
+      target: worker
+      # The playbooks and roles, copied into the image at /opt/ecm/ansible (COPY --from=ecm_ansible).
+      additional_contexts:
+        ecm_ansible: ../infra/ansible
     command: procrastinate --app=app.jobs.queue worker
     environment:
       <<: *app-env
@@ -51,6 +56,9 @@ services:
       # ECM_TF_STATE_URL in .env to use a separate database. Handed to Terraform as PG_CONN_STR and nowhere else.
       ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-}
       ECM_TF_STATE_SSLMODE: ${ECM_TF_STATE_SSLMODE:-disable}
+      # How the worker reaches the VMs it configures (Ansible). The key is mounted below, never copied into the image.
+      ECM_SSH_USER: ${ECM_SSH_USER:-bret}
+      ECM_SSH_KEY_PATH: /run/ecm/ssh/github_rsa
     depends_on: {migrate: {condition: service_completed_successfully}}
     restart: unless-stopped
     volumes:
@@ -58,6 +66,13 @@ services:
       # Terraform workspaces. A separate volume, because appdata already exists on deployed hosts owned by
       # root, while a new volume takes the ownership the image gives /data/clusters (the ecm user).
       - clusters:/data/clusters
+      # One key file, read-only, never the whole ~/.ssh. create_host_path: false makes a wrong path an error instead
+      # of Docker silently creating a directory there. The file must be readable by the worker's user (uid 10001).
+      - type: bind
+        source: ${ECM_SSH_KEY_FILE:?set ECM_SSH_KEY_FILE in deploy/.env to the host path of the SSH private key}
+        target: /run/ecm/ssh/github_rsa
+        read_only: true
+        bind: {create_host_path: false}
 
   web:
     build: {context: ../frontend}

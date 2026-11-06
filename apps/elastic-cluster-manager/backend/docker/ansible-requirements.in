@@ -1,0 +1,7 @@
+# Direct requirements for the worker's Ansible environment (/opt/ansible in the image).
+# ansible-core is the version the roles were run with on the lab (2.21.5).
+# After changing this file, regenerate the lock (every file hash of every dependency):
+#   uv pip compile docker/ansible-requirements.in --generate-hashes --universal --python-version 3.12 \
+#       -o docker/ansible-requirements.txt
+ansible-core==2.21.5
+ansible-runner==2.4.3

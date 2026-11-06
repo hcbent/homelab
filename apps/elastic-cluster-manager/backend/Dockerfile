@@ -42,21 +42,69 @@ RUN set -eu; \
       "/out/providers/registry.terraform.io/bpg/proxmox/terraform-provider-proxmox_${PROVIDER_VERSION}_linux_${TARGETARCH}.zip"
 
 
-# ---- The worker: the app plus Terraform and the vendored provider ------------------------------------------
+# ---- Ansible: a virtualenv of its own, every Python package from a hash-locked file, collections by SHA-256 --
+# The venv keeps Ansible's dependencies (cryptography, jinja2, ...) from touching the app's. Every package comes
+# from docker/ansible-requirements.txt, which lists every file hash of every dependency (regenerate it as the
+# header of docker/ansible-requirements.in says), and pip refuses anything without a matching hash. The two
+# collections are downloaded from Galaxy and kept only if they match the SHA-256 below, which equals the one
+# Galaxy publishes for that version (checked 2026-11-06). Keep these versions equal to infra/ansible/requirements.yml
+# (tests/test_worker_image.py checks). To upgrade, change a version and its checksum together.
+FROM python:3.12-slim AS ansible
+ARG ANSIBLE_POSIX_VERSION=2.2.2
+ARG ANSIBLE_POSIX_SHA256=00a58c5d804c9adc99c3c3dc1b9f2246f4bb5f7337941440e0956f0e31c3b82b
+ARG COMMUNITY_GENERAL_VERSION=13.5.0
+ARG COMMUNITY_GENERAL_SHA256=54598287e0ea0504aee2d32c884208ddf26f3ac41e0b4e773ff514af210787c4
+COPY docker/fetch_tool.py /opt/fetch_tool.py
+COPY docker/ansible-requirements.txt /tmp/ansible-requirements.txt
+RUN set -eu; \
+    python -m venv /opt/ansible; \
+    /opt/ansible/bin/pip install --no-cache-dir --require-hashes --no-deps -r /tmp/ansible-requirements.txt; \
+    galaxy="https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts"; \
+    python /opt/fetch_tool.py fetch "$galaxy/ansible-posix-${ANSIBLE_POSIX_VERSION}.tar.gz" \
+      "$ANSIBLE_POSIX_SHA256" /tmp/collections/ansible-posix.tar.gz; \
+    python /opt/fetch_tool.py fetch "$galaxy/community-general-${COMMUNITY_GENERAL_VERSION}.tar.gz" \
+      "$COMMUNITY_GENERAL_SHA256" /tmp/collections/community-general.tar.gz; \
+    /opt/ansible/bin/ansible-galaxy collection install --no-deps -p /opt/ansible/collections \
+      /tmp/collections/ansible-posix.tar.gz /tmp/collections/community-general.tar.gz
+
+
+# ---- The worker: the app plus Terraform, the vendored provider, Ansible and an SSH client -------------------
+# The playbooks and roles come from a named build context, ecm_ansible (infra/ansible), which compose supplies.
+# A plain `docker build --target worker` must pass --build-context ecm_ansible=../infra/ansible.
 FROM base AS worker
 USER root
 COPY --from=tools /out/bin/terraform /usr/local/bin/terraform
 # Terraform installs the provider from here with -plugin-dir and never downloads anything at run time.
 COPY --from=tools /out/providers /opt/ecm/terraform-providers
-RUN terraform version \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ansible /opt/ansible /opt/ansible
+COPY --from=ecm_ansible . /opt/ecm/ansible
+# Only the entry points go on PATH. Putting /opt/ansible/bin first would shadow the app's own python.
+RUN for tool in ansible ansible-playbook ansible-galaxy ansible-runner; do \
+        ln -s "/opt/ansible/bin/$tool" "/usr/local/bin/$tool"; \
+    done \
+    && terraform version \
     && mkdir -p /data/clusters && chown ecm /data/clusters
 ENV ECM_TERRAFORM_PLUGIN_DIR=/opt/ecm/terraform-providers \
-    ECM_TF_WORKSPACE_ROOT=/data/clusters
+    ECM_TF_WORKSPACE_ROOT=/data/clusters \
+    ECM_ANSIBLE_DIR=/opt/ecm/ansible \
+    ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections
 USER ecm
-# Fail the build, not the first job, if the app user cannot read what Terraform needs or write its workspaces.
+# Fail the build, not the first job, if the app user cannot read what Terraform needs or write its workspaces,
+# or if Ansible, its collections, the SSH client or the playbooks are not usable as that user.
 RUN terraform version >/dev/null \
     && test -n "$(find "$ECM_TERRAFORM_PLUGIN_DIR" -name '*.zip' -readable)" \
-    && test -w /data/clusters
+    && test -w /data/clusters \
+    && ansible-playbook --version >/dev/null \
+    && ansible-runner --version >/dev/null \
+    && ssh -V \
+    && ansible-galaxy collection list 2>/dev/null | grep -q 'ansible.posix' \
+    && ansible-galaxy collection list 2>/dev/null | grep -q 'community.general' \
+    && cd "$ECM_ANSIBLE_DIR" \
+    && ansible-playbook --syntax-check -i localhost, playbooks/create.yml >/dev/null \
+    && ansible-playbook --syntax-check -i localhost, playbooks/converge.yml >/dev/null
 
 
 # ---- The API and migration image: no Terraform ------------------------------------------------------------
