@@ -6,6 +6,9 @@
     ecm_cli.py show OPERATION_ID [--logs N]   state, steps, plan, result and the last log lines
     ecm_cli.py watch OPERATION_ID             follow an operation until it finishes or needs approval
     ecm_cli.py approve OPERATION_ID DIGEST    approve the plan with that digest (shows the plan first)
+    ecm_cli.py retry OPERATION_ID             re-run a failed operation (a failed configure resumes; no new VMs)
+    ecm_cli.py cleanup CREATE_OPERATION_ID NAME [--data-loss]
+                                              plan the teardown of a create; it then needs its own approval
 
 Environment:
     ECM_URL             default https://ecm.lab.thewortmans.org
@@ -15,6 +18,9 @@ Environment:
 
 The password is never printed or put on a command line. ECM redacts its own log lines before they are stored.
 """
+# The type hints use X | None, which older system pythons (3.9) lack, so annotations stay lazy.
+from __future__ import annotations
+
 import argparse
 import getpass
 import http.cookiejar
@@ -156,6 +162,21 @@ def cmd_approve(client: Client, args) -> int:
     return 0
 
 
+def cmd_retry(client: Client, args) -> int:
+    client.call("POST", f"/api/operations/{args.operation_id}/retry")
+    print("retry started. An earlier approval never carries over: if it re-plans something, approve again.")
+    print(f"next: {sys.argv[0]} watch {args.operation_id}")
+    return 0
+
+
+def cmd_cleanup(client: Client, args) -> int:
+    out = client.call("POST", f"/api/operations/{args.operation_id}/cleanup",
+                      {"confirm_name": args.name, "confirm_data_loss": args.data_loss})
+    print(f"cleanup operation {out['id']} started: it plans a teardown first and destroys nothing until approved.")
+    print(f"next: {sys.argv[0]} watch {out['id']}")
+    return 0
+
+
 # ---- entry point ---------------------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -180,6 +201,15 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("operation_id")
     approve.add_argument("digest", help="the 64-character digest shown with the plan")
     approve.set_defaults(run=cmd_approve)
+    retry = sub.add_parser("retry", help="re-run a failed operation")
+    retry.add_argument("operation_id")
+    retry.set_defaults(run=cmd_retry)
+    cleanup = sub.add_parser("cleanup", help="plan the teardown of a create (needs its own approval)")
+    cleanup.add_argument("operation_id", help="the create operation to tear down")
+    cleanup.add_argument("name", help="the cluster name, typed to confirm")
+    cleanup.add_argument("--data-loss", action="store_true",
+                         help="accept that data in a bootstrapped cluster is destroyed with its machines")
+    cleanup.set_defaults(run=cmd_cleanup)
     return parser
 
 

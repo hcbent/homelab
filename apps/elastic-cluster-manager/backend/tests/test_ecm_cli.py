@@ -194,3 +194,31 @@ def test_an_unreachable_ecm_is_a_plain_error(monkeypatch, capsys):
     monkeypatch.setenv("ECM_ADMIN_PASSWORD", PHRASE)
     assert run("show", "op1") == 1
     assert "could not reach" in capsys.readouterr().err
+
+
+def test_retry_posts_to_the_retry_endpoint_and_says_an_approval_does_not_carry_over(ecm, capsys):
+    ecm.routes[("POST", "/api/operations/op1/retry")] = [(202, {"id": "op1"})]
+    assert run("retry", "op1") == 0
+    assert ecm.requests[-1]["method"] == "POST" and ecm.requests[-1]["path"] == "/api/operations/op1/retry"
+    assert "approve again" in capsys.readouterr().out
+
+
+def test_retry_of_an_operation_that_cannot_be_retried_shows_the_reason(ecm, capsys):
+    ecm.routes[("POST", "/api/operations/op1/retry")] = [(409, {"detail": "only a failed operation can be retried"})]
+    assert run("retry", "op1") == 1
+    assert "only a failed operation can be retried" in capsys.readouterr().err
+
+
+def test_cleanup_sends_the_typed_name_and_only_accepts_data_loss_when_asked(ecm, capsys):
+    ecm.routes[("POST", "/api/operations/op1/cleanup")] = [(202, {"id": "op2"})]
+    assert run("cleanup", "op1", "lab-c") == 0
+    assert ecm.requests[-1]["body"] == {"confirm_name": "lab-c", "confirm_data_loss": False}
+    assert "destroys nothing until approved" in capsys.readouterr().out
+    assert run("cleanup", "op1", "lab-c", "--data-loss") == 0
+    assert ecm.requests[-1]["body"] == {"confirm_name": "lab-c", "confirm_data_loss": True}
+
+
+def test_a_refused_cleanup_shows_why(ecm, capsys):
+    ecm.routes[("POST", "/api/operations/op1/cleanup")] = [(409, {"detail": "this cluster has been bootstrapped"})]
+    assert run("cleanup", "op1", "lab-c") == 1
+    assert "has been bootstrapped" in capsys.readouterr().err
