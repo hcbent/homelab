@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app import audit, crypto
@@ -37,7 +37,7 @@ from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
 from app.discovery import factory, proxmox
 from app.discovery.http import DiscoveryError
-from app.models import Cluster, Credential, EsNode, Operation, ProxmoxConnection
+from app.models import ACTIVE_STATES, Cluster, Credential, EsNode, Operation, ProxmoxConnection, Vm
 from app.operations import AwaitingApproval, create_operation, log, run_phases
 from app.provisioning.plan import check_plan_safety
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
@@ -176,6 +176,52 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
                  parent_state=parent.state, resources=len(left), bootstrapped=cluster.bootstrapped_at is not None,
                  data_loss_confirmed=bool(confirm_data_loss))
     return op
+
+
+def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: str) -> dict:
+    """Remove the record of a managed cluster whose machines are gone, so it stops cluttering the list.
+
+    Only a cluster ECM created can be removed here, only after its name is typed, and only when nothing is left of
+    it: no operation running, every create that built something torn down through ECM, no VM in Proxmox still
+    carrying one of its node names, and no bootstrap recorded. Its operations are kept, detached from the cluster,
+    because they are the history of what ECM did; its observed nodes and any stored credentials go with it.
+    """
+    cluster = _managed_cluster(db, cluster_id)
+    if confirm_name != cluster.name:
+        raise OperationRefused("type the cluster name exactly to confirm the removal")
+    if cluster.bootstrapped_at is not None:
+        raise OperationRefused("this cluster has bootstrapped: tear its machines down first (cleanup), then remove it")
+    ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)).all()
+    if any(o.state in ACTIVE_STATES for o in ops):
+        raise OperationRefused("an operation is still running on this cluster; wait for it to finish")
+    node_names: set[str] = set()
+    for op in ops:
+        if op.kind != CREATE or op.dry_run:
+            continue
+        node_names |= {n["name"] for n in (op.params.get("state") or {}).get("nodes", [])}
+        built = (op.result or {}).get("resources_in_state") or []
+        torn_down = db.scalar(select(Operation.id).where(Operation.parent_op_id == op.id, Operation.kind == DESTROY,
+                                                         Operation.state == "succeeded"))
+        if built and not torn_down:
+            raise OperationRefused("a create of this cluster built machines that have not been torn down through "
+                                   f"ECM (operation {op.id}); clean it up first")
+    still_there = sorted(node_names & {n for (n,) in db.execute(select(Vm.name)) if n})
+    if still_there:
+        raise OperationRefused(f"VMs named {', '.join(still_there)} still exist in Proxmox; remove them first")
+
+    suffix = cluster.id
+    detached = db.execute(update(Operation).where(Operation.cluster_id == cluster.id)
+                          .values(cluster_id=None)).rowcount
+    db.execute(delete(EsNode).where(EsNode.cluster_id == cluster.id))
+    cluster.credential_id = None
+    db.flush()
+    db.execute(delete(Credential).where(Credential.name.in_(
+        [f"es-elastic-{suffix}", f"es-ca-key-{suffix}", f"es-api-key-{suffix}"])))
+    name = cluster.name
+    db.delete(cluster)
+    audit.record(db, actor, "cluster.remove", "cluster", suffix, name=name, operations_kept=detached)
+    db.commit()
+    return {"id": suffix, "name": name, "operations_kept": detached}
 
 
 # ---- running them ---------------------------------------------------------------------------------------

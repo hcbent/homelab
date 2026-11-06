@@ -967,3 +967,90 @@ def test_a_complete_teardown_also_removes_the_nodes_discovery_last_saw_for_that_
     remaining = [n.name for n in session.scalars(select(EsNode).order_by(EsNode.name))]
     assert remaining == ["es01", "es02"]                         # lab-b's own were removed, the others' were not
     assert cluster.snapshot is None and cluster.last_sync_at is None and cluster.last_sync_error is None
+
+
+# ---- removing the record of a cluster whose machines are gone --------------------------------------------------
+
+def torn_down(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    assert finish_teardown(session, world, created).state == "succeeded"
+    return created
+
+
+def remove(session, cluster, name="lab-b"):
+    from app.provisioning.operation import remove_cluster
+    return remove_cluster(session, cluster_id=cluster.id, confirm_name=name, actor="admin")
+
+
+def test_a_torn_down_cluster_can_be_removed_and_its_history_is_kept(session, world, cluster, conn):
+    created = torn_down(session, world, cluster, conn)
+    cluster_id = cluster.id
+    other = Cluster(name="other", ownership="discovered")
+    session.add(other)
+    session.add(Credential(kind="es_ca_key", name=f"es-ca-key-{cluster_id}", ciphertext=b"left over"))
+    session.commit()
+    ops = session.scalars(select(Operation).where(Operation.cluster_id == cluster_id)).all()
+
+    out = remove(session, cluster)
+
+    assert out == {"id": cluster_id, "name": "lab-b", "operations_kept": len(ops)} and len(ops) >= 2
+    assert session.get(Cluster, cluster_id) is None and session.get(Cluster, other.id) is not None
+    kept = session.get(Operation, created.id)
+    assert kept is not None and kept.cluster_id is None                        # the history stays, detached
+    assert session.scalar(select(Credential).where(Credential.name == f"es-ca-key-{cluster_id}")) is None
+    event = session.scalars(select(AuditEvent).where(AuditEvent.action == "cluster.remove")).one()
+    assert event.details["name"] == "lab-b" and event.details["operations_kept"] == len(ops)
+
+
+def test_a_cluster_that_never_built_anything_can_be_removed(session, world, cluster, conn):
+    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
+    assert remove(session, cluster)["name"] == "lab-b"
+
+
+@pytest.mark.parametrize("what,message", [
+    ("wrong name", "type the cluster name"),
+    ("discovered", "not managed by ECM"),
+    ("bootstrapped", "has bootstrapped"),
+    ("running", "still running"),
+    ("not torn down", "have not been torn down"),
+    ("vm exists", "still exist in Proxmox"),
+])
+def test_a_removal_is_refused_while_anything_of_the_cluster_remains(session, world, cluster, conn, what, message):
+    target, name = cluster, "lab-b"
+    if what == "wrong name":
+        torn_down(session, world, cluster, conn)
+        name = "nope"
+    elif what == "discovered":
+        target = Cluster(name="found", ownership="discovered")
+        session.add(target)
+        session.commit()
+        name = "found"
+    elif what == "bootstrapped":
+        reach_success(session, world, cluster, conn)
+    elif what == "running":
+        begin(session, cluster, conn)                           # planned, not yet run
+    elif what == "not torn down":
+        world.ansible_error = "the ansible-playbook binary was not found"
+        op = run(session, world, begin(session, cluster, conn))
+        operations.approve_operation(session, op.id, op.plan_digest, "admin")
+        with pytest.raises(tfop.ConfigureFailed):
+            run(session, world, op)                             # the VMs exist, nothing bootstrapped
+    elif what == "vm exists":
+        torn_down(session, world, cluster, conn)
+        from app.models import Vm
+        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=500, name="lab-b-01", status="running"))
+        session.commit()
+    with pytest.raises(OperationRefused, match=message):
+        remove(session, target, name)
+    assert session.get(Cluster, target.id) is not None                         # nothing was removed
+
+
+def test_the_remove_endpoint_refuses_with_the_reason_and_removes_when_nothing_is_left(
+        logged_in, session, world, cluster, conn):
+    torn_down(session, world, cluster, conn)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "wrong"}, headers=H)
+    assert r.status_code == 409 and "type the cluster name" in r.json()["detail"]
+    r = logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "lab-b"}, headers=H)
+    assert r.status_code == 200 and r.json()["name"] == "lab-b"
+    assert logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "lab-b"},
+                          headers=H).status_code == 409                       # already gone

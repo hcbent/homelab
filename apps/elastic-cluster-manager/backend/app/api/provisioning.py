@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import audit, auth, operations
@@ -13,7 +14,7 @@ from app.desired import (
 )
 from app.models import User
 from app.provisioning import create as plan_create
-from app.provisioning.operation import OperationRefused
+from app.provisioning.operation import OperationRefused, remove_cluster
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
                    dependencies=[Depends(auth.require_csrf_header)])
@@ -66,3 +67,17 @@ async def create_cluster(body: plan_create.CreateRequest, db: Session = Depends(
                    "vm_id": resolved.vm_ids[n.name]} for n in resolved.state.nodes],
         "warnings": resolved.warnings,
     }
+
+
+class RemoveBody(BaseModel):
+    confirm_name: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/{cluster_id}/remove")
+def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
+           user: User = Depends(auth.current_user)):
+    """Remove the record of a managed cluster whose machines are gone. Refused while anything of it remains."""
+    try:
+        return remove_cluster(db, cluster_id=cluster_id, confirm_name=body.confirm_name, actor=user.username)
+    except OperationRefused as e:
+        raise HTTPException(409, str(e)) from e
