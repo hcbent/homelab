@@ -1,3 +1,5 @@
+from collections import Counter
+
 from app.desired import NodeSpec, RolesMode, TopologyPreset, build_desired_state
 from app.desired.models import DesiredState
 from app.desired.placement import (
@@ -138,20 +140,64 @@ def test_offline_hosts_and_missing_datastores_are_skipped():
     assert any("is not available on this host" in i.message for i in err.issues)
 
 
-# ---- quorum warnings -----------------------------------------------------------------------------
+# ---- the quorum rule -----------------------------------------------------------------------------
 
-def test_two_hosts_for_three_masters_warns_about_quorum():
+def test_two_hosts_for_three_masters_is_refused_because_losing_one_breaks_the_quorum():
     hosts = [host("pve1"), host("pve2"), host("pve3", online=False)]
     got = recommend_placement(three_node(), hosts)
-    assert got.ok                                            # a recommendation, not a refusal
-    assert not got.quorum_safe
-    assert any("break the master quorum" in i.message for i in got.issues)
+    assert not got.ok and not got.quorum_safe
+    message = next(i.message for i in got.issues if i.severity == "error")
+    assert "would hold 2 of 3 master-eligible nodes" in message and "break the master quorum" in message
+    assert "At least 3 hosts" in message
 
 
-def test_a_single_host_warns_loudly():
+def test_a_single_host_is_refused_too():
     got = recommend_placement(three_node(), [host("pve1")])
-    assert got.ok and not got.quorum_safe
+    assert not got.ok and not got.quorum_safe
     assert any("would hold 3 of 3" in i.message for i in got.issues)
+
+
+def test_a_host_that_cannot_take_a_master_makes_the_refusal_say_why_so_machines_can_be_moved():
+    hosts = [host("pve1", mem_used_gib=186), host("pve2"), host("pve3")]
+    got = recommend_placement(three_node(), hosts)
+    assert not got.ok
+    message = next(i.message for i in got.issues if i.severity == "error")
+    assert "pve1 could not take one: not enough free RAM" in message
+    assert "Free capacity on another host" in message
+    assert "lab-b-0" in message                              # the nodes that would share a host are named
+
+
+def test_pinning_two_masters_to_one_host_is_refused():
+    state = three_node()
+    state.nodes[0].pve_node = state.nodes[1].pve_node = "pve1"
+    got = recommend_placement(state, three_hosts())
+    assert not got.ok
+    assert "(lab-b-01, lab-b-02)" in next(i.message for i in got.issues if i.severity == "error")
+
+
+def test_five_masters_may_share_a_host_when_losing_it_keeps_a_quorum():
+    nodes = [NodeSpec(name=f"lab-b-0{i}", data_disk_gb=100) for i in range(1, 6)]
+    state = DesiredState(name="lab-b", version="9.4.3", nodes=nodes)
+    got = recommend_placement(state, three_hosts())
+    assert got.ok and got.quorum_safe                        # 2 + 2 + 1: losing any one host leaves 3 of 5
+    assert sorted(Counter(got.hosts.values()).values()) == [1, 2, 2]
+    assert any(i.severity == "warning" and "share a host" in i.message for i in got.issues)
+
+
+def test_four_masters_on_three_hosts_are_refused_because_two_of_four_is_not_a_majority():
+    nodes = [NodeSpec(name=f"lab-b-0{i}", data_disk_gb=100) for i in range(1, 5)]
+    state = DesiredState(name="lab-b", version="9.4.3", nodes=nodes)
+    got = recommend_placement(state, three_hosts())
+    assert not got.ok and not got.quorum_safe                # 2 + 1 + 1: losing the first leaves 2 of 4
+    assert "would hold 2 of 4" in next(i.message for i in got.issues if i.severity == "error")
+
+
+def test_nodes_that_are_not_master_eligible_are_not_subject_to_the_rule():
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-b", "9.4.3", data_nodes=5)
+    got = recommend_placement(state, three_hosts())
+    assert got.ok and got.quorum_safe                        # the masters spread; the data nodes pile up freely
+    masters = [n.name for n in state.nodes if n.is_master_eligible]
+    assert len({got.hosts[n] for n in masters}) == 3
 
 
 # ---- determinism and ordering --------------------------------------------------------------------

@@ -9,6 +9,10 @@ How a host is chosen for a node:
      (within an overcommit ratio) and enough free disk. Shared datastores are counted once, not per host.
   2. Anti-affinity: master-eligible nodes go to the host holding the fewest master-eligible nodes already, so a
      3-master cluster on 3 hosts puts one on each. All nodes also prefer hosts holding fewer of this cluster.
+     This is a rule, not a preference: if the placement would leave a host holding enough master-eligible nodes
+     that losing it breaks the master quorum, the result is an error and the cluster is not placed. The message
+     says which host, which nodes, and why each unused host could not take one, so the operator can free capacity
+     or move machines. Sharing that still leaves a quorum (2 of 5 on one host) is only a warning.
   3. Score: free RAM, vCPU headroom and free disk left AFTER the placement, as a tie-breaker.
 
 Free RAM is computed from the larger of actual use and the RAM configured for running VMs, because an idle VM
@@ -243,22 +247,31 @@ def recommend_placement(
                           for n in state.nodes if n.name in result.assignments}
     used = {p.host for p in result.assignments.values()}
     result.excluded = {h: r for h, r in why_not.items() if h not in used}
-    _quorum_findings(result, masters)
+    _quorum_findings(result, masters, {n.name for n in state.nodes if n.is_master_eligible})
     return result
 
 
-def _quorum_findings(result: PlacementResult, masters: Counter) -> None:
+def _quorum_findings(result: PlacementResult, masters: Counter, master_names: set[str]) -> None:
     total = sum(masters.values())
-    if total < 2:
+    # Fewer than three master-eligible nodes cannot survive losing any host, so there is no placement to demand.
+    # A node that could not be placed already made the result an error; counts of the rest would mislead.
+    if total < 3 or not result.ok:
         return
     survivable = (total - 1) // 2  # master-eligible nodes the cluster can lose and keep a quorum
     for host, held in sorted(masters.items()):
         if held > survivable:
             result.quorum_safe = False
+            here = sorted(n for n in master_names if result.assignments[n].host == host)
+            named = f" ({', '.join(here)})" if here else ""
+            needed = -(-total // survivable)  # hosts that must each take master-eligible nodes
+            skipped = "; ".join(f"{h} could not take one: {', '.join(why)}"
+                                for h, why in sorted(result.excluded.items()))
             result.issues.append(PlacementIssue(
-                "warning",
-                f"host '{host}' would hold {held} of {total} master-eligible nodes; losing it "
-                f"would break the master quorum"))
+                "error",
+                f"host '{host}' would hold {held} of {total} master-eligible nodes{named}, and losing it would "
+                f"break the master quorum. At least {needed} hosts must each take master-eligible nodes"
+                + (f" ({skipped})" if skipped else "")
+                + ". Free capacity on another host, or move machines, then plan again."))
     shared = sorted(h for h, c in masters.items() if c > 1)
     if shared and result.quorum_safe:
         result.issues.append(PlacementIssue(

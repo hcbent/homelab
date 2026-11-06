@@ -283,9 +283,8 @@ def test_a_template_on_local_storage_cannot_be_cloned_to_another_host(session, p
     assert "pve1" in str(err.value) and "pve_node" in str(err.value)
 
     pinned = {f"lab-b-0{i}": NodeOverride(pve_node="pve1") for i in (1, 2, 3)}
-    resolved = plan(session, node_overrides=pinned)[2]               # all on the template's host: fine
-    assert set(resolved.placement.values()) == {"pve1"}
-    assert any("master quorum" in w for w in resolved.warnings)      # but the quorum warning still shows
+    with pytest.raises(CreateInvalid, match="master quorum"):         # all on the template's host: refused
+        plan(session, node_overrides=pinned)
 
 
 # ---- planning the same cluster again --------------------------------------------------------------------
@@ -473,13 +472,23 @@ def test_that_warning_goes_away_once_a_vm_is_visible(session, pve):
     assert not any("can see no VMs" in w for w in plan(session)[2].warnings)
 
 
-def test_the_plan_says_why_a_host_was_not_used(session, pve):
+def test_a_refusal_for_breaking_the_quorum_says_why_the_host_was_not_used(session, pve):
     for node in session.scalars(select(PveNode).where(PveNode.name == "pve1")):
         node.usage = {**node.usage, "mem": 186 * GIB}
     session.commit()
-    notes = plan(session)[2].warnings
+    with pytest.raises(CreateInvalid) as err:
+        plan(session)
+    message = str(err.value)
+    assert "pve1 could not take one: not enough free RAM" in message
+    assert "master quorum" in message and "would hold 2 of 3" in message
+
+
+def test_a_host_that_took_nothing_is_explained_when_the_cluster_is_still_placed(session, pve):
+    for node in session.scalars(select(PveNode).where(PveNode.name == "pve1")):
+        node.usage = {**node.usage, "mem": 186 * GIB}
+    session.commit()
+    notes = plan(session, preset=TopologyPreset.single_node)[2].warnings      # one node has no quorum to protect
     assert any(w.startswith("pve1 was not used: not enough free RAM") for w in notes)
-    assert any("master quorum" in w for w in notes)                  # the consequence, and now its cause
 
 
 # ---- one token for two jobs ----------------------------------------------------------------------------
