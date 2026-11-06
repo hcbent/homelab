@@ -14,6 +14,8 @@ Upgrade rules (ARCHITECTURE section 7):
   * to the next major, the cluster must already be on the latest published minor of its current major
   * skipping a major is refused
 """
+import gzip
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -22,7 +24,11 @@ from typing import Protocol
 
 import httpx
 
+log = logging.getLogger(__name__)
+
 ARTIFACTS_URL = "https://artifacts-api.elastic.co/v1/versions"
+APT_INDEX_URL = "https://artifacts.elastic.co/packages/{major}.x/apt/dists/stable/main/binary-amd64/Packages.gz"
+FIRST_PACKAGED_MAJOR = 8   # older majors are not offered for new clusters, so their repositories are not read
 _PLAIN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -98,6 +104,72 @@ class ArtifactsApiCatalog:
         return list(self._cache)
 
 
+def parse_apt_index(text: str) -> set[Version]:
+    """The Elasticsearch versions an apt Packages index carries (package name `elasticsearch` exactly)."""
+    found: set[Version] = set()
+    for block in text.split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line and line[0] not in " \t")
+        if fields.get("Package") == "elasticsearch" and _PLAIN.match(fields.get("Version", "")):
+            found.add(Version.parse(fields["Version"]))
+    return found
+
+
+@dataclass
+class InstallableCatalog:
+    """The inner catalog narrowed to releases the machines can install.
+
+    The artifacts API lists a release as soon as it is published, but the Elastic apt repository the machines
+    install from can lag by days (9.6.0 was listed while the repository ended at 9.5.6, and a create built three
+    machines before the install failed). So a release counts only when the repository for its major carries it.
+    One index per major is cached; if one cannot be read, a stale copy is used, and with none that major's
+    releases pass through unfiltered, so an unreachable index makes a bad pick fail at install as it did before
+    rather than blocking every create. Majors before FIRST_PACKAGED_MAJOR are never filtered.
+    """
+
+    inner: VersionCatalog
+    client: httpx.Client | None = None
+    ttl_seconds: float = 900.0
+    url: str = APT_INDEX_URL
+    clock: Callable[[], float] = time.monotonic
+    retry_seconds: float = 60.0
+    # per major: when to look again, and the versions last read (None when never read)
+    _cache: dict[int, tuple[float, set[Version] | None]] = field(default_factory=dict, init=False)
+
+    def _packaged(self, major: int) -> set[Version] | None:
+        now = self.clock()
+        cached = self._cache.get(major)
+        if cached and now < cached[0]:
+            return cached[1]
+        try:
+            client = self.client or httpx.Client(timeout=10.0, follow_redirects=True)
+            resp = client.get(self.url.format(major=major))
+            resp.raise_for_status()
+            versions = parse_apt_index(gzip.decompress(resp.content).decode("utf-8", "replace"))
+            if not versions:
+                raise ValueError("the index lists no elasticsearch package")
+        except (httpx.HTTPError, ValueError, OSError, EOFError) as exc:
+            log.warning("could not read the Elastic %s.x apt index: %s", major, exc)
+            stale = cached[1] if cached else None
+            self._cache[major] = (now + self.retry_seconds, stale)   # do not wait out a timeout on every call
+            return stale
+        self._cache[major] = (now + self.ttl_seconds, versions)
+        return versions
+
+    def releases(self) -> list[Version]:
+        waiting = self.unpackaged()
+        return [v for v in self.inner.releases() if v not in waiting]
+
+    def unpackaged(self) -> set[Version]:
+        """Published releases whose packages the apt repository does not have yet."""
+        out: set[Version] = set()
+        released = self.inner.releases()
+        for major in {v.major for v in released if v.major >= FIRST_PACKAGED_MAJOR}:
+            packaged = self._packaged(major)
+            if packaged is not None:
+                out |= {v for v in released if v.major == major and v not in packaged}
+        return out
+
+
 def available_versions(catalog: VersionCatalog) -> list[str]:
     """Selectable versions, newest first."""
     return [str(v) for v in sorted(catalog.releases(), reverse=True)]
@@ -120,6 +192,10 @@ def check_target_version(version: str, catalog: VersionCatalog) -> list[str]:
     except ValueError:
         return [f"{version!r} is not a plain release version such as 9.4.3"]
     if target not in catalog.releases():
+        waiting = getattr(catalog, "unpackaged", None)
+        if waiting is not None and target in waiting():
+            return [(f"{version} is published, but the Elastic apt repository does not carry its packages yet, "
+                     f"so the machines could not install it; choose an older version or try again later")]
         return [(f"{version} is not a published Elasticsearch release; "
                 f"choose one of the available versions")]
     return []

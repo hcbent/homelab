@@ -8,6 +8,7 @@ from app.db import get_db
 from app.desired import (
     ArtifactsApiCatalog,
     CatalogError,
+    InstallableCatalog,
     VersionCatalog,
     available_versions,
     check_target_version,
@@ -19,7 +20,8 @@ from app.provisioning.operation import OperationRefused, remove_cluster
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
                    dependencies=[Depends(auth.require_csrf_header)])
 
-_catalog = ArtifactsApiCatalog()  # one per process, so the version list is cached
+# One per process, so the lists are cached. Only releases the machines can install from apt are offered.
+_catalog = InstallableCatalog(ArtifactsApiCatalog())
 
 
 def get_catalog() -> VersionCatalog:

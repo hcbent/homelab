@@ -20,6 +20,7 @@ from .roles import discovery_settings, node_settings, render_node_roles
 from .versions import (
     ArtifactsApiCatalog,
     CatalogError,
+    InstallableCatalog,
     StaticCatalog,
     Version,
     VersionCatalog,
@@ -34,6 +35,7 @@ __all__ = [
     "CatalogError",
     "DesiredState",
     "HostView",
+    "InstallableCatalog",
     "NetworkProfile",
     "NodeSpec",
     "PlacementConfig",

@@ -1,9 +1,12 @@
+import gzip
+
 import httpx
 import pytest
 
 from app.desired.versions import (
     ArtifactsApiCatalog,
     CatalogError,
+    InstallableCatalog,
     StaticCatalog,
     Version,
     available_versions,
@@ -11,6 +14,7 @@ from app.desired.versions import (
     check_upgrade,
     latest_minor,
     latest_patch,
+    parse_apt_index,
     parse_artifacts_versions,
 )
 
@@ -151,3 +155,79 @@ def test_unknown_old_major_cannot_be_judged():
 def test_malformed_versions_are_reported_not_raised():
     got = check_upgrade("latest", "9.5.6", CATALOG)
     assert not got.ok and "not a plain release version" in got.reasons[0]
+
+
+# ---- only releases the machines can install --------------------------------------------------------------
+
+def _apt_index(*versions: str, other: str = "elasticsearch-oss") -> bytes:
+    """A Packages.gz shaped like Elastic's: one block per package version, blank line between."""
+    blocks = [f"Package: elasticsearch\nVersion: {v}\nArchitecture: amd64\nDescription: Search\n and more\n"
+              for v in versions]
+    blocks.append(f"Package: {other}\nVersion: 9.9.9\nArchitecture: amd64\n")
+    return gzip.compress("\n".join(blocks).encode())
+
+
+def _apt_client(indexes: dict[int, bytes | int], seen: list[str] | None = None) -> httpx.Client:
+    """An index per major (bytes), or a status code for a failing one."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(str(request.url))
+        major = int(str(request.url).split("/packages/")[1].split(".")[0])
+        got = indexes.get(major, 404)
+        return httpx.Response(got) if isinstance(got, int) else httpx.Response(200, content=got)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_parse_apt_index_keeps_only_the_elasticsearch_package():
+    got = parse_apt_index(gzip.decompress(_apt_index("9.5.5", "9.5.6")).decode())
+    assert sorted(str(v) for v in got) == ["9.5.5", "9.5.6"]      # elasticsearch-oss 9.9.9 is not counted
+
+
+def test_a_release_the_apt_repository_lacks_is_left_out_and_named_when_chosen():
+    seen: list[str] = []
+    cat = InstallableCatalog(CATALOG, client=_apt_client(
+        {9: _apt_index("9.4.8", "9.5.5", "9.5.6"), 8: _apt_index("8.19.22", "8.19.23", "8.19.24")}, seen))
+    assert available_versions(cat)[:3] == ["9.5.6", "9.5.5", "9.4.8"]       # 9.6.0 is published but not packaged
+    problem = check_target_version("9.6.0", cat)
+    assert len(problem) == 1 and "apt repository does not carry" in problem[0] and "not a published" not in problem[0]
+    assert check_target_version("9.5.6", cat) == []
+    assert "not a published" in check_target_version("9.9.9", cat)[0]        # unknown stays the old message
+    assert len(seen) == 2                                                    # one index per major, then cached
+
+
+def test_the_apt_indexes_are_cached_and_a_stale_copy_survives_a_failed_refresh():
+    now = [0.0]
+    answers = {9: _apt_index("9.5.6", "9.6.0"), 8: _apt_index("8.19.24")}
+    seen: list[str] = []
+    cat = InstallableCatalog(CATALOG, client=_apt_client(answers, seen), ttl_seconds=100, clock=lambda: now[0])
+    assert "9.6.0" in available_versions(cat)
+    available_versions(cat)
+    assert len(seen) == 2
+    now[0] = 500.0
+    answers[9] = 503
+    answers[8] = 503
+    assert "9.6.0" in available_versions(cat) and "9.5.5" not in available_versions(cat)   # stale index still used
+    assert len(seen) == 4                                                                   # and it did try again
+    available_versions(cat)
+    assert len(seen) == 4                                                                   # but not on every call
+    now[0] = 600.0
+    available_versions(cat)
+    assert len(seen) == 6                                                                   # it looks again after a minute
+
+
+def test_an_unreadable_apt_index_with_nothing_cached_lets_that_major_through():
+    cat = InstallableCatalog(CATALOG, client=_apt_client({9: 503, 8: _apt_index("8.19.24")}))
+    got = available_versions(cat)
+    assert "9.6.0" in got and "9.4.8" in got                      # 9.x unfiltered, as before the filter existed
+    assert "8.19.22" not in got and "8.19.24" in got              # 8.x was readable, so it is filtered
+
+
+def test_an_index_that_is_not_gzip_or_lists_nothing_counts_as_unreadable():
+    cat = InstallableCatalog(CATALOG, client=_apt_client({9: b"<html>not gzip</html>", 8: gzip.compress(b"")}))
+    assert available_versions(cat) == available_versions(CATALOG)
+
+
+def test_majors_before_8_are_never_filtered_and_not_fetched():
+    seen: list[str] = []
+    cat = InstallableCatalog(StaticCatalog(["7.17.0", "8.19.24"]), client=_apt_client({8: _apt_index("8.19.24")}, seen))
+    assert available_versions(cat) == ["8.19.24", "7.17.0"] and len(seen) == 1
