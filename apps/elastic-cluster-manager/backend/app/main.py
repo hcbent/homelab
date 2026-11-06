@@ -41,6 +41,7 @@ app.include_router(ops_api.router)
 app.include_router(discovery_api.router)
 app.include_router(network_api.router)
 app.include_router(provisioning_api.router)
+app.include_router(provisioning_api.versions_router)
 
 
 @app.get("/api/health")

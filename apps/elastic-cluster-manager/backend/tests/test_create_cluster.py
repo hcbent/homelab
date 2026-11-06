@@ -26,6 +26,7 @@ from app.provisioning.create import (
     CreateInvalid,
     CreateRequest,
     NodeOverride,
+    NodeSizing,
     create_cluster_operation,
 )
 
@@ -581,3 +582,73 @@ def test_post_clusters_takes_a_cpu_type_and_refuses_a_bad_one(logged_in, session
         assert session.get(Operation, r.json()["operation_id"]).params["cpu_type"] == "x86-64-v3"
     finally:
         app.dependency_overrides.pop(get_catalog, None)
+
+
+# ---- one set of sizes for every node ----------------------------------------------------------------------
+
+def test_sizing_applies_to_every_node_and_the_data_disk_only_to_nodes_that_hold_data(session, pve):
+    sizing = NodeSizing(cores=2, ram_mb=4096, os_disk_gb=20, data_disk_gb=50)
+    nodes = plan(session, preset=TopologyPreset.dedicated_masters, data_nodes=2, coordinating_nodes=1,
+                 sizing=sizing)[2].state.nodes
+    assert len(nodes) == 6 and all(n.cores == 2 and n.ram_mb == 4096 and n.os_disk_gb == 20 for n in nodes)
+    for n in nodes:
+        assert (n.data_disk_gb == 50) if n.holds_data else (n.data_disk_gb is None)   # masters, coordinating: none
+    assert all(n.effective_heap_mb == 2048 for n in nodes)                            # recomputed from the new RAM
+
+
+def test_a_node_override_wins_over_the_sizing_for_that_node_only(session, pve):
+    nodes = plan(session, sizing=NodeSizing(cores=2),
+                 node_overrides={"lab-b-01": NodeOverride(cores=8)})[2].state.nodes
+    assert [n.cores for n in nodes] == [8, 2, 2]
+
+
+def test_a_sizing_a_node_cannot_have_is_refused_with_the_reason(session, pve):
+    with pytest.raises(CreateInvalid, match="ram_mb"):
+        plan(session, sizing=NodeSizing(ram_mb=1024))
+
+
+def test_no_sizing_leaves_the_preset_defaults_alone(session, pve):
+    nodes = plan(session)[2].state.nodes
+    assert all(n.cores == 4 and n.ram_mb == 8192 and n.data_disk_gb == 100 for n in nodes)
+
+
+def test_post_accepts_a_sizing_and_rejects_an_unknown_field_in_it(api):
+    from procrastinate import testing
+
+    from app import jobs
+    with jobs.queue.replace_connector(testing.InMemoryConnector()):
+        ok = api.post("/api/clusters", json={**BODY, "sizing": {"cores": 2, "ram_mb": 4096}}, headers=H)
+        assert ok.status_code == 202 and ok.json()["dry_run"] is True
+        bad = api.post("/api/clusters", json={**BODY, "sizing": {"cpus": 2}}, headers=H)
+        assert bad.status_code == 422
+
+
+# ---- the version list for the wizard ----------------------------------------------------------------------
+
+def test_the_version_list_is_newest_first_and_leaves_out_unsupported_majors(logged_in):
+    from app.api.provisioning import get_catalog
+    from app.main import app
+    app.dependency_overrides[get_catalog] = lambda: StaticCatalog(["8.19.4", "9.3.1", "7.17.0", "9.4.3"])
+    try:
+        r = logged_in.get("/api/versions")
+    finally:
+        app.dependency_overrides.pop(get_catalog, None)
+    assert r.status_code == 200 and r.json() == {"versions": ["9.4.3", "9.3.1", "8.19.4"]}
+
+
+def test_the_version_list_says_so_when_the_catalog_is_unreachable_and_needs_a_login(logged_in, client):
+    from app.api.provisioning import get_catalog
+    from app.main import app
+
+    class Down:
+        def releases(self):
+            raise CatalogError("could not fetch the Elasticsearch version list: timeout")
+
+    app.dependency_overrides[get_catalog] = lambda: Down()
+    try:
+        r = logged_in.get("/api/versions")
+    finally:
+        app.dependency_overrides.pop(get_catalog, None)
+    assert r.status_code == 503 and "unavailable" in r.json()["detail"]
+    client.cookies.clear()
+    assert client.get("/api/versions").status_code == 401

@@ -81,3 +81,16 @@ def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
         return remove_cluster(db, cluster_id=cluster_id, confirm_name=body.confirm_name, actor=user.username)
     except OperationRefused as e:
         raise HTTPException(409, str(e)) from e
+
+
+versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])
+
+
+@versions_router.get("")
+async def list_versions(_: User = Depends(auth.current_user), catalog: VersionCatalog = Depends(get_catalog)):
+    """Published Elasticsearch releases a new cluster can use (8.x and later), newest first, for the wizard."""
+    try:
+        every = await run_in_threadpool(available_versions, catalog)
+    except CatalogError as e:
+        raise HTTPException(503, f"{e}; the version list is unavailable right now") from e
+    return {"versions": [v for v in every if int(v.split(".")[0]) >= 8][:40]}

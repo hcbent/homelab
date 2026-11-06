@@ -79,6 +79,20 @@ class NodeOverride(BaseModel):
     ip: str | None = None  # a fixed address
 
 
+class NodeSizing(BaseModel):
+    """Sizes applied to every node of the cluster, before node_overrides. Only the fields that are sent change.
+
+    The data disk goes only to nodes that hold data, so a coordinating or master-only node is not given one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    cores: int | None = None
+    ram_mb: int | None = None
+    os_disk_gb: int | None = None
+    data_disk_gb: int | None = None
+    heap_mb: int | None = None
+
+
 class CreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +102,7 @@ class CreateRequest(BaseModel):
     data_nodes: int = Field(default=3, ge=1, le=40)
     coordinating_nodes: int = Field(default=0, ge=0, le=20)
     nodes: list[NodeSpec] | None = None  # for the custom preset only
+    sizing: NodeSizing | None = None  # one set of sizes for every node; node_overrides then adjust single nodes
     node_overrides: dict[str, NodeOverride] = Field(default_factory=dict)
     proxmox_connection_id: str | None = None  # optional when there is exactly one connection
     network_profile: str | None = None  # defaults to the profile named "default"
@@ -158,6 +173,15 @@ def _profile(db: Session, wanted: str | None) -> NetworkProfile:
     raise CreateInvalid("choose a network profile with network_profile")
 
 
+def _sized(node: NodeSpec, sizing: NodeSizing | None) -> NodeSpec:
+    if sizing is None:
+        return node
+    changes = sizing.model_dump(exclude_none=True)
+    if not node.holds_data:
+        changes.pop("data_disk_gb", None)
+    return NodeSpec.model_validate({**node.model_dump(), **changes}) if changes else node
+
+
 def _build_state(req: CreateRequest, profile: NetworkProfile) -> DesiredState:
     try:
         if req.preset == TopologyPreset.custom:
@@ -175,9 +199,10 @@ def _build_state(req: CreateRequest, profile: NetworkProfile) -> DesiredState:
         unknown = sorted(set(req.node_overrides) - {n.name for n in state.nodes})
         if unknown:
             raise CreateInvalid(f"node_overrides names nodes that do not exist: {', '.join(unknown)}")
+        sized = [_sized(n, req.sizing) for n in state.nodes]
         nodes = [NodeSpec.model_validate({**n.model_dump(),
                                           **req.node_overrides[n.name].model_dump(exclude_unset=True)})
-                 if n.name in req.node_overrides else n for n in state.nodes]
+                 if n.name in req.node_overrides else n for n in sized]
         return DesiredState(name=state.name, version=state.version, topology_preset=state.topology_preset,
                             nodes=nodes, network_profile=profile.name)
     except ValidationError as exc:
