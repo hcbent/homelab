@@ -79,6 +79,9 @@ class Cluster(Base):
     tls_ca_pem: Mapped[str | None] = mapped_column(Text)  # public CA cert, not a secret
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_sync_error: Mapped[str | None] = mapped_column(Text)
+    # Set when a managed cluster's first bootstrap finished. cluster.initial_master_nodes is rendered only while
+    # this is empty, and once it is set the create's configure phase is skipped.
+    bootstrapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProxmoxConnection(Base):

@@ -35,13 +35,19 @@ class StoredPlan:
     files: list[str]
     summary: dict
     created_at: str
+    # What the create will do to the machines once Terraform has made them (for example "install elasticsearch
+    # 9.5.6 on 3 nodes"). It is part of what is approved, so a different version needs a new approval. Empty for
+    # operations that configure nothing, and then the digest is exactly what it was before this existed.
+    configure: str = ""
 
     @property
     def approval_digest(self) -> str:
-        """What the user approves. It covers the operation kind, the rendered configuration and the plan file,
-        so a change to any of them gives a different digest and the old approval no longer matches."""
+        """What the user approves. It covers the operation kind, the rendered configuration, the plan file and
+        what will be configured on the machines, so a change to any of them gives a different digest and the old
+        approval no longer matches."""
         h = hashlib.sha256()
-        for part in (self.operation_kind, self.digest, self.plan_sha256):
+        parts = (self.operation_kind, self.digest, self.plan_sha256, *([self.configure] if self.configure else []))
+        for part in parts:
             h.update(part.encode())
             h.update(b"\0")
         return h.hexdigest()
@@ -66,14 +72,15 @@ class Workspace:
     def _read_config(self, files: list[str]) -> dict[str, str]:
         return {name: (self.dir / name).read_text() for name in files}
 
-    def save_plan(self, operation_kind: str, rendered: dict[str, str], summary: PlanSummary) -> StoredPlan:
+    def save_plan(self, operation_kind: str, rendered: dict[str, str], summary: PlanSummary,
+                  configure: str = "") -> StoredPlan:
         """Record the plan that was just made, bound to the configuration that produced it."""
         if not self.plan_path.exists():
             raise WorkspaceError("there is no plan file to record")
         meta = StoredPlan(
             operation_kind=operation_kind, digest=config_digest(rendered),
             plan_sha256=_sha256(self.plan_path), files=sorted(rendered), summary=summary.to_json(),
-            created_at=datetime.now(UTC).isoformat())
+            created_at=datetime.now(UTC).isoformat(), configure=configure)
         self.meta_path.write_text(json.dumps(meta.__dict__, indent=2, sort_keys=True) + "\n")
         return meta
 

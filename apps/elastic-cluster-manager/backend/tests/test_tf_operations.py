@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app import config, crypto, operations
+from app.configmgmt import AnsibleError, AnsibleOutcome, BootstrapResult, HostRecap, NewCa
 from app.desired import TopologyPreset, build_desired_state
 from app.desired.network import NetworkProfile
 from app.discovery import factory
@@ -56,6 +57,23 @@ def creates(addresses):
     return [(a, "create") for a in addresses]
 
 
+def pem(label, body):
+    """A fake PEM block assembled here so the source holds no literal key armor for a secret scanner to find."""
+    return f"-----BEGIN {label}-----\n{body}\n-----END {label}-----\n"
+
+
+CA_CERT = pem("CERTIFICATE", "FakeCaCertificateBody0000")
+CA_KEY = pem("PRIVATE KEY", "FakeCaKeyBodyForTests000000001")
+API_KEY = "FakeEncodedApiKeyForTests0000000001"
+
+
+def good_ansible_outcome():
+    return AnsibleOutcome(
+        ok=True, recap={n: HostRecap(40, 8, 0, 0) for n in NODES},
+        result=BootstrapResult("4Et2nKICTImSzjMyH77utQ", "green", 3, "ZSmjsaEB1M7T5v1mkNOK", API_KEY),
+        new_ca=NewCa(CA_CERT, CA_KEY))
+
+
 @dataclass
 class World:
     """What the fake Terraform does, and a record of what it was asked to do."""
@@ -70,9 +88,28 @@ class World:
     proxmox_status: int = 200
     proxmox_down: bool = False
     proxmox_seen: list = field(default_factory=list)
+    # What the fake Ansible does: the outcome it returns (or the error it raises), and the requests it was given.
+    ansible_outcome: AnsibleOutcome = field(default_factory=good_ansible_outcome)
+    ansible_error: str | None = None
+    ansible_requests: list = field(default_factory=list)
 
     def factory(self, line_log):
         return FakeRunner(line_log, self)
+
+    def ansible_factory(self, line_log):
+        return FakeAnsible(line_log, self)
+
+
+class FakeAnsible:
+    def __init__(self, line_log, world):
+        self.log, self.w = line_log, world
+
+    def run(self, request):
+        self.w.ansible_requests.append(request)
+        self.log("PLAY RECAP *****")
+        if self.w.ansible_error:
+            raise AnsibleError(self.w.ansible_error)
+        return self.w.ansible_outcome
 
 
 class FakeRunner:
@@ -158,7 +195,7 @@ def begin(session, cluster, conn, **kw):
 
 
 def run(session, world, op):
-    run_operation(session, op.id, world.factory, world.root)
+    run_operation(session, op.id, world.factory, world.root, world.ansible_factory)
     session.refresh(op)
     return op
 
@@ -188,7 +225,7 @@ def test_create_pauses_at_a_plan_and_applies_only_after_approval(session, world,
     op = run(session, world, begin(session, cluster, conn))
     assert op.state == "pending_approval" and op.phase == "approval"
     assert steps(session, op) == [("render", "done"), ("init", "done"), ("plan", "done"),
-                                  ("approval", "waiting"), ("apply", "pending")]
+                                  ("approval", "waiting"), ("apply", "pending"), ("configure", "pending")]
     assert op.plan_digest and op.plan_summary["adds"] == 3 and op.plan_summary["deletes"] == 0
     assert "apply" not in world.calls
 
@@ -328,7 +365,7 @@ def test_a_failed_apply_destroys_nothing_and_records_what_exists(session, world,
     assert op.state == "failed" and "clone timed out" in op.error
     assert op.result["resources_in_state"] == ADDRS[:2] and op.result["ok"] is False
     assert not any("destroy" in c for c in world.calls)
-    assert steps(session, op)[-1] == ("apply", "failed")
+    assert steps(session, op)[-2:] == [("apply", "failed"), ("configure", "pending")]
     assert not workspace_file(world, cluster, "plan.tfplan").exists()
 
 
@@ -343,7 +380,7 @@ def test_a_retry_after_a_failed_apply_re_plans_and_needs_a_new_approval(session,
     assert op.state == "running" and op.approved_digest is None and op.plan_digest is None
     assert op.result["resources_in_state"] == ADDRS[:2]      # kept: cleanup is scoped to it
     assert steps(session, op)[:2] == [("render", "done"), ("init", "done")]
-    assert [s for _, s in steps(session, op)[2:]] == ["pending"] * 3
+    assert [s for _, s in steps(session, op)[2:]] == ["pending"] * 4
 
     op = run(session, world, op)
     assert op.state == "pending_approval" and world.calls.count("apply") == 1
@@ -452,7 +489,7 @@ def test_a_cancelled_plan_frees_the_cluster_and_a_late_job_cannot_revive_it(sess
     operations.cancel_operation(session, op.id)
     session.refresh(op)
     assert op.state == "cancelled" and op.finished_at
-    run_operation(session, op.id, world.factory, world.root)                 # a stray job
+    run_operation(session, op.id, world.factory, world.root, world.ansible_factory)   # a stray job
     session.refresh(op)
     assert op.state == "cancelled" and "apply" not in world.calls
     with pytest.raises(operations.ApprovalRefused):
@@ -574,7 +611,8 @@ def reach_success(session, world, cluster, conn):
 
 
 def finish_teardown(session, world, create):
-    teardown = start_cleanup(session, create_op_id=create.id, confirm_name="lab-b", actor="admin")
+    teardown = start_cleanup(session, create_op_id=create.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True)
     teardown = run(session, world, teardown)
     world.apply_outcome = ApplyOutcome(True, None, [], {})
     operations.approve_operation(session, teardown.id, teardown.plan_digest, "admin")
@@ -587,7 +625,8 @@ def test_a_create_that_succeeded_can_be_torn_down_with_the_same_guards(session, 
 
     with pytest.raises(OperationRefused, match="type the cluster name"):
         start_cleanup(session, create_op_id=created.id, confirm_name="nope", actor="admin")
-    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True)
     assert teardown.kind == "tf.destroy" and teardown.parent_op_id == created.id
 
     teardown = run(session, world, teardown)
@@ -610,13 +649,15 @@ def test_a_create_cannot_be_torn_down_twice(session, world, cluster, conn):
     created = reach_success(session, world, cluster, conn)
     assert finish_teardown(session, world, created).state == "succeeded"
     with pytest.raises(OperationRefused, match="already been cleaned up"):
-        start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+        start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True)
 
 
 def test_tearing_down_a_successful_create_is_still_limited_to_what_it_made(session, world, cluster, conn):
     created = reach_success(session, world, cluster, conn)
     world.destroy_changes = [(a, "delete") for a in ADDRS] + [("proxmox_virtual_environment_vm.es01", "delete")]
-    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True)
     with pytest.raises(PlanRejected, match="es01"):
         run(session, world, teardown)
     assert teardown.state == "failed" and teardown.plan_digest is None
@@ -636,7 +677,8 @@ def test_the_cleanup_endpoint_tears_down_a_successful_create(logged_in, session,
     from app import jobs
     created = reach_success(session, world, cluster, conn)
     with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
-        r = logged_in.post(f"/api/operations/{created.id}/cleanup", json={"confirm_name": "lab-b"}, headers=H)
+        r = logged_in.post(f"/api/operations/{created.id}/cleanup",
+                           json={"confirm_name": "lab-b", "confirm_data_loss": True}, headers=H)
         assert r.status_code == 202 and len(q.connector.jobs) == 1
     detail = logged_in.get(f"/api/operations/{r.json()['id']}").json()
     assert detail["kind"] == "tf.destroy" and detail["parent_op_id"] == created.id
@@ -685,14 +727,16 @@ def test_a_dry_run_is_checked_too(session, world, cluster, conn):
 def test_a_teardown_needs_only_the_right_to_manage_vms_in_the_pool(session, world, cluster, conn):
     created = reach_success(session, world, cluster, conn)
     world.perms = {"/pool/ecm": {"VM.Allocate": 1}}             # no storage or template rights: it does not need them
-    teardown = run(session, world, start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin"))
+    teardown = run(session, world, start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True))
     assert teardown.state == "pending_approval" and world.calls[-1] == "plan-destroy"
 
 
 def test_a_teardown_is_refused_when_even_the_pool_right_is_gone(session, world, cluster, conn):
     created = reach_success(session, world, cluster, conn)
     world.perms = {}
-    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                          confirm_data_loss=True)
     with pytest.raises(PreflightFailed):
         run(session, world, teardown)
     assert "plan-destroy" not in world.calls
@@ -724,3 +768,177 @@ def test_the_preflight_uses_the_token_terraform_will_use(session, world, cluster
     session.commit()
     run(session, world, begin(session, cluster, conn))
     assert world.proxmox_seen[0][2] == "PVEAPIToken=tf@pve!terraform=terraform-secret-1111"
+
+
+# ---- configure: building the cluster on the machines Terraform made ------------------------------------------
+
+def logs(session, op):
+    return "\n".join(line.line for line in session.scalars(select(OperationLog).where(OperationLog.operation_id == op.id)))
+
+
+def credentials(session, kind):
+    return list(session.scalars(select(Credential).where(Credential.kind == kind)))
+
+
+def test_a_real_create_has_a_configure_phase_and_a_dry_run_and_a_destroy_do_not(session, world, cluster, conn):
+    real = begin(session, cluster, conn)
+    assert [n for n, _ in steps(session, real)][-1] == "configure"
+    operations.cancel_operation(session, run(session, world, real).id)
+    dry = begin(session, cluster, conn, dry_run=True)
+    assert "configure" not in [n for n, _ in steps(session, dry)]
+    assert run(session, world, dry).state == "succeeded"       # finished, so it no longer holds the cluster
+    created = reach_success(session, world, cluster, conn)
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                             confirm_data_loss=True)
+    assert "configure" not in [n for n, _ in steps(session, teardown)]
+
+
+def test_the_plan_says_what_will_be_installed(session, world, cluster, conn):
+    op = run(session, world, begin(session, cluster, conn))
+    assert op.plan_summary["configure"] == "install elasticsearch 9.4.3 on 3 nodes and start the cluster"
+
+
+def test_what_will_be_configured_is_part_of_the_approved_digest():
+    import hashlib
+
+    from app.provisioning.workspace import StoredPlan
+    base = {"operation_kind": "create", "digest": "d" * 64, "plan_sha256": "p" * 64, "files": [], "summary": {},
+            "created_at": "t"}
+    plain = StoredPlan(**base)
+    legacy = hashlib.sha256()
+    for part in ("create", "d" * 64, "p" * 64):
+        legacy.update(part.encode() + b"\0")
+    assert plain.approval_digest == legacy.hexdigest()            # nothing to configure: exactly the old digest
+    one = StoredPlan(**base, configure="install elasticsearch 9.4.3 on 3 nodes and start the cluster")
+    other = StoredPlan(**base, configure="install elasticsearch 9.5.6 on 3 nodes and start the cluster")
+    assert len({plain.approval_digest, one.approval_digest, other.approval_digest}) == 3
+
+
+def test_a_create_builds_the_cluster_and_keeps_only_what_ecm_needs(session, world, cluster, conn):
+    op = reach_success(session, world, cluster, conn)
+    assert op.state == "succeeded" and all(status == "done" for _, status in steps(session, op))
+
+    (request,) = world.ansible_requests
+    assert request.kind == "create" and request.bootstrapped_at is None and not request.check
+    assert len(request.elastic_password) >= 20 and request.search_domain == "lab.example.org"
+    assert request.addresses == params_for(conn)["addresses"]
+    assert request.ca_cert_pem is None and request.ca_key_pem is None          # the first run makes the CA
+
+    session.refresh(cluster)
+    assert cluster.bootstrapped_at is not None and cluster.es_cluster_uuid == "4Et2nKICTImSzjMyH77utQ"
+    assert cluster.es_version == "9.4.3" and cluster.health_status == "green" and cluster.tls_verify is True
+    assert cluster.endpoint_urls == [f"https://192.0.2.{110 + i}:9200" for i in range(3)]
+    assert cluster.tls_ca_pem == CA_CERT                                       # the certificate is public
+
+    api_key = session.get(Credential, cluster.credential_id)
+    assert api_key.kind == "es_api_key" and crypto.decrypt(api_key.ciphertext) == API_KEY
+    (ca_key,) = credentials(session, "es_ca_key")
+    assert crypto.decrypt(ca_key.ciphertext) == CA_KEY
+    assert API_KEY.encode() not in api_key.ciphertext and CA_KEY.encode() not in ca_key.ciphertext
+    assert credentials(session, "es_elastic") == []                            # used once, then discarded
+
+    assert op.result["configured"] == {"cluster_uuid": "4Et2nKICTImSzjMyH77utQ", "status": "green",
+                                       "number_of_nodes": 3}
+    visible = json.dumps([op.result, op.params, op.plan_summary]) + logs(session, op)
+    for secret in (request.elastic_password, API_KEY, "FakeCaKeyBodyForTests000000001"):
+        assert secret not in visible
+
+
+def test_a_failed_configure_keeps_the_ca_and_the_password_and_a_retry_resumes_with_them(session, world, cluster, conn):
+    world.ansible_outcome = AnsibleOutcome(
+        ok=False, error="ansible-playbook failed: fatal: [lab-b-01]: FAILED! => 503", new_ca=NewCa(CA_CERT, CA_KEY))
+    op = run(session, world, begin(session, cluster, conn))
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    with pytest.raises(tfop.ConfigureFailed, match="503"):
+        run(session, world, op)
+    assert op.state == "failed" and "retry resumes the configure step" in op.error
+    assert steps(session, op)[-2:] == [("apply", "done"), ("configure", "failed")]
+
+    session.refresh(cluster)
+    assert cluster.bootstrapped_at is None and cluster.es_cluster_uuid is None and cluster.credential_id is None
+    assert cluster.tls_ca_pem == CA_CERT                                       # kept: the nodes may already trust it
+    (ca_key,) = credentials(session, "es_ca_key")
+    assert crypto.decrypt(ca_key.ciphertext) == CA_KEY
+    (elastic,) = credentials(session, "es_elastic")
+    first_password = world.ansible_requests[0].elastic_password
+    assert crypto.decrypt(elastic.ciphertext) == first_password
+
+    operations.retry_operation(session, op.id)
+    world.create_changes = []                                  # the VMs exist now, so planning again finds no changes
+    world.ansible_outcome = AnsibleOutcome(ok=True, recap={}, new_ca=None, result=good_ansible_outcome().result)
+    op = run(session, world, op)
+    assert op.state == "succeeded" and world.calls.count("apply") == 1        # the VMs were not applied again
+
+    again = world.ansible_requests[1]
+    assert again.elastic_password == first_password                            # the keystore already holds it
+    assert again.ca_cert_pem == CA_CERT and again.ca_key_pem == CA_KEY         # no second CA is made
+    session.refresh(cluster)
+    assert cluster.bootstrapped_at is not None and credentials(session, "es_elastic") == []
+
+
+def test_a_failed_configure_can_be_cleaned_up_without_accepting_data_loss(session, world, cluster, conn):
+    world.ansible_error = "the ansible-playbook binary was not found (ansible-playbook)"
+    op = run(session, world, begin(session, cluster, conn))
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    with pytest.raises(tfop.ConfigureFailed, match="not found"):
+        run(session, world, op)
+    session.refresh(cluster)
+    assert cluster.bootstrapped_at is None and len(credentials(session, "es_elastic")) == 1
+    cleanup = start_cleanup(session, create_op_id=op.id, confirm_name="lab-b", actor="admin")   # nothing to lose
+    assert cleanup.kind == "tf.destroy"
+
+
+def test_an_already_bootstrapped_cluster_is_never_configured_again(session, world, cluster, conn):
+    from datetime import UTC, datetime
+    cluster.bootstrapped_at = datetime(2026, 11, 6, tzinfo=UTC)
+    session.commit()
+    op = reach_success(session, world, cluster, conn)
+    assert op.state == "succeeded" and world.ansible_requests == []
+    assert "already bootstrapped" in logs(session, op)
+
+
+def test_tearing_down_a_bootstrapped_cluster_needs_the_data_loss_accepted(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    with pytest.raises(OperationRefused, match="data in it is destroyed"):
+        start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin")
+    assert session.scalar(select(Operation).where(Operation.kind == "tf.destroy")) is None   # nothing was started
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                             confirm_data_loss=True)
+    audit = session.scalars(select(AuditEvent).where(AuditEvent.target_id == teardown.id)).one()
+    assert audit.details["bootstrapped"] is True and audit.details["data_loss_confirmed"] is True
+
+
+def test_a_complete_teardown_forgets_the_cluster_so_the_same_name_bootstraps_again(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    first_password = world.ansible_requests[0].elastic_password
+    teardown = finish_teardown(session, world, created)
+    assert teardown.state == "succeeded"
+
+    session.refresh(cluster)
+    assert cluster.bootstrapped_at is None and cluster.es_cluster_uuid is None and cluster.credential_id is None
+    assert cluster.tls_ca_pem is None and cluster.endpoint_urls is None and cluster.health_status is None
+    for kind in ("es_api_key", "es_ca_key", "es_elastic"):
+        assert credentials(session, kind) == []
+    assert "removed with its machines" in logs(session, teardown)
+
+    world.apply_outcome = ApplyOutcome(True, None, list(ADDRS), {})
+    world.ansible_outcome = good_ansible_outcome()
+    recreated = reach_success(session, world, cluster, conn)                   # the same name, built again
+    assert recreated.state == "succeeded" and len(world.ansible_requests) == 2
+    second = world.ansible_requests[1]
+    assert second.ca_cert_pem is None and second.elastic_password != first_password   # a fresh CA and password
+
+
+def test_the_cleanup_endpoint_refuses_a_bootstrapped_cluster_until_the_data_loss_is_accepted(
+        logged_in, session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    r = logged_in.post(f"/api/operations/{created.id}/cleanup", json={"confirm_name": "lab-b"}, headers=H)
+    assert r.status_code == 409 and "data" in r.json()["detail"]
+
+
+def test_the_stored_plan_carries_what_will_be_configured_and_the_digest_covers_it(session, world, cluster, conn):
+    from app.provisioning.workspace import existing_workspace
+    op = run(session, world, begin(session, cluster, conn))
+    stored = existing_workspace(world.root, cluster.id).load_plan()
+    assert stored.configure == "install elasticsearch 9.4.3 on 3 nodes and start the cluster"
+    assert stored.approval_digest == op.plan_digest

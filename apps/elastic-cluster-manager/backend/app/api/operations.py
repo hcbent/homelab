@@ -76,6 +76,8 @@ class ApproveBody(BaseModel):
 
 class CleanupBody(BaseModel):
     confirm_name: str = Field(min_length=1, max_length=100)
+    # Needed when the cluster has bootstrapped: Elasticsearch is on its machines and its data goes with them.
+    confirm_data_loss: bool = False
 
 
 async def _enqueue(db: Session, op_id: str, user: User, trigger: str, undo) -> None:
@@ -134,7 +136,8 @@ async def cleanup(op_id: str, body: CleanupBody, db: Session = Depends(get_db),
     """Start a destroy of what a create made: the partial result of a failed one, or everything a successful one
     built. It plans first, needs the cluster name typed, and needs its own approval."""
     try:
-        op = tf.start_cleanup(db, create_op_id=op_id, confirm_name=body.confirm_name, actor=user.username)
+        op = tf.start_cleanup(db, create_op_id=op_id, confirm_name=body.confirm_name, actor=user.username,
+                              confirm_data_loss=body.confirm_data_loss)
     except tf.OperationRefused as e:
         raise HTTPException(409, str(e)) from e
     except operations.OperationConflict as e:

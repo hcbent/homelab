@@ -92,12 +92,12 @@ def test_it_plans_a_three_node_cluster_spread_over_the_hosts(session, pve):
     assert steps == ["render", "init", "plan"]                    # a dry run has nothing to approve or apply
 
 
-def test_a_real_create_has_the_approval_and_apply_steps(session, pve):
+def test_a_real_create_has_the_approval_apply_and_configure_steps(session, pve):
     _, op, _ = plan(session, dry_run=False)
     assert not op.dry_run
     steps = [s.name for s in session.scalars(select(OperationStep).where(OperationStep.operation_id == op.id)
                                              .order_by(OperationStep.seq))]
-    assert steps == ["render", "init", "plan", "approval", "apply"]
+    assert steps == ["render", "init", "plan", "approval", "apply", "configure"]
 
 
 def test_the_default_template_comes_from_settings(session, pve, monkeypatch):

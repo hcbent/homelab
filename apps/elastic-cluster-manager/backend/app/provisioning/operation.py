@@ -1,6 +1,6 @@
 """Terraform operations: tf.create, and tf.destroy used to clean up or tear down a create that has finished.
 
-Phases:  render, init, plan, approval, apply   (a dry run stops after plan)
+Phases:  render, init, plan, approval, apply, configure   (a dry run stops after plan; a destroy has no configure)
 
   * render, init and plan change nothing on Proxmox or any Elasticsearch cluster. `init` with the pg backend
     does create the cluster's empty state schema in ECM's own state database.
@@ -9,6 +9,12 @@ Phases:  render, init, plan, approval, apply   (a dry run stops after plan)
   * approval is a click on that digest (operations.approve_operation). It enqueues the same job, which resumes.
   * apply re-checks the stored plan against the files on disk and against the approved digest, then applies
     that saved plan file and nothing else.
+  * configure runs Ansible's create on the machines apply just made: it installs the pinned Elasticsearch
+    version, forms the cluster and waits for green. The same approval covers it, because the digest includes
+    "install elasticsearch <version> on <n> nodes". It is skipped once the cluster has bootstrapped. The elastic
+    password is made here, kept encrypted only until the bootstrap succeeds, and then deleted; the cluster CA key
+    and an API key are kept encrypted. A new CA is stored even when the run fails, because certificates signed by
+    it may already be on the machines, and a retry hands it back so no second CA is made.
 
 Nothing here destroys on failure. A failed create keeps its partial state and records what exists. Cleaning
 it up, or tearing down a create that succeeded, is a separate tf.destroy operation that a person starts by
@@ -16,7 +22,9 @@ typing the cluster name, that has its own plan and its own approval, and that ma
 create recorded in state.
 """
 import json
+import secrets
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -24,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app import audit, crypto
 from app.config import get_settings, tf_state_conninfo
+from app.configmgmt import AnsibleError, AnsibleRequest, AnsibleRunner, NewCa, runner_from_settings
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
 from app.discovery import factory, proxmox
@@ -38,11 +47,14 @@ from app.provisioning.workspace import existing_workspace, open_workspace
 CREATE = "tf.create"
 DESTROY = "tf.destroy"
 PHASES = ["render", "init", "plan", "approval", "apply"]
+CREATE_PHASES = [*PHASES, "configure"]  # a real create also builds the cluster on the machines it made
 DRY_RUN_PHASES = ["render", "init", "plan"]  # a dry run has no approval or apply step to run
 # The kind the plan safety rules and the stored plan use.
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
+AnsibleFactory = Callable[[Callable[[str], None]], AnsibleRunner]
+ES_HTTP_PORT = 9200
 
 
 class OperationRefused(Exception):
@@ -64,6 +76,11 @@ class ApplyRefused(Exception):
 
 class ApplyFailed(Exception):
     """Terraform started the apply and it failed. Partial state is kept; nothing was destroyed."""
+
+
+class ConfigureFailed(Exception):
+    """The machines exist but building the cluster on them failed. The VMs, the stored password and any CA that
+    was made are kept; a retry resumes the configure step with them."""
 
 
 # ---- inputs ---------------------------------------------------------------------------------------------
@@ -118,19 +135,21 @@ def start_create(db: Session, *, cluster_id: str, params: dict, actor: str, dry_
     """
     _managed_cluster(db, cluster_id)
     _check_params(db, cluster_id, params)
-    op = create_operation(db, CREATE, DRY_RUN_PHASES if dry_run else PHASES, cluster_id=cluster_id,
+    op = create_operation(db, CREATE, DRY_RUN_PHASES if dry_run else CREATE_PHASES, cluster_id=cluster_id,
                           params=params, actor=actor, dry_run=dry_run)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=CREATE, dry_run=dry_run)
     return op
 
 
-def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: str) -> Operation:
+def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: str,
+                  confirm_data_loss: bool = False) -> Operation:
     """Create the destroy operation that removes what a create made: the partial result of one that failed, or
     everything a create that succeeded built.
 
     Allowed only for a finished tf.create whose apply left resources in state, on a managed cluster, once, and
     only after the person types the cluster name. The plan it produces can delete nothing the create did not
-    record (see _outside_the_create), and it needs its own approval.
+    record (see _outside_the_create), and it needs its own approval. A cluster that has bootstrapped has
+    Elasticsearch on its machines and may hold data, so its teardown also needs the data loss accepted.
     """
     parent = db.get(Operation, create_op_id)
     if parent is None or parent.kind != CREATE:
@@ -140,6 +159,10 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
     cluster = _managed_cluster(db, parent.cluster_id)
     if confirm_name != cluster.name:
         raise OperationRefused("type the cluster name exactly to confirm the cleanup")
+    if cluster.bootstrapped_at is not None and not confirm_data_loss:
+        raise OperationRefused("this cluster has been bootstrapped: Elasticsearch is installed on its machines and "
+                               "any data in it is destroyed with them. Confirm that you accept the data loss "
+                               "to continue")
     if db.scalar(select(Operation.id).where(Operation.parent_op_id == parent.id, Operation.kind == DESTROY,
                                             Operation.state == "succeeded")):
         raise OperationRefused("this create has already been cleaned up")
@@ -150,7 +173,8 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
     op = create_operation(db, DESTROY, PHASES, cluster_id=cluster.id, params=parent.params, actor=actor,
                           parent_op_id=parent.id)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=DESTROY, parent=parent.id,
-                 parent_state=parent.state, resources=len(left))
+                 parent_state=parent.state, resources=len(left), bootstrapped=cluster.bootstrapped_at is not None,
+                 data_loss_confirmed=bool(confirm_data_loss))
     return op
 
 
@@ -161,25 +185,32 @@ def default_runner(line_log: Callable[[str], None]) -> TerraformRunner:
     return CliTerraformRunner(binary=s.terraform_binary, plugin_dir=s.terraform_plugin_dir, log=line_log)
 
 
+def default_ansible(line_log: Callable[[str], None]) -> AnsibleRunner:
+    return runner_from_settings(get_settings(), log=line_log)
+
+
 def run_operation(db: Session, op_id: str, make_runner: RunnerFactory = default_runner,
-                  root: Path | None = None) -> None:
+                  root: Path | None = None, make_ansible: AnsibleFactory = default_ansible) -> None:
     """Run or resume a Terraform operation. This is the body of the `tf.run` job."""
     op = db.get(Operation, op_id)
-    handlers = _Handlers(db, op, make_runner, root or Path(get_settings().tf_workspace_root)).handlers()
+    handlers = _Handlers(db, op, make_runner, root or Path(get_settings().tf_workspace_root),
+                         make_ansible).handlers()
     run_phases(db, op_id, handlers)
 
 
 class _Handlers:
-    def __init__(self, db: Session, op: Operation, make_runner: RunnerFactory, root: Path):
+    def __init__(self, db: Session, op: Operation, make_runner: RunnerFactory, root: Path,
+                 make_ansible: AnsibleFactory = default_ansible):
         self.db, self.op, self.root = db, op, root
         self.kind = op.kind
         self.plan_kind = PLAN_KIND[op.kind]
         self.cluster_id = op.cluster_id or ""
         self.runner = make_runner(lambda line: log(db, op.id, line, "terraform"))
+        self.ansible = make_ansible(lambda line: log(db, op.id, line, "ansible"))
 
     def handlers(self) -> dict[str, Callable[[], None]]:
         return {"render": self.render, "init": self.init, "plan": self.plan,
-                "approval": self.approval, "apply": self.apply}
+                "approval": self.approval, "apply": self.apply, "configure": self.configure}
 
     # -- helpers --
 
@@ -248,10 +279,12 @@ class _Handlers:
         if problems:
             ws.discard_plan()
             raise PlanRejected("; ".join(problems))
-        stored = ws.save_plan(self.plan_kind, self._rendered(), outcome.summary)
+        configure = self._configure_description()
+        stored = ws.save_plan(self.plan_kind, self._rendered(), outcome.summary, configure=configure)
         op = self._fresh()
         op.plan_digest = stored.approval_digest
-        op.plan_summary = {**outcome.summary.to_json(), "has_changes": not outcome.summary.is_empty}
+        op.plan_summary = {**outcome.summary.to_json(), "has_changes": not outcome.summary.is_empty,
+                           "configure": configure or None}
         self.db.commit()
         log(self.db, op.id, f"plan {stored.approval_digest}: {outcome.summary.adds} to add, "
                             f"{outcome.summary.updates} to change, {outcome.summary.deletes} to destroy")
@@ -298,6 +331,120 @@ class _Handlers:
                      "outputs": json.loads(json.dumps(outcome.outputs, default=str))}
         self.db.commit()
         ws.discard_plan()  # the plan is spent: an approval covers one apply, never a second
+        if outcome.ok and self.kind == DESTROY and not outcome.resources_in_state:
+            self._forget_cluster()
         if not outcome.ok:
             raise ApplyFailed(f"{outcome.error}. Nothing was destroyed; {len(outcome.resources_in_state)} "
                               "resource(s) are in state. Retry re-plans and needs a new approval")
+
+
+    # -- configure: build the cluster on the machines Terraform made -------------------------------------
+
+    def _state(self) -> DesiredState:
+        return DesiredState.model_validate(self.op.params["state"])
+
+    def _configure_description(self) -> str:
+        """What a create will do to the machines. Part of the approved digest. Empty when nothing is configured."""
+        if self.kind != CREATE:
+            return ""
+        state = self._state()
+        n = len(state.nodes)
+        return f"install elasticsearch {state.version} on {n} node{'s' if n != 1 else ''} and start the cluster"
+
+    def _credential(self, name: str) -> Credential | None:
+        return self.db.scalar(select(Credential).where(Credential.name == name))
+
+    def _store(self, kind: str, name: str, value: str) -> Credential:
+        cred = self._credential(name)
+        if cred is None:
+            cred = Credential(kind=kind, name=name, ciphertext=crypto.encrypt(value))
+            self.db.add(cred)
+        else:
+            cred.ciphertext, cred.rotated_at = crypto.encrypt(value), datetime.now(UTC)
+        self.db.flush()
+        return cred
+
+    def _names(self) -> tuple[str, str, str]:
+        return (f"es-elastic-{self.cluster_id}", f"es-ca-key-{self.cluster_id}", f"es-api-key-{self.cluster_id}")
+
+    def _elastic_password(self) -> str:
+        """The elastic user's first password. Made once and kept encrypted until the bootstrap succeeds, so a
+        retry after a crash hands Ansible the same one: the first start has already put it in the keystore."""
+        name = self._names()[0]
+        cred = self._credential(name)
+        if cred is not None:
+            value = crypto.decrypt(cred.ciphertext)
+        else:
+            value = secrets.token_urlsafe(32)
+            self._store("es_elastic", name, value)
+            self.db.commit()
+        crypto.register_secret(value)
+        return value
+
+    def _stored_ca(self, cluster: Cluster) -> tuple[str | None, str | None]:
+        key = self._credential(self._names()[1])
+        if cluster.tls_ca_pem and key is not None:
+            return cluster.tls_ca_pem, crypto.decrypt(key.ciphertext)
+        return None, None
+
+    def _store_ca(self, cluster: Cluster, ca: NewCa) -> None:
+        self._store("es_ca_key", self._names()[1], ca.key_pem)
+        cluster.tls_ca_pem = ca.cert_pem  # the certificate is public; the key is only in the credential
+        self.db.commit()
+        log(self.db, self.op.id, "the cluster CA was stored (encrypted)")
+
+    def configure(self) -> None:
+        cluster = self.db.get(Cluster, self.cluster_id)
+        if cluster.bootstrapped_at is not None:
+            log(self.db, self.op.id, "the cluster has already bootstrapped; nothing to configure")
+            return
+        params = self.op.params
+        state = self._state()
+        profile = NetworkProfile.model_validate(params["profile"])
+        ca_cert, ca_key = self._stored_ca(cluster)
+        request = AnsibleRequest(
+            state=state, addresses=params["addresses"], kind="create", bootstrapped_at=None,
+            search_domain=profile.search_domain, elastic_password=self._elastic_password(),
+            ca_cert_pem=ca_cert, ca_key_pem=ca_key)
+        log(self.db, self.op.id, f"configuring: {self._configure_description()}")
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise ConfigureFailed(str(e)) from e
+        if outcome.new_ca is not None:
+            self._store_ca(cluster, outcome.new_ca)  # even when the run failed: the nodes may already trust it
+        if not outcome.ok or outcome.result is None:
+            raise ConfigureFailed(f"{outcome.error or 'the create handed back no result'}. The machines, the "
+                                  "stored password and any CA are kept; retry resumes the configure step")
+        result = outcome.result
+        api_key = self._store("es_api_key", self._names()[2], result.api_key_encoded)
+        cluster.credential_id = api_key.id
+        cluster.es_cluster_uuid = result.cluster_uuid
+        cluster.es_version = state.version
+        cluster.health_status = result.status
+        cluster.endpoint_urls = [f"https://{params['addresses'][n.name]}:{ES_HTTP_PORT}" for n in state.nodes]
+        cluster.tls_verify = True
+        cluster.bootstrapped_at = datetime.now(UTC)
+        elastic = self._credential(self._names()[0])
+        if elastic is not None:
+            self.db.delete(elastic)  # used once, to bootstrap; ECM reaches the cluster with the API key from now on
+        op = self._fresh()
+        op.result = {**(op.result or {}), "configured": {"cluster_uuid": result.cluster_uuid,
+                                                         "status": result.status,
+                                                         "number_of_nodes": result.number_of_nodes}}
+        self.db.commit()
+        log(self.db, op.id, f"the cluster bootstrapped: {result.number_of_nodes} nodes, {result.status}")
+
+    def _forget_cluster(self) -> None:
+        """A teardown removed every machine, so nothing of the cluster is left to reach or to trust. Clearing this
+        lets the same name be created again and bootstrap from scratch."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        cluster.bootstrapped_at = cluster.es_cluster_uuid = cluster.credential_id = None
+        cluster.tls_ca_pem = cluster.endpoint_urls = cluster.health_status = cluster.es_version = None
+        self.db.flush()
+        for name in self._names():
+            cred = self._credential(name)
+            if cred is not None:
+                self.db.delete(cred)
+        self.db.commit()
+        log(self.db, self.op.id, "the cluster's stored credentials and CA were removed with its machines")
