@@ -147,7 +147,7 @@ export function OperationDetail({ id }: { id: string }) {
             { title: "Plan digest", description: <span className="ecm-mono ecm-small ecm-clip">{op.plan.digest}</span> },
           ]} />
           {op.dry_run && (
-            <EuiCallOut size="s" color="primary" iconType="iInCircle" className="ecm-gap"
+            <EuiCallOut size="s" color="primary" iconType="info" className="ecm-gap"
               title="This was a dry run: nothing was created, and it cannot be approved.">
               <p>Go back and plan the build for real to get a plan you can approve.</p></EuiCallOut>)}
           {op.plan.approvable && (

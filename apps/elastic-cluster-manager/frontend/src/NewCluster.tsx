@@ -305,7 +305,7 @@ export function NewCluster() {
                 {num("Data nodes", "dataNodes", "Each holds data and runs ingest.")}
                 {num("Coordinating nodes", "coordinating", "Route requests only; no data and no master role.")}
               </div>)}
-            <EuiCallOut size="s" color="primary" iconType="iInCircle" className="ecm-gap"
+            <EuiCallOut size="s" color="primary" iconType="info" className="ecm-gap"
               title="Master-eligible nodes go on different Proxmox hosts">
               <p>A plan that would leave a host holding enough of them to break the master quorum if it were lost is
                 refused, and the review step says which host and why.</p></EuiCallOut>
@@ -394,7 +394,7 @@ export function NewCluster() {
           </>)}
 
         <div className="ecm-wizard__actions">
-          <EuiButtonEmpty iconType="arrowLeft" isDisabled={step === 0} onClick={() => go(step - 1)}>Back</EuiButtonEmpty>
+          <EuiButtonEmpty iconType="chevronSingleLeft" isDisabled={step === 0} onClick={() => go(step - 1)}>Back</EuiButtonEmpty>
           {step < BUILD && (
             <EuiButton fill isDisabled={!canContinue} onClick={() => go(step + 1)}>Continue</EuiButton>)}
         </div>

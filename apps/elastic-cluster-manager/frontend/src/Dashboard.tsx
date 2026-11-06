@@ -114,7 +114,7 @@ export function Dashboard() {
           <h2 id="clusters-title" className="ecm-h2">Every registered cluster, with the machines behind it.</h2>
           <p className="ecm-lede ecm-lede--small">Open a cluster to see its nodes, linked VMs and storage.</p>
           <div className="ecm-gap">
-            <EuiButton fill iconType="plusInCircle" href="#/new">Create cluster</EuiButton>
+            <EuiButton fill iconType="plusCircle" href="#/new">Create cluster</EuiButton>
           </div>
           {loadError && (
             <EuiCallOut color="danger" role="alert" iconType="warning" title="Could not load clusters"
@@ -138,7 +138,7 @@ export function Dashboard() {
                   responsiveBreakpoint="m" tableLayout="auto" />
               </>)}
           </div>
-          {!empty && <EuiButtonEmpty iconType="plusInCircle" href="#/infrastructure" className="ecm-gap">
+          {!empty && <EuiButtonEmpty iconType="plusCircle" href="#/infrastructure" className="ecm-gap">
             Add connection</EuiButtonEmpty>}
         </div>
       </section>
