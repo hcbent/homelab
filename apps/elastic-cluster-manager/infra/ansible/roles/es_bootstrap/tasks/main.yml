@@ -1,0 +1,103 @@
+---
+# Runs once, on the bootstrap host, after every node has been started. It proves the cluster formed, then hands
+# ECM an API key so the elastic password can be discarded. A cluster counts as created only when this passes:
+# the expected number of nodes joined and health is green (yellow for a single node).
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_elastic_password is defined
+      - es_artifacts_dir is defined
+      - es_first_start | bool
+    fail_msg: >-
+      es_bootstrap needs es_elastic_password (an extra var), es_artifacts_dir, and an inventory for a first create.
+
+- name: Wait for the expected nodes to join and health to reach the expected status
+  ansible.builtin.uri:
+    url: "{{ es_bootstrap_base_url }}{{ es_bootstrap_health_path }}"
+    url_username: elastic
+    url_password: "{{ es_elastic_password }}"
+    force_basic_auth: true
+    ca_path: "{{ es_tls_dir }}/ca.crt"
+    status_code: [200, 408]
+    return_content: true
+  register: es_bootstrap_health
+  until: es_bootstrap_health.status == 200 and not es_bootstrap_health.json.timed_out
+  retries: "{{ es_bootstrap_retries }}"
+  delay: "{{ es_bootstrap_delay }}"
+  changed_when: false
+
+- name: Read the cluster UUID
+  ansible.builtin.uri:
+    url: "{{ es_bootstrap_base_url }}/"
+    url_username: elastic
+    url_password: "{{ es_elastic_password }}"
+    force_basic_auth: true
+    ca_path: "{{ es_tls_dir }}/ca.crt"
+    return_content: true
+  register: es_bootstrap_info
+  changed_when: false
+
+# One active key per cluster: an earlier run's key is invalidated so a resumed create does not leave extras.
+- name: Invalidate an earlier ECM API key for this cluster
+  ansible.builtin.uri:
+    url: "{{ es_bootstrap_base_url }}/_security/api_key"
+    method: DELETE
+    url_username: elastic
+    url_password: "{{ es_elastic_password }}"
+    force_basic_auth: true
+    ca_path: "{{ es_tls_dir }}/ca.crt"
+    body_format: json
+    body:
+      name: "{{ es_bootstrap_api_key_name }}"
+  register: es_bootstrap_invalidated
+  # The first call that touches the security index can land while its shard is still being allocated (a 503
+  # "unavailable_shards_exception"), seen on the first real run. It is transient, so retry.
+  until: es_bootstrap_invalidated.status == 200
+  retries: "{{ es_bootstrap_retries }}"
+  delay: "{{ es_bootstrap_delay }}"
+  changed_when: false
+
+- name: Create the ECM API key
+  ansible.builtin.uri:
+    url: "{{ es_bootstrap_base_url }}/_security/api_key"
+    method: POST
+    url_username: elastic
+    url_password: "{{ es_elastic_password }}"
+    force_basic_auth: true
+    ca_path: "{{ es_tls_dir }}/ca.crt"
+    body_format: json
+    body:
+      name: "{{ es_bootstrap_api_key_name }}"
+      metadata:
+        managed_by: ecm
+    return_content: true
+  register: es_bootstrap_key
+  until: es_bootstrap_key.status == 200
+  retries: "{{ es_bootstrap_retries }}"
+  delay: "{{ es_bootstrap_delay }}"
+  no_log: true
+
+- name: Make the hand-back directory on the worker
+  ansible.builtin.file:
+    path: "{{ es_artifacts_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+# ECM reads this, stores the key encrypted, sets bootstrapped_at, and deletes the file.
+- name: Hand the result to ECM
+  ansible.builtin.copy:
+    content: "{{ result | to_nice_json }}\n"
+    dest: "{{ es_artifacts_dir }}/result.json"
+    mode: "0600"
+  vars:
+    result:
+      cluster_uuid: "{{ es_bootstrap_info.json.cluster_uuid }}"
+      status: "{{ es_bootstrap_health.json.status }}"
+      number_of_nodes: "{{ es_bootstrap_health.json.number_of_nodes }}"
+      api_key_id: "{{ es_bootstrap_key.json.id }}"
+      api_key_encoded: "{{ es_bootstrap_key.json.encoded }}"
+  no_log: true
+  delegate_to: localhost
+  become: false

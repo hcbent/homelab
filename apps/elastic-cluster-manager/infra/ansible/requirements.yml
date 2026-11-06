@@ -1,0 +1,8 @@
+---
+# Pinned to the versions the roles are linted against. Install with:
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: ansible.posix
+    version: 2.2.2
+  - name: community.general
+    version: 13.5.0

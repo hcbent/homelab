@@ -1,0 +1,18 @@
+---
+# A running cluster is never restarted from here: ECM's lifecycle procedures own rolling restarts. On a create
+# (es_allow_restart true) nothing is running yet, so this is just the first start.
+- name: Restart elasticsearch
+  ansible.builtin.systemd:
+    name: elasticsearch
+    state: restarted
+    daemon_reload: true
+  when: es_allow_restart | bool
+  listen: Elasticsearch configuration changed
+
+- name: Note that a restart is pending
+  ansible.builtin.debug:
+    msg: >-
+      The configuration of {{ es_node_name }} changed. It has not been restarted; the change takes effect at the
+      next rolling restart.
+  when: not es_allow_restart | bool
+  listen: Elasticsearch configuration changed

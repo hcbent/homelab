@@ -1,0 +1,215 @@
+---
+# Certificates come from one cluster CA made with elasticsearch-certutil (no enrollment tokens). The CA key lives
+# in ECM's encrypted storage, is passed in only when a node needs a certificate, and is on a VM only for the length
+# of this role. Node keys pass through the CA host's temporary directory and Ansible's memory, never a file on the
+# worker. Verification is always on.
+- name: Check which nodes already have a certificate
+  ansible.builtin.stat:
+    path: "{{ es_tls_dir }}/{{ es_node_name }}.crt"
+  register: es_tls_cert
+
+- name: Work out which nodes need one
+  ansible.builtin.set_fact:
+    es_tls_missing: >-
+      {{ ansible_play_hosts_all | difference(
+           ansible_play_hosts_all | map('extract', hostvars) | selectattr('es_tls_cert.stat.exists')
+           | map(attribute='inventory_hostname') | list) }}
+    es_tls_ca_supplied: "{{ es_ca_cert_pem is defined and es_ca_key_pem is defined }}"
+  run_once: true
+
+- name: Refuse to guess at a CA
+  ansible.builtin.assert:
+    that:
+      - es_tls_ca_supplied | bool or es_operation == 'create'
+      - es_tls_ca_supplied | bool or es_tls_missing | length == ansible_play_hosts_all | length
+      - es_tls_ca_supplied | bool or es_artifacts_dir is defined
+    fail_msg: >-
+      {{ es_tls_missing | join(', ') }} need(s) a certificate but no CA was supplied.
+      A new CA is only made on a create where no node has a certificate yet, and it needs es_artifacts_dir
+      so the CA is not lost. Otherwise pass the cluster's CA as es_ca_cert_pem and es_ca_key_pem.
+  run_once: true
+  when: es_tls_missing | length > 0
+
+- name: Issue and distribute certificates
+  when: es_tls_missing | length > 0
+  block:
+    - name: Make a private working directory on the CA host
+      ansible.builtin.file:
+        path: "{{ es_tls_workdir }}/ca"
+        state: directory
+        mode: "0700"
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: Put the supplied CA in place
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ es_tls_workdir }}/ca/{{ item.name }}"
+        mode: "0600"
+      loop:
+        - { name: ca.crt, content: "{{ es_ca_cert_pem | default('') }}" }
+        - { name: ca.key, content: "{{ es_ca_key_pem | default('') }}" }
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+      when: es_tls_ca_supplied | bool
+
+    - name: Make a new CA
+      ansible.builtin.command:
+        cmd: "{{ es_tls_certutil }} ca --silent --pem --days {{ es_tls_ca_days }} --out {{ es_tls_workdir }}/ca.zip"
+        creates: "{{ es_tls_workdir }}/ca.zip"
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+      when: not es_tls_ca_supplied | bool
+
+    - name: Unpack the new CA
+      ansible.builtin.unarchive:
+        src: "{{ es_tls_workdir }}/ca.zip"
+        dest: "{{ es_tls_workdir }}"
+        remote_src: true
+        creates: "{{ es_tls_workdir }}/ca/ca.key"
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+      when: not es_tls_ca_supplied | bool
+
+    - name: Describe the nodes that need certificates
+      ansible.builtin.template:
+        src: instances.yml.j2
+        dest: "{{ es_tls_workdir }}/instances.yml"
+        mode: "0600"
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: Remove an earlier bundle so certutil does not wait to overwrite it
+      ansible.builtin.file:
+        path: "{{ es_tls_workdir }}/certs.zip"
+        state: absent
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: Issue the node certificates
+      ansible.builtin.command:
+        cmd: >-
+          {{ es_tls_certutil }} cert --silent --pem --days {{ es_tls_node_days }}
+          --ca-cert {{ es_tls_workdir }}/ca/ca.crt --ca-key {{ es_tls_workdir }}/ca/ca.key
+          --in {{ es_tls_workdir }}/instances.yml --out {{ es_tls_workdir }}/certs.zip
+      changed_when: true
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: Make a directory for the node certificates
+      ansible.builtin.file:
+        path: "{{ es_tls_workdir }}/certs"
+        state: directory
+        mode: "0700"
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    # certutil writes one directory per instance, named after it: <name>/<name>.crt and <name>/<name>.key.
+    - name: Unpack the node certificates
+      ansible.builtin.unarchive:
+        src: "{{ es_tls_workdir }}/certs.zip"
+        dest: "{{ es_tls_workdir }}/certs"
+        remote_src: true
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: List what certutil produced
+      ansible.builtin.find:
+        paths: "{{ es_tls_workdir }}/certs"
+        recurse: true
+        file_type: file
+      register: es_tls_issued
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+
+    - name: Check certutil produced a certificate and key for every node
+      ansible.builtin.assert:
+        that:
+          - (es_tls_expected ~ '.crt') in es_tls_produced
+          - (es_tls_expected ~ '.key') in es_tls_produced
+        fail_msg: "certutil did not produce the files expected for {{ item }}. It produced: {{ es_tls_produced }}"
+      vars:
+        es_tls_expected: "{{ es_tls_workdir }}/certs/{{ hostvars[item].es_node_name }}/{{ hostvars[item].es_node_name }}"
+        es_tls_produced: "{{ es_tls_issued.files | map(attribute='path') | list }}"
+      loop: "{{ es_tls_missing }}"
+      run_once: true
+
+    - name: Hand a new CA back to ECM
+      when: not es_tls_ca_supplied | bool
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true
+      block:
+        - name: Read the new CA
+          ansible.builtin.slurp:
+            src: "{{ es_tls_workdir }}/ca/{{ item }}"
+          loop: [ca.crt, ca.key]
+          register: es_tls_new_ca
+          no_log: true
+
+        - name: Make the hand-back directory on the worker
+          ansible.builtin.file:
+            path: "{{ es_artifacts_dir }}"
+            state: directory
+            mode: "0700"
+          delegate_to: localhost
+          become: false
+
+        - name: Write the new CA on the worker
+          ansible.builtin.copy:
+            content: "{{ item.content | b64decode }}"
+            dest: "{{ es_artifacts_dir }}/{{ item.item }}"
+            mode: "0600"
+          loop: "{{ es_tls_new_ca.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          no_log: true
+          delegate_to: localhost
+          become: false
+
+    - name: Create the certificate directory on each node
+      ansible.builtin.file:
+        path: "{{ es_tls_dir }}"
+        state: directory
+        owner: root
+        group: elasticsearch
+        mode: "0750"
+      when: inventory_hostname in es_tls_missing
+
+    - name: Read this node's certificate, key and the CA certificate
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - "{{ es_tls_workdir }}/certs/{{ es_node_name }}/{{ es_node_name }}.crt"
+        - "{{ es_tls_workdir }}/certs/{{ es_node_name }}/{{ es_node_name }}.key"
+        - "{{ es_tls_workdir }}/ca/ca.crt"
+      register: es_tls_files
+      no_log: true
+      delegate_to: "{{ es_ca_host }}"
+      when: inventory_hostname in es_tls_missing
+
+    - name: Install the certificate, key and CA certificate
+      ansible.builtin.copy:
+        content: "{{ es_tls_files.results[item.index].content | b64decode }}"
+        dest: "{{ es_tls_dir }}/{{ item.dest }}"
+        owner: root
+        group: elasticsearch
+        mode: "{{ item.mode }}"
+      loop:
+        - { index: 0, dest: "{{ es_node_name }}.crt", mode: "0644" }
+        - { index: 1, dest: "{{ es_node_name }}.key", mode: "0640" }
+        - { index: 2, dest: ca.crt, mode: "0644" }
+      loop_control:
+        label: "{{ item.dest }}"
+      no_log: true
+      when: inventory_hostname in es_tls_missing
+
+  always:
+    - name: Remove the working directory, and the CA key with it, from the CA host
+      ansible.builtin.file:
+        path: "{{ es_tls_workdir }}"
+        state: absent
+      delegate_to: "{{ es_ca_host }}"
+      run_once: true

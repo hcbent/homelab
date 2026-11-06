@@ -1,0 +1,143 @@
+---
+# Partition, format and mount the data disk. Formatting happens only on a disk that is completely blank.
+# Anything else that is not exactly "one GPT partition holding the expected filesystem" is refused, because
+# guessing wrong here destroys data. Growing the filesystem after Terraform enlarges the disk is a later step.
+- name: Prepare the data disk
+  when: data_disk_size_gb | int > 0
+  block:
+    - name: Find the data disk
+      ansible.builtin.command: readlink -f {{ data_disk_by_id }}
+      register: data_disk_real
+      changed_when: false
+      check_mode: false
+      failed_when: data_disk_real.rc != 0 or data_disk_real.stdout | trim == ''
+
+    - name: Refuse when the data disk is not a block device
+      ansible.builtin.stat:
+        path: "{{ data_disk_real.stdout | trim }}"
+      register: data_disk_stat
+      failed_when: not (data_disk_stat.stat.exists and data_disk_stat.stat.isblk)
+
+    - name: Inspect the data disk
+      ansible.builtin.command: lsblk --list --json --bytes --output NAME,PATH,TYPE,SIZE,FSTYPE,PTTYPE,MOUNTPOINTS {{ data_disk_real.stdout | trim }}
+      register: data_disk_lsblk
+      changed_when: false
+      check_mode: false
+
+    - name: Work out what is on the data disk
+      ansible.builtin.set_fact:
+        data_disk_all: "{{ (data_disk_lsblk.stdout | from_json).blockdevices }}"
+        data_disk_top: "{{ (data_disk_lsblk.stdout | from_json).blockdevices[0] }}"
+        data_disk_children: "{{ (data_disk_lsblk.stdout | from_json).blockdevices[1:] | selectattr('type', 'equalto', 'part') | list }}"
+
+    - name: Refuse the disk that holds the operating system
+      ansible.builtin.assert:
+        that: "'/' not in (data_disk_all | map(attribute='mountpoints') | flatten | select | list)"
+        fail_msg: "{{ data_disk_real.stdout | trim }} holds the root filesystem; refusing to touch it."
+
+    - name: Refuse a disk smaller than requested
+      ansible.builtin.assert:
+        that: data_disk_top.size | int >= (data_disk_size_gb | int - data_disk_size_slack_gib | int) * 1024 * 1024 * 1024
+        fail_msg: >-
+          {{ data_disk_real.stdout | trim }} is {{ (data_disk_top.size | int / 1073741824) | round(1) }} GiB but the
+          cluster wants {{ data_disk_size_gb }} GiB. This may be the wrong disk.
+
+    - name: Classify the data disk
+      ansible.builtin.set_fact:
+        data_disk_blank: "{{ data_disk_top.fstype is none and data_disk_top.pttype is none and data_disk_children | length == 0 }}"
+        data_disk_ready: >-
+          {{ data_disk_top.fstype is none and data_disk_top.pttype == 'gpt' and data_disk_children | length == 1
+             and data_disk_children[0].type == 'part' and data_disk_children[0].fstype == data_disk_fstype }}
+
+    - name: Refuse a disk that is neither blank nor already prepared
+      ansible.builtin.fail:
+        msg: >-
+          {{ data_disk_real.stdout | trim }} is not blank and is not one GPT partition holding {{ data_disk_fstype }}
+          (filesystem {{ data_disk_top.fstype }}, partition table {{ data_disk_top.pttype }},
+          {{ data_disk_children | length }} partition(s)). Refusing to format it.
+      when: not (data_disk_blank | bool or data_disk_ready | bool)
+
+    - name: Create a GPT partition on a blank disk
+      community.general.parted:
+        device: "{{ data_disk_real.stdout | trim }}"
+        label: gpt
+        number: 1
+        part_start: 1MiB
+        part_end: 100%
+        state: present
+      when: data_disk_blank | bool
+
+    - name: Wait for the new partition to appear
+      ansible.builtin.command: udevadm settle
+      changed_when: false
+      when: data_disk_blank | bool
+
+    - name: Find the partition
+      ansible.builtin.command: lsblk --list --json --output PATH,TYPE {{ data_disk_real.stdout | trim }}
+      register: data_disk_after
+      changed_when: false
+      check_mode: false
+
+    - name: Remember the partition path
+      ansible.builtin.set_fact:
+        data_disk_partition: >-
+          {{ (data_disk_after.stdout | from_json).blockdevices[1:]
+             | selectattr('type', 'equalto', 'part') | map(attribute='path') | list | first | default('') }}
+
+    - name: Stop if there is no partition to use
+      ansible.builtin.fail:
+        msg: No partition was found on {{ data_disk_real.stdout | trim }} after partitioning.
+      when: data_disk_partition == '' and not ansible_check_mode
+
+    - name: Make a filesystem on a blank disk
+      community.general.filesystem:
+        dev: "{{ data_disk_partition }}"
+        fstype: "{{ data_disk_fstype }}"
+      when: data_disk_blank | bool and data_disk_partition != ''
+
+    - name: Read the filesystem UUID
+      ansible.builtin.command: blkid --match-tag UUID --output value {{ data_disk_partition }}
+      register: data_disk_uuid
+      changed_when: false
+      check_mode: false
+      when: data_disk_partition != ''
+
+    - name: Check whether the mount point is already a mount
+      ansible.builtin.command: findmnt --noheadings {{ data_disk_mount }}
+      register: data_disk_findmnt
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: List anything already inside the mount point
+      ansible.builtin.find:
+        paths: "{{ data_disk_mount }}"
+        file_type: any
+      register: data_disk_existing
+      when: data_disk_findmnt.rc != 0
+
+    # Mounting hides what is underneath it. A populated, unmounted directory means the data would vanish.
+    - name: Refuse to mount over existing files
+      ansible.builtin.fail:
+        msg: >-
+          {{ data_disk_mount }} already holds files and is not a mount point; mounting the data disk over it
+          would hide them. Move them away first.
+      when: data_disk_findmnt.rc != 0 and (data_disk_existing.matched | default(0)) > 0
+
+    # Only before the first mount. Once mounted, the directory is the filesystem's root and es_node owns its
+    # owner and mode; setting a mode here on every run made the two roles undo each other (seen on the 4th run).
+    - name: Create the mount point
+      ansible.builtin.file:
+        path: "{{ data_disk_mount }}"
+        state: directory
+        mode: "0755"
+      when: data_disk_findmnt.rc != 0
+
+    - name: Mount the data disk by UUID
+      ansible.posix.mount:
+        path: "{{ data_disk_mount }}"
+        src: "UUID={{ data_disk_uuid.stdout | trim }}"
+        fstype: "{{ data_disk_fstype }}"
+        opts: "{{ data_disk_mount_options }}"
+        state: mounted
+      when: data_disk_partition != ''

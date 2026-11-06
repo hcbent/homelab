@@ -1,0 +1,6 @@
+---
+# Constants shared by more than one role. Everything cluster- or node-specific comes from the generated inventory.
+es_tls_dir: /etc/elasticsearch/tls
+es_data_path: /var/lib/elasticsearch/data
+es_http_port: 9200
+es_transport_port: 9300

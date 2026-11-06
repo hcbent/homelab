@@ -1,0 +1,6 @@
+instances:
+{% for host in es_tls_missing %}
+  - name: {{ hostvars[host].es_node_name | to_json }}
+    ip: {{ [hostvars[host].es_node_ip, '127.0.0.1'] | to_json }}
+    dns: {{ (hostvars[host].es_dns_names + ['localhost']) | to_json }}
+{% endfor %}

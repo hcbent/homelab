@@ -1,0 +1,74 @@
+---
+# Installs the exact Elasticsearch version and never starts it. The package does not restart a running node on a
+# version change (RESTART_ON_UPGRADE defaults to false), but this role also refuses to change the version of an
+# installed package at all: upgrades are ECM's rolling-upgrade procedure, not a side effect of converging.
+- name: Check the version looks like major.minor.patch
+  ansible.builtin.assert:
+    that: es_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: es_version {{ es_version }} must look like 9.4.3.
+
+- name: Create the apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download the Elastic signing key
+  ansible.builtin.get_url:
+    url: "{{ es_package_key_url }}"
+    dest: "{{ es_package_key_path }}"
+    mode: "0644"
+    force: false
+
+- name: Read the signing key's fingerprint
+  ansible.builtin.command: gpg --show-keys --with-colons {{ es_package_key_path }}
+  register: es_package_key_info
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a signing key that is not Elastic's
+  ansible.builtin.assert:
+    that: >-
+      (es_package_key_fingerprint | replace(' ', '')) in
+      (es_package_key_info.stdout_lines | select('match', '^fpr:') | map('split', ':') | map(attribute=9) | list)
+    fail_msg: >-
+      {{ es_package_key_path }} does not contain the Elasticsearch signing key
+      ({{ es_package_key_fingerprint }}). Delete it and investigate before installing anything from this repository.
+
+- name: Add the Elastic apt repository
+  ansible.builtin.deb822_repository:
+    name: "elastic-{{ es_package_major }}.x"
+    types: deb
+    uris: "{{ es_package_repo_uri }}"
+    suites: stable
+    components: main
+    signed_by: "{{ es_package_key_path }}"
+    state: present
+
+- name: Read the installed Elasticsearch version
+  ansible.builtin.command: dpkg-query --show --showformat=${Version} elasticsearch
+  register: es_package_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse to change the version of an installed package
+  ansible.builtin.fail:
+    msg: >-
+      Elasticsearch {{ es_package_installed.stdout }} is installed but the cluster wants {{ es_version }}.
+      This role does not upgrade or downgrade; use the rolling-upgrade operation.
+  when: es_package_installed.rc == 0 and es_package_installed.stdout != es_version
+
+# No cache_valid_time here on purpose: os_base has just refreshed the lists, so a cache-age check would call
+# them fresh and never fetch the Elastic repository added above ("No package matching 'elasticsearch'").
+- name: Install Elasticsearch
+  ansible.builtin.apt:
+    name: "elasticsearch={{ es_version }}"
+    state: present
+    update_cache: true
+
+# Held so an unattended-upgrades run or a stray apt upgrade cannot move a node to a different version.
+- name: Hold the package at this version
+  ansible.builtin.dpkg_selections:
+    name: elasticsearch
+    selection: hold

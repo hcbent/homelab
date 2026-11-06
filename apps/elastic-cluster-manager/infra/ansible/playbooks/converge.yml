@@ -1,0 +1,20 @@
+---
+# Bring an existing cluster's nodes back to the desired configuration. Run with --check --diff first.
+# It never restarts a node (es_allow_restart is false): a change that needs a restart is reported as pending and
+# is applied by ECM's rolling restart. It never upgrades the package and never renders initial_master_nodes.
+- name: Converge every node
+  hosts: es_nodes
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Refuse to converge with a create inventory
+      ansible.builtin.assert:
+        that: es_operation == 'converge'
+        fail_msg: This playbook converges an existing cluster; the inventory says {{ es_operation }}.
+      run_once: true
+  roles:
+    - os_base
+    - data_disk
+    - es_package
+    - es_tls
+    - es_node

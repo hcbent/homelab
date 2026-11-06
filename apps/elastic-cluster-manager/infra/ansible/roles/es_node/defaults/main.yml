@@ -1,0 +1,10 @@
+---
+es_node_config_dir: /etc/elasticsearch
+es_node_log_path: /var/log/elasticsearch
+es_node_start_timeout: 300
+# Inputs from the generated inventory (see app/configmgmt/inventory.py):
+#   es_cluster_name, es_node_name, es_node_ip, es_heap_mb, es_extra_settings, es_single_node, es_seed_hosts,
+#   es_allow_restart, es_first_start
+#   es_node_roles           absent = Elasticsearch's default roles, [] = coordinating only, list = custom
+#   es_initial_master_nodes present only on the very first create of a cluster
+# From the runner as an extra var, never the inventory: es_elastic_password (first start only).

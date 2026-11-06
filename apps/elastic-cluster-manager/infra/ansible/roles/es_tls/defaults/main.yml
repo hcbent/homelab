@@ -1,0 +1,8 @@
+---
+es_tls_workdir: /var/tmp/ecm-es-tls  # on the CA host only; removed when the role finishes, success or not
+es_tls_ca_days: 1825
+es_tls_node_days: 1095
+es_tls_certutil: /usr/share/elasticsearch/bin/elasticsearch-certutil
+# Supplied by ECM as extra vars (never in the inventory) to reuse the cluster's CA:
+#   es_ca_cert_pem, es_ca_key_pem
+# When they are absent on a create, a new CA is made and handed back in es_artifacts_dir as ca.crt and ca.key.

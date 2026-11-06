@@ -1,0 +1,11 @@
+---
+os_base_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - python3-debian  # needed by ansible.builtin.deb822_repository
+  - qemu-guest-agent
+  - unzip  # used to unpack the certificate bundle on the CA host
+os_base_max_map_count: 262144
+# Present only when the VM has a guest-agent channel (Proxmox "agent" option on, which needs a VM restart).
+os_base_guest_agent_channel: /dev/virtio-ports/org.qemu.guest_agent.0

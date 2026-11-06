@@ -1,0 +1,11 @@
+---
+# Terraform attaches the data disk as scsi1; QEMU exposes it under this stable name. If a template or controller
+# type changes the name, the role fails and says so rather than guessing at another disk.
+data_disk_by_id: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+data_disk_mount: /var/lib/elasticsearch
+data_disk_fstype: ext4
+data_disk_mount_options: noatime
+# Accept a disk up to this much smaller than the requested size, for rounding.
+data_disk_size_slack_gib: 1
+# Nodes with no data disk (coordinating-only) skip the role. es_data_disk_gb comes from the inventory.
+data_disk_size_gb: "{{ es_data_disk_gb | default(0) }}"

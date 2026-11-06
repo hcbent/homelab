@@ -1,0 +1,10 @@
+---
+es_bootstrap_health_wait: 30s
+es_bootstrap_retries: 10
+es_bootstrap_delay: 5
+es_bootstrap_api_key_name: "ecm-{{ es_cluster_name }}"
+# The API key is created without role descriptors, so it has the same rights as the elastic user that made it.
+# Narrowing it to what ECM's lifecycle procedures need is a decision for the lifecycle phase.
+es_bootstrap_base_url: "https://{{ es_node_ip }}:{{ es_http_port }}"
+es_bootstrap_health_path: "/_cluster/health?wait_for_status={{ es_expected_status }}\
+  &wait_for_nodes={{ es_expected_nodes }}&timeout={{ es_bootstrap_health_wait }}"

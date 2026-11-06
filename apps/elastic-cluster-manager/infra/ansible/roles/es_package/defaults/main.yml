@@ -1,0 +1,8 @@
+---
+es_package_major: "{{ es_version.split('.')[0] }}"
+es_package_key_url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+es_package_key_path: "/etc/apt/keyrings/elastic-{{ es_package_major }}.x.asc"
+# Elasticsearch signing key (public), as the Debian install page of the Elastic docs prints it. The spaces are
+# removed before comparing, and keep a secret scanner from mistaking this for a credential.
+es_package_key_fingerprint: "4609 5ACC 8548 582C 1A26 99A9 D27D 666C D88E 42B4"
+es_package_repo_uri: "https://artifacts.elastic.co/packages/{{ es_package_major }}.x/apt"

@@ -1,0 +1,66 @@
+---
+- name: Refuse an operating system this role was not written for
+  ansible.builtin.assert:
+    that: ansible_facts['os_family'] == 'Debian'
+    fail_msg: os_base supports Debian and Ubuntu (apt) only; this host is {{ ansible_facts['os_family'] }}.
+
+- name: Install base packages, including the QEMU guest agent
+  ansible.builtin.apt:
+    name: "{{ os_base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Look for the guest-agent channel
+  ansible.builtin.stat:
+    path: "{{ os_base_guest_agent_channel }}"
+  register: os_base_agent_channel
+
+# The unit only starts when the virtio channel exists, so starting it without one would report a failure or do
+# nothing. Terraform leaves the Proxmox agent option off by default; having the package installed here is what
+# makes turning it on later safe.
+- name: Start the guest agent when the VM has the channel
+  ansible.builtin.service:
+    name: qemu-guest-agent
+    state: started
+  when: os_base_agent_channel.stat.exists
+
+- name: Note that the guest agent is installed but not running
+  ansible.builtin.debug:
+    msg: >-
+      qemu-guest-agent is installed but this VM has no guest-agent channel, so it is not running.
+      Enable the agent in the VM's Proxmox options (and restart the VM) to use it.
+  when: not os_base_agent_channel.stat.exists
+
+- name: Set vm.max_map_count for Elasticsearch
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: "{{ os_base_max_map_count }}"
+    sysctl_file: /etc/sysctl.d/99-elasticsearch.conf
+    state: present
+    reload: true
+
+- name: Turn swap off now
+  ansible.builtin.command: swapoff -a
+  when: ansible_facts['swaptotal_mb'] | int > 0
+  changed_when: true
+
+- name: Keep swap off after a reboot
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#\n]\S*\s+\S+\s+swap\s+.*)$'
+    replace: '# disabled by ECM: \1'
+
+- name: Read whether the clock is synchronised
+  ansible.builtin.command: timedatectl show --property=NTPSynchronized --value
+  register: os_base_ntp
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Warn when the clock is not synchronised
+  ansible.builtin.debug:
+    msg: >-
+      This host's clock is not synchronised. Elasticsearch nodes with drifting clocks cause confusing
+      certificate and master-election errors; check the time service.
+  when: os_base_ntp.stdout | trim != 'yes'

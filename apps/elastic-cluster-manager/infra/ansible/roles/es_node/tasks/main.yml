@@ -1,0 +1,106 @@
+---
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_cluster_name is defined
+      - es_node_name is defined
+      - es_node_ip is defined
+      - es_heap_mb is defined
+      - es_extra_settings is defined
+      - es_single_node is defined
+      - es_seed_hosts is defined
+      - es_allow_restart is defined
+      - es_first_start is defined
+    fail_msg: The inventory is missing a variable this role needs; regenerate it with app/configmgmt/inventory.py.
+
+- name: Own the data directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+    mode: "0750"
+  loop:
+    - /var/lib/elasticsearch  # a fresh mount over it would otherwise be root-owned
+    - "{{ es_data_path }}"
+
+- name: Write elasticsearch.yml
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: "{{ es_node_config_dir }}/elasticsearch.yml"
+    owner: root
+    group: elasticsearch
+    mode: "0660"
+  notify: Elasticsearch configuration changed
+
+- name: Set the JVM heap
+  ansible.builtin.copy:
+    content: |
+      -Xms{{ es_heap_mb }}m
+      -Xmx{{ es_heap_mb }}m
+    dest: "{{ es_node_config_dir }}/jvm.options.d/heap.options"
+    owner: root
+    group: elasticsearch
+    mode: "0660"
+  notify: Elasticsearch configuration changed
+
+# The bootstrap password is the elastic user's password until it is changed through the API. It goes in the
+# keystore on the first start only, then ECM makes an API key and stops using the password.
+- name: Set the first-start password
+  when: es_first_start | bool
+  block:
+    - name: Assert the password was supplied
+      ansible.builtin.assert:
+        that: es_elastic_password is defined and es_elastic_password | length >= 20
+        fail_msg: A first start needs es_elastic_password of at least 20 characters, passed as an extra var.
+
+    # The package normally creates the keystore; this only acts if it is missing.
+    - name: Make sure the keystore exists
+      ansible.builtin.command:
+        cmd: /usr/share/elasticsearch/bin/elasticsearch-keystore create
+        creates: "{{ es_node_config_dir }}/elasticsearch.keystore"
+
+    - name: List the keystore
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-keystore list
+      register: es_node_keystore
+      changed_when: false
+      check_mode: false
+
+    - name: Add the bootstrap password to the keystore
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-keystore add --stdin --force bootstrap.password
+      args:
+        stdin: "{{ es_elastic_password }}"
+      no_log: true
+      changed_when: true
+      when: "'bootstrap.password' not in es_node_keystore.stdout_lines"
+
+    - name: Restore the keystore's ownership
+      ansible.builtin.file:
+        path: "{{ es_node_config_dir }}/elasticsearch.keystore"
+        owner: root
+        group: elasticsearch
+        mode: "0660"
+
+# On a create the node is not running yet, so the handler's "restart" is its first start.
+- name: Apply the configuration now rather than at the end of the play
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the service at boot
+  ansible.builtin.systemd:
+    name: elasticsearch
+    enabled: true
+    daemon_reload: true
+
+# A converge never starts a node: one that is down may be down on purpose, during a rolling restart.
+- name: Make sure the service is running
+  ansible.builtin.systemd:
+    name: elasticsearch
+    state: started
+  when: es_allow_restart | bool
+
+- name: Wait for the node to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ es_node_ip }}"
+    port: "{{ es_http_port }}"
+    timeout: "{{ es_node_start_timeout }}"
+  when: es_allow_restart | bool

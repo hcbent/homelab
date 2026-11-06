@@ -1,0 +1,44 @@
+# Managed by ECM. Edits here are overwritten the next time the role runs.
+cluster.name: {{ es_cluster_name | to_json }}
+node.name: {{ es_node_name | to_json }}
+{% if es_node_roles is defined %}
+node.roles: {{ es_node_roles | to_json }}
+{% endif %}
+
+path.data: {{ es_data_path | to_json }}
+path.logs: {{ es_node_log_path | to_json }}
+
+# Bind to this node's address and to loopback, but publish only the address: a list for network.host with no
+# publish_host is ambiguous and Elasticsearch refuses to start.
+network.host: {{ [es_node_ip, '_local_'] | to_json }}
+network.publish_host: {{ es_node_ip | to_json }}
+http.port: {{ es_http_port }}
+transport.port: {{ es_transport_port }}
+
+{% if es_single_node %}
+discovery.type: single-node
+{% else %}
+discovery.seed_hosts: {{ es_seed_hosts | to_json }}
+{% if es_initial_master_nodes is defined %}
+# First bootstrap only. ECM never renders this once the cluster has bootstrapped.
+cluster.initial_master_nodes: {{ es_initial_master_nodes | to_json }}
+{% endif %}
+{% endif %}
+
+# Setting these also stops Elasticsearch's own first-start security auto-configuration, which would otherwise
+# generate certificates and rewrite this file.
+xpack.security.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.verification_mode: full
+xpack.security.transport.ssl.key: {{ (es_tls_dir ~ '/' ~ es_node_name ~ '.key') | to_json }}
+xpack.security.transport.ssl.certificate: {{ (es_tls_dir ~ '/' ~ es_node_name ~ '.crt') | to_json }}
+xpack.security.transport.ssl.certificate_authorities: {{ [es_tls_dir ~ '/ca.crt'] | to_json }}
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.key: {{ (es_tls_dir ~ '/' ~ es_node_name ~ '.key') | to_json }}
+xpack.security.http.ssl.certificate: {{ (es_tls_dir ~ '/' ~ es_node_name ~ '.crt') | to_json }}
+xpack.security.http.ssl.certificate_authorities: {{ [es_tls_dir ~ '/ca.crt'] | to_json }}
+{% if es_extra_settings | length > 0 %}
+
+# Extra settings from the cluster's desired state.
+{{ es_extra_settings | to_nice_yaml }}
+{%- endif %}
