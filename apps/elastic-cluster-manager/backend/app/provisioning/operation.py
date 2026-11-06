@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app import audit, crypto
@@ -37,7 +37,7 @@ from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
 from app.discovery import factory, proxmox
 from app.discovery.http import DiscoveryError
-from app.models import Cluster, Credential, Operation, ProxmoxConnection
+from app.models import Cluster, Credential, EsNode, Operation, ProxmoxConnection
 from app.operations import AwaitingApproval, create_operation, log, run_phases
 from app.provisioning.plan import check_plan_safety
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
@@ -437,10 +437,14 @@ class _Handlers:
 
     def _forget_cluster(self) -> None:
         """A teardown removed every machine, so nothing of the cluster is left to reach or to trust. Clearing this
-        lets the same name be created again and bootstrap from scratch."""
+        lets the same name be created again and bootstrap from scratch. The nodes discovery last saw go too:
+        they are only ever pruned by a successful sync, and with no endpoints none can run, so they would stay
+        on the dashboard as nodes of a cluster whose machines no longer exist."""
         cluster = self.db.get(Cluster, self.cluster_id)
         cluster.bootstrapped_at = cluster.es_cluster_uuid = cluster.credential_id = None
         cluster.tls_ca_pem = cluster.endpoint_urls = cluster.health_status = cluster.es_version = None
+        cluster.snapshot = cluster.last_sync_at = cluster.last_sync_error = None
+        self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id))
         self.db.flush()
         for name in self._names():
             cred = self._credential(name)

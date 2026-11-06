@@ -942,3 +942,28 @@ def test_the_stored_plan_carries_what_will_be_configured_and_the_digest_covers_i
     stored = existing_workspace(world.root, cluster.id).load_plan()
     assert stored.configure == "install elasticsearch 9.4.3 on 3 nodes and start the cluster"
     assert stored.approval_digest == op.plan_digest
+
+
+def test_a_complete_teardown_also_removes_the_nodes_discovery_last_saw_for_that_cluster_only(
+        session, world, cluster, conn):
+    """Found on infra: after a teardown the dashboard still listed the destroyed cluster's nodes, because only a
+    successful sync prunes them and a cluster with no endpoints cannot sync."""
+    from datetime import UTC, datetime
+
+    from app.models import EsNode
+    created = reach_success(session, world, cluster, conn)
+    cluster.snapshot, cluster.last_sync_at = {"status": "green"}, datetime(2026, 11, 6, tzinfo=UTC)
+    other = Cluster(name="other", ownership="discovered")
+    session.add(other)
+    session.flush()
+    for owner, names in ((cluster, NODES), (other, ["es01", "es02"])):
+        for n in names:
+            session.add(EsNode(cluster_id=owner.id, es_node_id=f"id-{n}", name=n))
+    session.commit()
+
+    assert finish_teardown(session, world, created).state == "succeeded"
+
+    session.refresh(cluster)
+    remaining = [n.name for n in session.scalars(select(EsNode).order_by(EsNode.name))]
+    assert remaining == ["es01", "es02"]                         # lab-b's own were removed, the others' were not
+    assert cluster.snapshot is None and cluster.last_sync_at is None and cluster.last_sync_error is None
