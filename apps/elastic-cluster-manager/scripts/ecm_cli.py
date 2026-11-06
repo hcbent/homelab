@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Drive ECM's API from a terminal: plan a cluster, watch an operation, approve its plan. Standard library only.
 
+    ecm_cli.py ops [--limit N]                recent operations, newest first, with their cluster names
     ecm_cli.py create NAME VERSION            a dry run: plans, creates nothing, the plan cannot be approved
     ecm_cli.py create NAME VERSION --real     a plan you can approve; approving it creates machines
     ecm_cli.py show OPERATION_ID [--logs N]   state, steps, plan, result and the last log lines
@@ -9,6 +10,7 @@
     ecm_cli.py retry OPERATION_ID             re-run a failed operation (a failed configure resumes; no new VMs)
     ecm_cli.py cleanup CREATE_OPERATION_ID NAME [--data-loss]
                                               plan the teardown of a create; it then needs its own approval
+    ecm_cli.py remove NAME                    remove the record of a managed cluster whose machines are gone
 
 Environment:
     ECM_URL             default https://ecm.lab.thewortmans.org
@@ -105,6 +107,19 @@ def _print_plan(op: dict) -> None:
     print(f"  approvable: {plan.get('approvable')}")
 
 
+def cmd_ops(client: Client, args) -> int:
+    names = {c["id"]: c["name"] for c in client.call("GET", "/api/clusters")}
+    operations = client.call("GET", "/api/operations")[: args.limit]
+    for op in operations:
+        flags = "dry-run" if op["dry_run"] else ""
+        parent = f"  cleans up {op['parent_op_id']}" if op.get("parent_op_id") else ""
+        print(f"{op['id']}  {op['kind']:<11} {op['state']:<17} {names.get(op['cluster_id'], '-'):<8} "
+              f"{flags:<8} {op['started_at'] or ''}{parent}")
+    if not operations:
+        print("no operations")
+    return 0
+
+
 def cmd_show(client: Client, args) -> int:
     op = client.call("GET", f"/api/operations/{args.operation_id}")
     print(f"{op['kind']}  {op['state']}  phase={op['phase']}  {op['progress']['done']}/{op['progress']['total']} steps"
@@ -177,12 +192,26 @@ def cmd_cleanup(client: Client, args) -> int:
     return 0
 
 
+def cmd_remove(client: Client, args) -> int:
+    matches = [c for c in client.call("GET", "/api/clusters") if c["name"] == args.name]
+    if not matches:
+        raise CliError(f"no cluster named {args.name}")
+    if len(matches) > 1:
+        raise CliError(f"{len(matches)} clusters are named {args.name}; remove it by id through the API")
+    out = client.call("POST", f"/api/clusters/{matches[0]['id']}/remove", {"confirm_name": args.name})
+    print(f"removed the record of {out['name']}; {out['operations_kept']} operation(s) stay in the history.")
+    return 0
+
+
 # ---- entry point ---------------------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Drive ECM's API from a terminal.")
     parser.add_argument("--insecure", action="store_true", help="do not verify ECM's HTTPS certificate")
     sub = parser.add_subparsers(dest="command", required=True)
+    ops = sub.add_parser("ops", help="recent operations, newest first")
+    ops.add_argument("--limit", type=int, default=20)
+    ops.set_defaults(run=cmd_ops)
     create = sub.add_parser("create", help="plan a three-node cluster (a dry run unless --real)")
     create.add_argument("name")
     create.add_argument("version")
@@ -210,6 +239,9 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--data-loss", action="store_true",
                          help="accept that data in a bootstrapped cluster is destroyed with its machines")
     cleanup.set_defaults(run=cmd_cleanup)
+    remove = sub.add_parser("remove", help="remove the record of a managed cluster whose machines are gone")
+    remove.add_argument("name", help="the cluster name, which also confirms the removal")
+    remove.set_defaults(run=cmd_remove)
     return parser
 
 

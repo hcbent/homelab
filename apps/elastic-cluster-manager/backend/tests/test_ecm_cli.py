@@ -222,3 +222,49 @@ def test_a_refused_cleanup_shows_why(ecm, capsys):
     ecm.routes[("POST", "/api/operations/op1/cleanup")] = [(409, {"detail": "this cluster has been bootstrapped"})]
     assert run("cleanup", "op1", "lab-c") == 1
     assert "has been bootstrapped" in capsys.readouterr().err
+
+
+def test_ops_lists_operations_with_cluster_names_and_marks_dry_runs_and_cleanups(ecm, capsys):
+    ecm.routes[("GET", "/api/clusters")] = [(200, [{"id": "c1", "name": "lab-b"}, {"id": "c2", "name": "lab-c"}])]
+    ecm.routes[("GET", "/api/operations")] = [(200, [
+        {"id": "opC", "cluster_id": "c2", "kind": "tf.destroy", "state": "succeeded", "dry_run": False,
+         "started_at": "2026-11-06T18:00:00", "parent_op_id": "opB"},
+        {"id": "opB", "cluster_id": "c2", "kind": "tf.create", "state": "succeeded", "dry_run": False,
+         "started_at": "2026-11-06T17:00:00", "parent_op_id": None},
+        {"id": "opA", "cluster_id": "c1", "kind": "tf.create", "state": "succeeded", "dry_run": True,
+         "started_at": "2026-11-05T09:00:00", "parent_op_id": None}])]
+    assert run("ops") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("opC") and "tf.destroy" in lines[0] and "lab-c" in lines[0]
+    assert "cleans up opB" in lines[0]
+    assert "dry-run" in lines[2] and "lab-b" in lines[2]
+
+
+def test_ops_respects_the_limit_and_copes_with_none(ecm, capsys):
+    ecm.routes[("GET", "/api/clusters")] = [(200, [])]
+    ecm.routes[("GET", "/api/operations")] = [(200, [])]
+    assert run("ops") == 0
+    assert "no operations" in capsys.readouterr().out
+    ecm.routes[("GET", "/api/operations")] = [(200, [
+        {"id": f"op{i}", "cluster_id": None, "kind": "tf.create", "state": "failed", "dry_run": False,
+         "started_at": None, "parent_op_id": None} for i in range(5)])]
+    assert run("ops", "--limit", "2") == 0
+    assert len(capsys.readouterr().out.splitlines()) == 2
+
+
+def test_remove_looks_up_the_cluster_by_name_and_confirms_with_the_same_name(ecm, capsys):
+    ecm.routes[("GET", "/api/clusters")] = [(200, [{"id": "c1", "name": "lab-b"}, {"id": "c2", "name": "lab-c"}])]
+    ecm.routes[("POST", "/api/clusters/c1/remove")] = [(200, {"id": "c1", "name": "lab-b", "operations_kept": 4})]
+    assert run("remove", "lab-b") == 0
+    assert ecm.requests[-1]["path"] == "/api/clusters/c1/remove"
+    assert ecm.requests[-1]["body"] == {"confirm_name": "lab-b"}
+    assert "4 operation(s) stay in the history" in capsys.readouterr().out
+
+
+def test_remove_of_an_unknown_name_and_a_refused_removal_are_plain_errors(ecm, capsys):
+    ecm.routes[("GET", "/api/clusters")] = [(200, [{"id": "c1", "name": "lab-b"}])]
+    assert run("remove", "nope") == 1
+    assert "no cluster named nope" in capsys.readouterr().err
+    ecm.routes[("POST", "/api/clusters/c1/remove")] = [(409, {"detail": "this cluster has bootstrapped"})]
+    assert run("remove", "lab-b") == 1
+    assert "has bootstrapped" in capsys.readouterr().err
