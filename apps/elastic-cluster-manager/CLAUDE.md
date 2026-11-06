@@ -28,3 +28,4 @@ See ARCHITECTURE.md §11.
 Backend: `cd backend && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]' && .venv/bin/python -m pytest`
 Frontend: `cd frontend && npm install && npm test`
 Deploy: `cd deploy && cp .env.example .env` (edit), then `docker compose --env-file .env up -d --build`
+CLI for the API (plan, watch, approve): `scripts/ecm_cli.py --help`; it asks for the admin password and never prints it

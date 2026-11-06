@@ -67,7 +67,9 @@ services:
       # root, while a new volume takes the ownership the image gives /data/clusters (the ecm user).
       - clusters:/data/clusters
       # One key file, read-only, never the whole ~/.ssh. create_host_path: false makes a wrong path an error instead
-      # of Docker silently creating a directory there. The file must be readable by the worker's user (uid 10001).
+      # of Docker silently creating a directory there. Point it at a copy owned by uid 10001 with mode 0600 (see
+      # "SSH key delivery" in docs/DECISIONS.md). Do not grant the worker access to your own key with an ACL:
+      # that changes the file's group bits, and ssh then refuses the key when its owner uses it.
       - type: bind
         source: ${ECM_SSH_KEY_FILE:?set ECM_SSH_KEY_FILE in deploy/.env to the host path of the SSH private key}
         target: /run/ecm/ssh/github_rsa
