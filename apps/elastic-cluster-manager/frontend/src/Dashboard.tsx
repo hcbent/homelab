@@ -113,6 +113,9 @@ export function Dashboard() {
         <div className="ecm-about__main">
           <h2 id="clusters-title" className="ecm-h2">Every registered cluster, with the machines behind it.</h2>
           <p className="ecm-lede ecm-lede--small">Open a cluster to see its nodes, linked VMs and storage.</p>
+          <div className="ecm-gap">
+            <EuiButton fill iconType="plusInCircle" href="#/new">Create cluster</EuiButton>
+          </div>
           {loadError && (
             <EuiCallOut color="danger" role="alert" iconType="warning" title="Could not load clusters"
               className="ecm-gap">

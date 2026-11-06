@@ -11,10 +11,11 @@ export const NAV = [
   { label: "Help", href: "#/help" },
 ];
 
-/** True when the current hash belongs to the nav item (cluster detail belongs to Clusters). */
+/** True when the current hash belongs to the nav item (cluster detail and the new-cluster wizard belong to
+ * Clusters; one operation belongs to Operations). */
 export function isActive(href: string, hash: string) {
-  if (href === "#/") return hash === "#/" || hash.startsWith("#/clusters");
-  return hash === href;
+  if (href === "#/") return hash === "#/" || hash.startsWith("#/clusters") || hash === "#/new";
+  return hash === href || hash.startsWith(`${href}/`);
 }
 
 /** Three zones as in the reference header: wordmark, links, then theme toggle and sign out. */

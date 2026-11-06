@@ -32,6 +32,35 @@ export interface User { username: string; role: string }
 export interface Operation {
   id: string; kind: string; state: string; phase: string | null;
   elapsed_seconds: number | null; error: string | null;
+  cluster_id?: string | null; dry_run?: boolean; parent_op_id?: string | null;
+}
+
+/** What a plan will do, as the API stores it. `configure` is what happens to the machines after Terraform. */
+export interface PlanSummary {
+  adds?: number; updates?: number; deletes?: number; has_changes?: boolean; configure?: string | null;
+}
+export interface OperationStep { seq: number; name: string; status: string; detail: string | null }
+export interface OperationLogLine { ts: string; stream: string; line: string }
+export interface OperationDetail extends Operation {
+  started_at: string | null; finished_at: string | null;
+  progress: { done: number; total: number };
+  plan: { digest: string; summary: PlanSummary | null; approvable: boolean } | null;
+  approval: { digest: string; by: string; at: string } | null;
+  result: Record<string, unknown> | null;
+  steps: OperationStep[]; logs: OperationLogLine[];
+}
+
+export type Preset = "single_node" | "three_node" | "dedicated_masters";
+export interface CreateRequest {
+  name: string; version: string; preset: Preset; dry_run: boolean;
+  data_nodes?: number; coordinating_nodes?: number;
+  sizing?: { cores?: number; ram_mb?: number; os_disk_gb?: number; data_disk_gb?: number };
+  proxmox_connection_id?: string; network_profile?: string; template_vmid?: number; datastore?: string;
+  pool_id?: string; cpu_type?: string;
+}
+export interface PlannedNode { name: string; host: string; address: string; vm_id: number }
+export interface CreatePlan {
+  cluster_id: string; operation_id: string; dry_run: boolean; nodes: PlannedNode[]; warnings: string[];
 }
 
 export interface ClusterSummary {

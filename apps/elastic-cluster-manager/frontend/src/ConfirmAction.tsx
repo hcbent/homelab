@@ -1,12 +1,14 @@
 import { EuiConfirmModal, EuiFieldText, EuiFormRow, EuiText } from "@elastic/eui";
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 
 /**
  * Lifecycle confirmation foundation for Phase 4. It always names the resource, and a destructive
  * action stays disabled until the operator types that resource name. Nothing here calls the API.
  */
-export function ConfirmAction({ action, resource, destructive = false, onConfirm, onCancel }: {
+export function ConfirmAction({ action, resource, destructive = false, onConfirm, onCancel, children }: {
   action: string; resource: string; destructive?: boolean; onConfirm: () => void; onCancel: () => void;
+  /** What will happen, in plain words, shown under the resource name. */
+  children?: ReactNode;
 }) {
   const [typed, setTyped] = useState("");
   const blocked = destructive && typed !== resource;
@@ -14,7 +16,10 @@ export function ConfirmAction({ action, resource, destructive = false, onConfirm
     <EuiConfirmModal title={`${action} ${resource}?`} onCancel={onCancel} onConfirm={onConfirm}
       cancelButtonText="Cancel" confirmButtonText={action} buttonColor={destructive ? "danger" : "primary"}
       confirmButtonDisabled={blocked} defaultFocusedButton="cancel">
-      <EuiText size="s"><p>This acts on <strong className="ecm-mono">{resource}</strong>.</p></EuiText>
+      <EuiText size="s">
+        <p>This acts on <strong className="ecm-mono">{resource}</strong>.</p>
+        {children}
+      </EuiText>
       {destructive && (
         <EuiFormRow label={`Type ${resource} to confirm`} fullWidth>
           <EuiFieldText fullWidth value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />

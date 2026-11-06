@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 import App from "./App";
 import { ConfirmAction } from "./ConfirmAction";
-import { CreateClusterSteps } from "./CreateClusterSteps";
 import { installReferenceReveals } from "./reveal";
 
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
@@ -323,18 +322,6 @@ test("a destructive confirmation names the resource and stays disabled until it 
   expect(confirm).toBeEnabled();
   await userEvent.click(confirm);
   expect(onConfirm).toHaveBeenCalled();
-});
-
-test("the wizard keeps entered values when moving between steps and never calls the API", async () => {
-  const fn = mockFetch(() => [200, {}]);
-  render(<CreateClusterSteps />);
-  await userEvent.type(screen.getByLabelText("Cluster name"), "lab-b");
-  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-  expect(screen.getByRole("heading", { name: "/ Placement" })).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Back" }));
-  expect(screen.getByLabelText("Cluster name")).toHaveValue("lab-b");
-  expect(screen.getByText("lab-b", { selector: "dd" })).toBeInTheDocument();
-  expect(fn).not.toHaveBeenCalled();
 });
 
 test("reveals leave content visible when animation or observers are unavailable", () => {

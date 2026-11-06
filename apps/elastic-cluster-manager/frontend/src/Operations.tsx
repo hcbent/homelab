@@ -1,5 +1,6 @@
 import {
-  EuiButton, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiEmptyPrompt, EuiHealth, EuiLoadingSpinner, EuiProgress,
+  EuiBadge, EuiButton, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiEmptyPrompt, EuiHealth, EuiLink,
+  EuiLoadingSpinner, EuiProgress,
 } from "@elastic/eui";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, Operation } from "./api";
@@ -30,8 +31,10 @@ function OperationCard({ op }: { op: Operation }) {
         <h3 className="ecm-op__title ecm-mono">{op.kind}</h3>
         {running ? <EuiLoadingSpinner size="m" aria-label="Running" /> : null}
         <EuiHealth color={color(op.state)}>{op.state}</EuiHealth>
+        {op.dry_run && <EuiBadge color="hollow">dry run</EuiBadge>}
       </div>
       <p className="ecm-op__desc">{op.error ?? (op.phase ? `Current phase: ${op.phase}.` : "No phase reported yet.")}</p>
+      <EuiLink href={`#/operations/${op.id}`}>Open details</EuiLink>
       <EuiDescriptionList compressed className="ecm-op__meta" type="column" columnWidths={[1, 1]}
         listItems={[
           { title: "Status", description: op.state },

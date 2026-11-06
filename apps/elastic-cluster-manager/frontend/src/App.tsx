@@ -1,4 +1,4 @@
-import { EuiLoadingSpinner, EuiPageTemplate, EuiSkipLink } from "@elastic/eui";
+import { EuiLink, EuiLoadingSpinner, EuiPageTemplate, EuiSkipLink } from "@elastic/eui";
 import { useEffect, useState } from "react";
 import { AppHeader } from "./AppHeader";
 import { api, User } from "./api";
@@ -7,6 +7,8 @@ import { Dashboard } from "./Dashboard";
 import { Help } from "./Help";
 import { InfrastructureView } from "./InfrastructureView";
 import { Login } from "./Login";
+import { NewCluster } from "./NewCluster";
+import { OperationDetail } from "./OperationDetail";
 import { Operations } from "./Operations";
 import { ThemeProvider } from "./theme";
 
@@ -33,6 +35,7 @@ function Shell() {
   if (!user) return <Login onLogin={setUser} />;
 
   const cluster = hash.match(/^#\/clusters\/([\w-]+)/);
+  const operation = hash.match(/^#\/operations\/([\w-]+)/);
 
   return (
     <>
@@ -47,6 +50,12 @@ function Shell() {
         panelled={false} grow={false} mainProps={{ id: "main" }}>
         <EuiPageTemplate.Section color="transparent" className="ecm-page">
           {cluster ? <ClusterDetailView key={cluster[1]} id={cluster[1]} />
+            : hash === "#/new" ? <NewCluster />
+            : operation ? (
+              <>
+                <EuiLink href="#/operations">All operations</EuiLink>
+                <OperationDetail key={operation[1]} id={operation[1]} />
+              </>)
             : hash === "#/infrastructure" ? <InfrastructureView />
             : hash === "#/operations" ? <Operations />
             : hash === "#/help" ? <Help />
