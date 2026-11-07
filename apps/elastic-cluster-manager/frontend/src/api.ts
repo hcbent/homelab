@@ -32,7 +32,7 @@ export interface User { username: string; role: string }
 export interface Operation {
   id: string; kind: string; state: string; phase: string | null;
   elapsed_seconds: number | null; error: string | null;
-  cluster_id?: string | null; dry_run?: boolean; parent_op_id?: string | null;
+  cluster_id?: string | null; dry_run?: boolean; parent_op_id?: string | null; started_at?: string | null;
 }
 
 /** What a plan will do, as the API stores it. `configure` is what happens to the machines after Terraform. */
@@ -82,7 +82,14 @@ export interface NodeRow {
                 memory_mb: number; disks: { slot: string; size_gb: number | null }[] } | null };
 }
 
+/** What can be done to a cluster now. `teardown_of` is the create a teardown would clean up. */
+export interface Lifecycle {
+  managed: boolean; busy_operation_id?: string | null; teardown_of?: string | null; nodes?: string[];
+  bootstrapped?: boolean; can_remove?: boolean;
+}
+
 export interface ClusterDetail extends ClusterSummary {
+  lifecycle?: Lifecycle;
   elasticsearch: {
     health: Record<string, unknown>;
     shards: { by_state: Record<string, number>; by_node: Record<string, number>; unassigned: string[] };

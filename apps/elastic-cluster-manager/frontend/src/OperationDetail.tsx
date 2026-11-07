@@ -8,7 +8,7 @@ import { ConfirmAction } from "./ConfirmAction";
 import { useInterval } from "./useInterval";
 
 const TERMINAL = ["succeeded", "failed", "cancelled"];
-const KIND: Record<string, string> = {
+export const KIND: Record<string, string> = {
   "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "demo.noop": "Demo job",
 };
 const STATE_COLOR: Record<string, string> = {
@@ -168,8 +168,10 @@ export function OperationDetail({ id }: { id: string }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
           {!op.dry_run && op.kind === "tf.create" && (
-            <p>Machines it already made are kept. Retry resumes where it stopped. To remove them instead, run{" "}
-              <span className="ecm-mono">scripts/ecm_cli.py cleanup {op.id} &lt;cluster name&gt;</span>.</p>)}
+            <p>Machines it already made are kept. Retry resumes where it stopped. To remove them instead,{" "}
+              {op.cluster_id
+                ? <><EuiLink href={`#/clusters/${op.cluster_id}`}>open the cluster</EuiLink> and choose Tear down cluster.</>
+                : <>run <span className="ecm-mono">scripts/ecm_cli.py cleanup {op.id} &lt;cluster name&gt;</span>.</>}</p>)}
           <EuiButton size="s" isDisabled={busy} onClick={() => act("retry")}>Retry</EuiButton>
         </EuiCallOut>)}
 

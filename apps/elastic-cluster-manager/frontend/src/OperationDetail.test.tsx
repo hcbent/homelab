@@ -91,14 +91,14 @@ test("a failed operation shows its error, keeps the machines in view, and retrie
   const fn = mockFetch(table({
     "GET /api/operations/op1": [200, op({
       state: "failed", phase: "configure", error: "ansible-playbook failed: fatal: [lab-c-01]: FAILED!",
-      progress: { done: 5, total: 6 }, plan: null,
+      cluster_id: "c7", progress: { done: 5, total: 6 }, plan: null,
       steps: [{ seq: 4, name: "apply", status: "done", detail: null },
               { seq: 5, name: "configure", status: "failed", detail: "ansible-playbook failed" }] })],
     "POST /api/operations/op1/retry": [202, { id: "op1" }] }));
   render(<OperationDetail id="op1" />);
   const alert = await screen.findByText("This operation failed");
   expect(alert.closest("[role=alert]")).toHaveTextContent("fatal: [lab-c-01]: FAILED!");
-  expect(screen.getByText(/scripts\/ecm_cli.py cleanup op1/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "open the cluster" })).toHaveAttribute("href", "#/clusters/c7");
   await userEvent.click(screen.getByRole("button", { name: "Retry" }));
   await waitFor(() => expect(fn.mock.calls.some(([u, i]) => u === "/api/operations/op1/retry"
     && (i as RequestInit).method === "POST")).toBe(true));

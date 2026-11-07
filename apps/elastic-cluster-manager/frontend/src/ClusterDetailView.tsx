@@ -5,6 +5,7 @@ import {
 import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "react";
 import { api, ApiError, ClusterDetail, NodeRow } from "./api";
 import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
+import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
 import { ago, bytes, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
 import { useReveals } from "./reveal";
@@ -200,9 +201,10 @@ export function ClusterDetailView({ id }: { id: string }) {
           <EuiBasicTable tableCaption="Linked virtual machines" items={linked} columns={vmColumns} responsiveBreakpoint="m"
             noItemsMessage="No nodes are linked to a VM yet." />)}
 
-        {tab === "Operations" && <p className="ecm-muted">
-          Operations and provisioning history for this cluster arrive with phases 4–5.</p>}
+        {tab === "Operations" && <ClusterOperations clusterId={c.id} />}
       </EuiPanel>
+
+      <ClusterLifecycle cluster={c} />
     </section>
   );
 }

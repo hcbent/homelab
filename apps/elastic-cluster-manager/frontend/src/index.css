@@ -252,6 +252,8 @@ section { scroll-margin-top: 64px; }
 /* EUI puts a top margin on every form row that follows another, and its rule is injected after this file with the
    same specificity, so it would push the second column down. The grid gap spaces them here; the doubled class wins. */
 .ecm-form-row > .euiFormRow.euiFormRow { margin-top: 0; margin-block-start: 0; }
+.ecm-lifecycle { margin-top: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.ecm-lifecycle p { margin: 0; }
 .ecm-stack-lg { display: flex; flex-direction: column; gap: 16px; }
 .ecm-detail { display: flex; flex-direction: column; gap: 20px; padding: 8px 0 56px; }
 .ecm-detail__head { display: flex; flex-direction: column; gap: 10px; }
