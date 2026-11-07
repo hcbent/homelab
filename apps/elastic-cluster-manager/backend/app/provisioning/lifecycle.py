@@ -503,19 +503,7 @@ def plan_remove_nodes(db: Session, cluster: Cluster, request: RemoveNodes, clien
     notes, per_node = _check_live(state, removing, remaining, view)
     # The placement, addresses and VMIDs of the removed machines leave the record; the plan page and the ownership
     # check read them from the change, which is the only place they are kept.
-    numbered = [int(m.group(1)) for n in state.nodes if (m := re.match(rf"^{re.escape(state.name)}-(\d+)$", n.name))]
-    params["state"] = DesiredState(
-        name=state.name, version=state.version, topology_preset=TopologyPreset.custom, nodes=remaining,
-        network_profile=state.network_profile).model_dump(mode="json")
-    detail = {}
-    for n in removing:
-        detail[n.name] = {"host": params["placement"].get(n.name), "address": params["addresses"].get(n.name),
-                          "vm_id": int(params["vm_ids"][n.name]), "roles": ", ".join(sorted(n.effective_roles)) or
-                          "none (coordinating only)", "cores": n.cores, "ram_mb": n.ram_mb,
-                          "data_disk_gb": n.data_disk_gb, **per_node.get(n.name, {"shards": 0, "data_bytes": 0})}
-    for table in ("placement", "addresses", "vm_ids"):
-        params[table] = {k: v for k, v in params[table].items() if k not in removing_names}
-    params["node_counter"] = max([int(params.get("node_counter", 0)), *numbered])
+    detail = _drop_nodes(params, state, removing, remaining, per_node)
     names = [n.name for n in removing]
     params["change"] = {
         "kind": "remove_nodes", "removed": names, "warnings": notes, "nodes": detail,
@@ -610,3 +598,203 @@ def _check_live(state: DesiredState, removing: list[NodeSpec], remaining: list[N
     if elected in names:
         notes.append(f"{elected} is the elected master, so a new master is elected when it goes (a few seconds)")
     return notes, per_node
+
+
+def _drop_nodes(params: dict, state: DesiredState, removing: list[NodeSpec], remaining: list[NodeSpec],
+                per_node: dict[str, dict]) -> dict[str, dict]:
+    """Take nodes out of the parameters (the state, and the host, address and VMID tables), keeping the node counter so a
+    number is never reused. Returns what the plan page and the ownership check need about each, which the change keeps."""
+    names = {n.name for n in removing}
+    numbered = [int(m.group(1)) for n in state.nodes if (m := re.match(rf"^{re.escape(state.name)}-(\d+)$", n.name))]
+    params["state"] = DesiredState(
+        name=state.name, version=state.version, topology_preset=TopologyPreset.custom, nodes=remaining,
+        network_profile=state.network_profile).model_dump(mode="json")
+    detail = {}
+    for n in removing:
+        detail[n.name] = {"host": params["placement"].get(n.name), "address": params["addresses"].get(n.name),
+                          "vm_id": int(params["vm_ids"][n.name]), "roles": ", ".join(sorted(n.effective_roles)) or
+                          "none (coordinating only)", "cores": n.cores, "ram_mb": n.ram_mb,
+                          "data_disk_gb": n.data_disk_gb, **per_node.get(n.name, {"shards": 0, "data_bytes": 0})}
+    for table in ("placement", "addresses", "vm_ids"):
+        params[table] = {k: v for k, v in params[table].items() if k not in names}
+    params["node_counter"] = max([int(params.get("node_counter", 0)), *numbered])
+    return detail
+
+
+# -- recovering lost nodes (docs/DESIGN_RECOVERY.md, slice 5a) -----------------------------------------------------------
+
+
+class RebuildNodes(BaseModel):
+    """Put back nodes that are in the cluster's record but whose machines are gone. `pve_node` names a host to put them on;
+    left empty, each goes back to its old host if that is online and is placed by ECM otherwise."""
+
+    model_config = ConfigDict(extra="forbid")
+    nodes: list[str] = Field(min_length=1, max_length=20)
+    pve_node: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "RebuildNodes":
+        if len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("the same node is listed twice")
+        return self
+
+
+class ForgetNodes(BaseModel):
+    """Take lost nodes out of the cluster's record without destroying anything. The cluster name is typed as a confirmation,
+    as for a removal."""
+
+    model_config = ConfigDict(extra="forbid")
+    nodes: list[str] = Field(min_length=1, max_length=20)
+    confirm_name: str = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "ForgetNodes":
+        if len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("the same node is listed twice")
+        return self
+
+
+def _not_lost(db: Session, params: dict, names: list[str], in_cluster: set[str]) -> list[str]:
+    """Why each of these nodes is not lost: its machine is in the last Proxmox sync, or Elasticsearch reports it. A node is
+    lost only when both are gone; the others need restarting (a later slice), not rebuilding."""
+    problems = []
+    conn_id = params.get("proxmox_connection_id")
+    for name in names:
+        vmid = int(params["vm_ids"][name])
+        row = db.scalar(select(Vm).where(Vm.connection_id == conn_id, Vm.vmid == vmid))
+        if row is not None and row.name == name:
+            problems.append(f"{name}'s machine (VM {vmid}) exists in Proxmox and is {row.status}; it is not lost, so it "
+                            "needs to be started or restarted, not rebuilt")
+        elif row is not None:
+            problems.append(f"VM ID {vmid}, which was {name}'s, now belongs to a machine named {row.name}")
+        if name in in_cluster:
+            problems.append(f"{name} is in the cluster: Elasticsearch reports it, so it is not lost")
+    return problems
+
+
+def _recovery_read(db: Session, cluster: Cluster, state: DesiredState, names: list[str], client) -> tuple[dict, set[str]]:
+    """The live read for a recovery, with the gates both recoveries share: the cluster answers and has an elected master,
+    it is not red (a red cluster has lost data, which ECM does not guess about), and the nodes it reports are exactly the
+    record's nodes less the ones being recovered. Returns the read and the names Elasticsearch reports."""
+    view = _read_cluster(db, cluster, client)
+    health = view["health"]
+    if not ((view["master"] or [{}])[0] or {}).get("node"):
+        raise OperationRefused("the cluster has no elected master, so ECM cannot ask it anything. That is quorum loss, "
+                               "which is recovered by hand, not by ECM")
+    if health.get("status") == "red":
+        lost = sorted(f"{s['index']}[{s['shard']}]" for s in view["shards"]
+                      if s.get("prirep") == "p" and s.get("state") != "STARTED")
+        raise OperationRefused(
+            f"the cluster is red: {len(lost)} primary shard{'s are' if len(lost) != 1 else ' is'} not assigned"
+            f"{' (' + _some(lost) + ')' if lost else ''}, so data may already be lost. Restore it from a snapshot or accept "
+            "the loss by hand first; ECM recovers a node only in a cluster that is yellow or green")
+    live = {info.get("name") for info in view["nodes"].values()}
+    absent = sorted({n.name for n in state.nodes} - set(names) - live)
+    if absent:
+        raise OperationRefused(f"Elasticsearch does not report {', '.join(absent)}, which are not among the nodes "
+                               "being recovered: name them too if they are lost, or bring them back first")
+    return view, live
+
+
+def plan_rebuild_nodes(db: Session, cluster: Cluster, request: RebuildNodes, client=None) -> dict:
+    """The parameters for putting back lost nodes: the same names, addresses, VM IDs and roles, each on its old host if that
+    is online and placed under the master spread rule otherwise. Refuses a node that is not lost, a red cluster, a cluster
+    with no master, a host that cannot take it, and anything the add-node path would refuse. Nothing is changed here."""
+    params = current_desired(cluster)
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster: if its machine is lost the cluster is gone, and there is "
+                               "no cluster for a rebuilt node to rejoin")
+    by_name = {n.name: n for n in state.nodes}
+    unknown = sorted(set(request.nodes) - set(by_name))
+    if unknown:
+        raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
+    names = sorted(request.nodes)
+    _, live = _recovery_read(db, cluster, state, names, client)
+    problems = _not_lost(db, params, names, live)
+    if problems:
+        raise OperationRefused("; ".join(problems))
+
+    conn = db.get(ProxmoxConnection, params.get("proxmox_connection_id") or "")
+    if conn is None:
+        raise OperationRefused("the Proxmox connection this cluster was built on no longer exists")
+    online = {h.name for h in db.scalars(select(PveNode).where(PveNode.connection_id == conn.id)) if h.status == "online"}
+    pinned = []
+    for n in state.nodes:
+        host = params["placement"][n.name]
+        if n.name in names:
+            host = request.pve_node or (host if host in online else None)
+        pinned.append(n.model_copy(update={"pve_node": host}))
+    try:
+        grown = DesiredState(name=state.name, version=state.version, topology_preset=TopologyPreset.custom,
+                             nodes=pinned, network_profile=state.network_profile)
+    except ValidationError as exc:
+        raise OperationRefused("; ".join(e["msg"] for e in exc.errors())) from exc
+    datastore = params.get("datastore_id", get_settings().default_storage)
+    try:
+        template = _template(db, conn, (params.get("template") or {}).get("vm_id"))
+        placement = _placement(db, conn, grown, datastore, template,
+                               exclude_vms=frozenset(n.name for n in state.nodes))
+    except (CreateInvalid, AllocationError) as exc:
+        raise OperationRefused(str(exc)) from exc
+
+    notes = list(warnings(grown)) + [i.message for i in placement.issues if i.severity == "warning"]
+    detail, moved = {}, []
+    for n in names:
+        spec = by_name[n]
+        host = placement.hosts[n]
+        if host != params["placement"][n]:
+            moved.append(n)
+            notes.append(f"{n} goes to {host}, not {params['placement'][n]} where it was")
+        detail[n] = {"host": host, "address": params["addresses"][n], "vm_id": int(params["vm_ids"][n]),
+                     "roles": ", ".join(sorted(spec.effective_roles)) or "none (coordinating only)",
+                     "cores": spec.cores, "ram_mb": spec.ram_mb, "data_disk_gb": spec.data_disk_gb,
+                     "moved": n in moved}
+    params["placement"] = {**params["placement"], **{n: placement.hosts[n] for n in names}}
+    params["change"] = {
+        "kind": "rebuild_nodes", "rebuilt": names, "warnings": notes, "nodes": detail,
+        "describe": (f"rebuild {len(names)} lost node{'s' if len(names) != 1 else ''} ({', '.join(names)}): Terraform makes "
+                     f"the machine{'s' if len(names) != 1 else ''} again on the same VM ID{'s' if len(names) != 1 else ''}, "
+                     "then ECM configures and starts only the rebuilt nodes and checks they joined; their data disks start "
+                     "empty and fill from the other nodes"),
+    }
+    return params
+
+
+def plan_forget_nodes(db: Session, cluster: Cluster, request: ForgetNodes, client=None) -> dict:
+    """The parameters with lost nodes taken out of the record, destroying nothing. Refuses a node that is not lost (its
+    machine exists: remove it instead), a red cluster, and anything that would break the quorum, as a removal does."""
+    params = current_desired(cluster)
+    if request.confirm_name != cluster.name:
+        raise OperationRefused("type the cluster name exactly to confirm")
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster; there is no node to forget")
+    by_name = {n.name: n for n in state.nodes}
+    unknown = sorted(set(request.nodes) - set(by_name))
+    if unknown:
+        raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
+    removing = [by_name[n] for n in sorted(request.nodes)]
+    remaining = [n for n in state.nodes if n.name not in set(request.nodes)]
+    problems = _quorum_problems(state, removing, params.get("placement", {}))
+    if not problems:
+        try:
+            DesiredState(name=state.name, version=state.version, topology_preset=TopologyPreset.custom,
+                         nodes=remaining, network_profile=state.network_profile)
+        except ValidationError as exc:
+            problems = [e["msg"].removeprefix("Value error, ") for e in exc.errors()]
+    if problems:
+        raise OperationRefused("; ".join(problems))
+    _, live = _recovery_read(db, cluster, state, [n.name for n in removing], client)
+    problems = _not_lost(db, params, [n.name for n in removing], live)
+    if problems:
+        raise OperationRefused("; ".join(problems) + "; a node whose machine exists is taken out with Remove nodes")
+    detail = _drop_nodes(params, state, removing, remaining, {})
+    names = [n.name for n in removing]
+    params["change"] = {
+        "kind": "forget_nodes", "removed": names, "warnings": [], "nodes": detail,
+        "describe": (f"forget {len(names)} lost node{'s' if len(names) != 1 else ''} ({', '.join(names)}): their machines are "
+                     "already gone, so nothing is destroyed; ECM takes them out of the cluster's record and brings the "
+                     "nodes that remain in line with it"),
+    }
+    return params

@@ -1,6 +1,6 @@
 # Recovery workflows: proposed design (Phase 5, slice 5)
 
-**Status: PROPOSED on 2026-11-07. Nothing here is built.** The operator left the meaning of "recovery" open (the candidates were restarting a
+**Status: APPROVED on 2026-11-07 with the operator's answers below (all five proposals accepted except decision 2, where the operator chose to refuse a red cluster); slice 5a is BUILT (backend, join-check gate and UI, tested offline, not run on any cluster); 5b is not built.** The operator left the meaning of "recovery" open (the candidates were restarting a
 node, re-running a converge and rebuilding a node whose machine is lost), so this proposes a scope and asks for the decisions at the end.
 Items marked *to confirm* have not been checked against this project's Proxmox, provider or Elasticsearch.
 
@@ -51,11 +51,13 @@ exists; a VM ID that now belongs to a machine ECM did not create (the existing o
 the node, or that would break the master spread rule (the same placement as add-node, with the other nodes pinned); more lost master-eligible nodes
 than the cluster can lose and still have a master.
 
-**A red cluster** (a primary shard was only on the lost node) is allowed with a warning that names the unassigned primaries and says their data is gone
-unless restored from a snapshot, because refusing would leave no way to get the node back. See decision 2.
+**A red cluster is refused** (a primary shard was only on the lost node, or any primary is unassigned). The message names the unassigned primaries and says their
+data is gone unless it is restored from a snapshot. The operator chose this over allowing the rebuild with a warning (decision 2): the data must be dealt with
+first, and ECM does not guess. **The consequence is that ECM offers neither rebuild nor forget while a cluster is red**; the operator restores or accepts the
+loss by hand (outside ECM), and ECM works again once the cluster is yellow or green.
 
 **Forget** takes a lost node out of the record without destroying anything, for a node that will not be replaced. It is the remove-nodes operation with
-two differences for a node that is already gone from Elasticsearch: the green and shards-all-started gates are replaced by "not red", and the plan
+two differences for a node that is already gone from Elasticsearch: the green and shards-all-started gates are replaced by "not red" (so a red cluster is refused here too), and the plan
 rule accepts that Terraform has nothing to delete for it, **only if** the node's resources are no longer in Terraform's refreshed state (the plan
 alone cannot say, so ECM reads the state's resource list, as it already does after an apply). The quorum and host-spread rules apply as for any
 removal. Nothing is drained; there is nothing to drain.
@@ -81,7 +83,7 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
 
 ## What has to be built (5a)
 
-- Rules in `lifecycle.py`: `RebuildNodes` and `ForgetNodes`, the lostness check against the last sync, host choice, and the relaxed gates; refusals with the reason and
+- Rules in `lifecycle.py`: `RebuildNodes` and `ForgetNodes`, the lostness check against the last sync, host choice, and the gates (not red); refusals with the reason and
   what it is instead.
 - The plan rule: created exactly the named nodes (`check_rebuild_plan`, next to `check_removal_plan`), and the forget rule's state check.
 - A `rebuild` flag in the join check's "before" gate (not red instead of green), and `add_node.yml` taking it; `AnsibleRequest` and the inventory carry it.
@@ -89,12 +91,14 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
 - API (`POST /api/clusters/{id}/rebuild-nodes`, `.../forget-nodes`) and a **Recovery** panel listing each node with what ECM sees (machine and Elasticsearch
   node present or not) and the action that fits.
 - Tests as for add and remove: every refusal; the plan rules (an empty plan, an extra create, a delete); the gate against the fake Elasticsearch
-  (yellow passes, red passes with the warning, no master refuses); a retry after the apply.
+  (yellow passes, red refuses naming the unassigned primaries, no master refuses); a retry after the apply.
 
 ## Decisions for the operator
 
+**The operator's answers (2026-11-07): 1, 3, 4 and 5 as proposed; 2 the refusal.**
+
 1. **Scope and order.** *Proposed:* 5a (rebuild and forget) first, then 5b (restart, including "apply pending configuration"), and re-run converge left to Phase 8.
-2. **A red cluster.** *Proposed:* allow a rebuild with a warning that names the unassigned primaries. The alternative is to refuse until the operator has dealt with the data.
+2. **A red cluster.** *Proposed:* allow a rebuild with a warning that names the unassigned primaries. The alternative is to refuse until the operator has dealt with the data. **The operator chose the refusal**, for rebuild and for forget.
 3. **Where a rebuilt node goes.** *Proposed:* its old host if online, otherwise ECM places it under the master spread rule, and the operator may choose a host. The alternative is its old host only.
 4. **Restart as its own operation kind** (`es.restart`) rather than a variant of `tf.update`, so approval cannot be skipped. *Proposed:* yes.
 5. **Success for a rebuild.** *Proposed:* the node joined and the cluster is not red, as add-node stops at "joined and green" without waiting for rebalancing. The alternative is to wait for green.
@@ -114,3 +118,40 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
   Terraform's refreshed state) and the ownership check are the guards, not the sync.
 - A rebuilt data node starts empty and pulls its shards from the others, which loads a cluster that is already degraded.
 - Forgetting a node whose data was not replicated makes the loss permanent in ECM's record; the red warning and the quorum rules are the guards.
+
+## As built (slice 5a), and where it differs from the proposal
+
+- **The rules** are `plan_rebuild_nodes` and `plan_forget_nodes` in `provisioning/lifecycle.py`, and the plan rules `check_rebuild_plan` and
+  `check_forget_plan` in `provisioning/plan.py`. Both recoveries share one live read and its gates (`_recovery_read`): the cluster answers and has
+  an elected master, it is **not red** (the refusal names the unassigned primaries and says to restore or accept the loss by hand first, as the operator
+  chose), and Elasticsearch reports every node of the record except the ones being recovered. A node is lost only when its machine is absent from
+  the last Proxmox sync **and** Elasticsearch does not report it; otherwise the refusal says which it is (a machine that exists is to be started or
+  restarted, a VM ID that now belongs to another machine is named, a node the cluster still has is not lost).
+- **The forget plan check needs no state read.** The design said the plan rule would accept "nothing to delete" only if the node's resources were out of
+  Terraform's refreshed state. The plan itself discriminates: a machine that still exists would show as a delete, so `check_forget_plan` refuses any
+  create, delete or replace (a delete of a named node says "use Remove nodes"), and an empty plan is the expected one.
+- **A forget always waits for an approval** even though its plan is empty: `_nothing_to_do` (which skips the approval and adopts the parameters when a plan has no
+  changes) returns false for `forget_nodes`. The operation then applies the saved empty plan, which Terraform is expected to accept as a no-op
+  (*to confirm*), adopts the shrunken record, drops the node's rows, and runs a converge on the remaining nodes. There is no drain and no check afterwards.
+- **A rebuild** is a `tf.update` with add-node's phases. Its plan must create exactly the named machines and may not be empty, **except on a retry**
+  after this operation's own apply made them (`_already_rebuilt`): then an empty plan is right and the apply is skipped. A failed apply is not mistaken for
+  a finished one. The configure step is `add_node.yml` with the rebuilt nodes as the new ones and one new flag (`rebuild`), which makes the join check's gates ask for **yellow
+  or better** (`es_jc_min_status`) before and after instead of green. The record's addresses, VM IDs and roles are unchanged; only a moved node's host changes.
+- **The host** is one optional choice for every node in the request (as add-node has), else each node's old host if the last sync shows it online, else
+  ECM's placement under the master spread rule with every other node pinned where it is.
+- **What the tests found:** with three masters on three hosts, a **dead host's master cannot be rebuilt on the two hosts left**: the spread rule (no host may
+  hold more than `(masters - 1) // 2`) refuses it, and forgetting it is refused too (fewer than three masters would remain), and add-node refuses while a node is
+  missing. So in that one case ECM offers no recovery until the host is back or a host is added by hand. That follows from the rules the operator set; it is
+  recorded here because the alternative (a warning instead of a refusal for a rebuild) is the operator's call. See the open question below.
+- **The UI:** a Recovery panel on the cluster page, shown only when a node is lost (machine absent and not in the cluster, from the last syncs), with the nodes
+  chosen by default, an optional host, "Plan the rebuild" and "Forget these nodes" (the cluster name typed); a node that has a machine but is not in the cluster
+  gets a note that it needs starting or restarting, which is not built. The operation page shows tables for each, a danger-coloured "Approve and forget", and failure
+  and success messages that say whether anything was destroyed.
+- **Unverified on a real cluster:** all of it. In particular that Terraform's refresh drops a deleted VM from its state so the plan shows a create; that it accepts
+  an empty saved plan; that a VM can be created at a VM ID whose disks were left behind on shared storage; that Elasticsearch takes a rebuilt master-eligible node
+  (same name, new node ID) into the voting configuration; and that the join steps work on a machine that replaces one of a running cluster's.
+
+**Open question for the operator:** should a rebuild be allowed, with a warning instead of a refusal, to put a master on a host that already has one when
+the host it was on is down? Today it is refused (the spread rule is hard everywhere), which leaves a three-host, three-master cluster with no ECM recovery for a dead
+host's master. The alternatives are to keep the refusal and say so in the panel, or to allow it with an explicit confirmation.
+

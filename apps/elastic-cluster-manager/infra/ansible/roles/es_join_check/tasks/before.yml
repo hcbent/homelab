@@ -3,7 +3,7 @@
 - name: Wait for the cluster to be green with all of its existing nodes
   ansible.builtin.uri:
     url: >-
-      {{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_cluster/health?wait_for_status=green&timeout=5s
+      {{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_cluster/health?wait_for_status={{ es_jc_min_status }}&timeout=5s
     headers: "{{ es_jc_headers }}"
     ca_path: "{{ es_ca_file }}"
     status_code: [200, 408]

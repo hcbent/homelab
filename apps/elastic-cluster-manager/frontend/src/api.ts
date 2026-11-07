@@ -94,6 +94,8 @@ export interface Lifecycle {
   sizes?: Record<string, { cores: number; ram_mb: number }>;
   /** Each node's roles (empty for coordinating only), Proxmox host and whether it counts towards the master quorum. */
   node_roles?: Record<string, { roles: string[]; master_eligible: boolean; holds_data: boolean; host: string | null }>;
+  /** What the last syncs saw of each node: whether its machine is in Proxmox (null if unknown) and whether Elasticsearch reports it. */
+  node_state?: Record<string, { machine: boolean | null; in_cluster: boolean }>;
 }
 
 export interface ClusterDetail extends ClusterSummary {

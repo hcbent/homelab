@@ -69,6 +69,9 @@ class AnsibleRequest:
     # Adding nodes: the new ones. Uses es_api_key and es_ca_pem to check they joined, and the CA key and certificate
     # (ca_cert_pem, ca_key_pem) to sign their certificates.
     new_nodes: list[str] | None = None
+    # Rebuilding lost nodes uses the same steps with the new nodes being the rebuilt ones, but the cluster is expected to be
+    # yellow (it is missing them), so the health gates ask for yellow or better instead of green.
+    rebuild: bool = False
     # Removing nodes: the ones going (they are not in `state`, which is what remains). Uses es_api_key and es_ca_pem to
     # drain them and, afterwards, to check the cluster is green without them.
     removing: list[str] | None = None
@@ -297,7 +300,8 @@ class CliAnsibleRunner:
             return {}
         ca = run_dir / "es-ca.crt"
         _write_private(ca, request.es_ca_pem or request.ca_cert_pem or "")
-        return {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "es_new_nodes"}
+        return {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "es_new_nodes",
+                "es_jc_min_status": "yellow" if request.rebuild else "green"}
 
     @staticmethod
     def _removal_vars(request: AnsibleRequest, run_dir: Path) -> dict[str, str]:

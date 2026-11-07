@@ -8,6 +8,7 @@ import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
 import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
 import { AddNodes } from "./AddNodes";
 import { GrowDisks } from "./GrowDisks";
+import { Recovery } from "./Recovery";
 import { RemoveNodes } from "./RemoveNodes";
 import { Resize } from "./Resize";
 import { ago, bytes, storedNumber } from "./format";
@@ -210,6 +211,7 @@ export function ClusterDetailView({ id }: { id: string }) {
 
       <AddNodes cluster={c} />
       <RemoveNodes cluster={c} />
+      <Recovery cluster={c} />
       <Resize cluster={c} />
       <GrowDisks cluster={c} />
       <ClusterLifecycle cluster={c} />

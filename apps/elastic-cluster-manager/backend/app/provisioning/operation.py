@@ -44,7 +44,13 @@ from app.models import ACTIVE_STATES, Cluster, Credential, EsNode, Operation, Pr
 from app.operations import AwaitingApproval, create_operation, log, run_phases
 from app.provisioning.ownership import foreign_machines
 from app.provisioning.ownership import torn_down as _torn_down
-from app.provisioning.plan import check_plan_safety, check_removal_plan, node_of
+from app.provisioning.plan import (
+    check_forget_plan,
+    check_plan_safety,
+    check_rebuild_plan,
+    check_removal_plan,
+    node_of,
+)
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
 from app.provisioning.runner import CliTerraformRunner, TerraformError, TerraformRunner
 from app.provisioning.workspace import existing_workspace, open_workspace, remove_workspace
@@ -280,6 +286,14 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     members = ({n.name: n for n in DesiredState.model_validate(cluster.desired["state"]).nodes}
                if cluster.desired and cluster.bootstrapped_at else {})
     # What the Remove nodes panel offers: each node's roles, where it runs and whether it counts towards the quorum.
+    seen = {r.name for r in db.scalars(select(EsNode).where(EsNode.cluster_id == cluster.id))}
+    machines = {(v.vmid, v.name) for v in db.scalars(select(Vm).where(
+        Vm.connection_id == (cluster.desired or {}).get("proxmox_connection_id")))}
+    vm_ids = (cluster.desired or {}).get("vm_ids") or {}
+    # What the last syncs saw of each node, for the Recovery panel: whether its machine is in Proxmox and whether
+    # Elasticsearch reports it. A node with neither is lost.
+    node_state = {name: {"machine": (int(vm_ids[name]), name) in machines if name in vm_ids else None,
+                         "in_cluster": name in seen} for name in members}
     roles = {name: {"roles": sorted(n.effective_roles), "master_eligible": n.is_master_eligible,
                     "holds_data": n.holds_data, "host": placement.get(name)} for name, n in members.items()}
     blocker = _removal_blocker(db, cluster)
@@ -293,6 +307,7 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "data_disks": data_disks,
         "sizes": sizes,
         "node_roles": roles,
+        "node_state": node_state,
         "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered
@@ -439,7 +454,8 @@ class _Handlers:
             perms, pool_id=params.get("pool_id", "ecm"), datastore=params.get("datastore_id", "tank"),
             template_vmid=(params.get("template") or {}).get("vm_id"),
             # Adding a node clones a VM, so it needs what a create needs.
-            creating=self.kind == CREATE or (self.kind == UPDATE and (params.get("change") or {}).get("kind") == "add_node"),
+            creating=self.kind == CREATE or (self.kind == UPDATE and (params.get("change") or {}).get("kind")
+                                             in ("add_node", "rebuild_nodes")),
             resizing=self.kind == UPDATE and (params.get("change") or {}).get("kind") == "resize")
         if problems:
             raise PreflightFailed(f"the token Terraform uses is missing rights this operation needs: "
@@ -474,8 +490,13 @@ class _Handlers:
         self._preflight()  # before anything is planned: a plan only reads, so it cannot see lost write rights
         ws = existing_workspace(self.root, self.cluster_id)
         outcome = self.runner.plan(ws, self._env(), destroy=self.kind == DESTROY)
-        if self._removing():
+        kind = self._change_kind()
+        if kind == "remove_nodes":
             problems = self._removal_problems(outcome.summary)
+        elif kind == "rebuild_nodes":
+            problems = self._rebuild_problems(outcome.summary)
+        elif kind == "forget_nodes":
+            problems = check_forget_plan(outcome.summary, frozenset(self._change_nodes("removed")))
         else:
             problems = check_plan_safety(outcome.summary, self.plan_kind)
         if self.kind == DESTROY:
@@ -492,6 +513,25 @@ class _Handlers:
         self.db.commit()
         log(self.db, op.id, f"plan {stored.approval_digest}: {outcome.summary.adds} to add, "
                             f"{outcome.summary.updates} to change, {outcome.summary.deletes} to destroy")
+
+    def _change_kind(self) -> str | None:
+        return (self.op.params.get("change") or {}).get("kind") if self.kind == UPDATE else None
+
+    def _change_nodes(self, key: str) -> list[str]:
+        """The node names a change lists under `key` (removed, rebuilt or added), or [] when it is another kind of change."""
+        return list((self.op.params.get("change") or {}).get(key) or []) if self.kind == UPDATE else []
+
+    def _already_rebuilt(self) -> bool:
+        """True when an earlier apply of this operation made every machine it names: the result is kept across a retry and
+        lists them in the state it recorded. Then the plan has nothing to create, which is right."""
+        result = self.op.result or {}
+        have = {node_of(a) for a in result.get("resources_in_state") or []}
+        return bool(result.get("ok")) and set(self._change_nodes("rebuilt")) <= have
+
+    def _rebuild_problems(self, summary) -> list[str]:
+        if summary.is_empty and self._already_rebuilt():
+            return []
+        return check_rebuild_plan(summary, frozenset(self._change_nodes("rebuilt")))
 
     def _removing(self) -> list[str]:
         """The nodes this operation removes, or [] when it is not a removal."""
@@ -527,6 +567,8 @@ class _Handlers:
     def _nothing_to_do(self) -> bool:
         """True only when a plan was recorded and it has no changes. A missing plan is never 'nothing to do':
         that would skip the approval gate."""
+        if self._change_kind() == "forget_nodes":
+            return False        # the plan is empty by design, and dropping nodes from the record is still approved
         summary = self._fresh().plan_summary
         return summary is not None and summary.get("has_changes") is False
 
@@ -740,7 +782,7 @@ class _Handlers:
         so the inventory does not show a machine that is gone. A row is matched on connection, VMID and name together, so
         a different VM that reuses a VMID is never touched; if a machine somehow still exists the next sync adds it back."""
         change = (self.op.params.get("change") or {}) if self.kind == UPDATE else {}
-        if change.get("kind") != "remove_nodes":
+        if change.get("kind") not in ("remove_nodes", "forget_nodes"):
             return
         conn_id = self.op.params.get("proxmox_connection_id")
         names = list(change.get("removed") or [])
@@ -751,7 +793,7 @@ class _Handlers:
         self.db.commit()
         log(self.db, self.op.id, f"{', '.join(names)} removed from the inventory ({gone} machine{'s' if gone != 1 else ''})")
 
-    def _add_nodes(self) -> None:
+    def _add_nodes(self, rebuild: bool = False) -> None:
         """Configure and start only the nodes this change added, then check that they joined and the cluster is green
         (playbooks/add_node.yml). The existing nodes are not touched. It needs ECM's API key (to ask the cluster) and
         the cluster's CA (to sign the new nodes' certificates)."""
@@ -766,7 +808,7 @@ class _Handlers:
         request = AnsibleRequest(
             state=self._state(), addresses=params["addresses"], kind="add_node",
             bootstrapped_at=cluster.bootstrapped_at, search_domain=profile.search_domain,
-            new_nodes=list((params.get("change") or {}).get("added") or []),
+            new_nodes=self._change_nodes("rebuilt" if rebuild else "added"), rebuild=rebuild,
             es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=ca_cert, ca_cert_pem=ca_cert, ca_key_pem=ca_key)
         log(self.db, self.op.id, f"configuring: {self._configure_description()}")
         kept = "The new machines are kept; retry runs the configuration again, which is safe to repeat"
@@ -776,16 +818,21 @@ class _Handlers:
             raise ConfigureFailed(f"{e}. {kept}") from e
         if not outcome.ok:
             raise ConfigureFailed(f"{outcome.error or 'adding the nodes failed'}. {kept}")
-        log(self.db, self.op.id, "the new nodes joined and the cluster is green")
+        log(self.db, self.op.id, "the rebuilt nodes joined and the cluster is not red" if rebuild
+            else "the new nodes joined and the cluster is green")
 
     def configure(self) -> None:
         if self.kind == UPDATE:
             kind = (self.op.params.get("change") or {}).get("kind")
             if kind == "add_node":
                 self._add_nodes()
+            elif kind == "rebuild_nodes":
+                self._add_nodes(rebuild=True)
             elif kind == "remove_nodes":
                 self._converge()            # the remaining nodes' seed lists lose the removed ones; nothing restarts
                 self._removal_check()
+            elif kind == "forget_nodes":
+                self._converge()            # the same for nodes that were already gone; there is nothing to check
             else:
                 self._converge()
             return

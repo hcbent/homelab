@@ -125,3 +125,34 @@ def test_the_node_role_starts_a_node_only_when_it_is_told_it_is_new():
     assert tasks.count("es_allow_restart | bool or es_start_node | default(false) | bool") == 2
     assert "when: es_allow_restart | bool or es_start_node | default(false) | bool" in handlers
     assert "when: not (es_allow_restart | bool or es_start_node | default(false) | bool)" in handlers
+
+
+# -- rebuilding lost nodes: the cluster is yellow while they are missing, so the gates ask for yellow, never red ------------
+
+def test_a_rebuild_starts_on_a_yellow_cluster_but_the_default_gate_still_wants_green(tmp_path):
+    fake, run = build(tmp_path, "before")
+    fake._yellow_for = 50                                                  # yellow for every look this test makes
+    result = run(es_jc_min_status="yellow")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    second = tmp_path / "again"
+    second.mkdir()
+    fake, run = build(second, "before")
+    fake._yellow_for = 50
+    result = run()                                                         # the default: green, as for adding a node
+    assert result.returncode != 0 and "Before the new nodes were started" in result.stdout
+
+
+def test_a_rebuild_does_not_start_on_a_red_cluster(tmp_path):
+    fake, run = build(tmp_path, "before")
+    fake.status = lambda: "red"
+    result = run(es_jc_min_status="yellow")
+    assert result.returncode != 0 and "Before the new nodes were started" in result.stdout and "red" in result.stdout
+
+
+def test_after_a_rebuild_the_node_joining_a_yellow_cluster_passes(tmp_path):
+    fake, run = build(tmp_path, "after")
+    fake._yellow_for = 50
+    result = run(es_jc_min_status="yellow")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert ("joined", NEW) in fake.events

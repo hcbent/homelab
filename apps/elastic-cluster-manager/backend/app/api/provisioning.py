@@ -18,10 +18,14 @@ from app.provisioning import create as plan_create
 from app.provisioning.lifecycle import (
     AddNodes,
     ExpandDisk,
+    ForgetNodes,
+    RebuildNodes,
     RemoveNodes,
     ResizeNodes,
     plan_add_nodes,
     plan_expand_disk,
+    plan_forget_nodes,
+    plan_rebuild_nodes,
     plan_remove_nodes,
     plan_resize,
 )
@@ -149,6 +153,23 @@ async def remove_nodes(cluster_id: str, body: RemoveNodes, db: Session = Depends
     changes until it is approved on its operation page, and then the data is moved off the nodes before their machines are
     destroyed. The cluster name must be typed in `confirm_name`."""
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_remove_nodes(d, c, body), reads_cluster=True)
+
+
+@router.post("/{cluster_id}/rebuild-nodes", status_code=202)
+async def rebuild_nodes(cluster_id: str, body: RebuildNodes, db: Session = Depends(get_db),
+                        user: User = Depends(auth.current_user)):
+    """Plan putting back nodes whose machines are lost: the same names, addresses and VM IDs, each on its old host if that is
+    online and placed by ECM otherwise. Refused for a node that is not lost, a red cluster or a cluster with no master. This
+    only makes a plan; nothing changes until it is approved on its operation page."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_rebuild_nodes(d, c, body), reads_cluster=True)
+
+
+@router.post("/{cluster_id}/forget-nodes", status_code=202)
+async def forget_nodes(cluster_id: str, body: ForgetNodes, db: Session = Depends(get_db),
+                       user: User = Depends(auth.current_user)):
+    """Plan taking lost nodes out of the cluster's record, destroying nothing. Refused for a node whose machine exists (use
+    remove-nodes), a red cluster, or a removal that would break the quorum. The cluster name must be typed in `confirm_name`."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_forget_nodes(d, c, body), reads_cluster=True)
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

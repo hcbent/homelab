@@ -275,6 +275,63 @@ test("a finished removal says the data was moved, the machines destroyed and the
   expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
 });
 
+const RECOVERY_NODES = { "lab-d-04": { host: "pve2", address: "192.168.10.113", vm_id: 503, roles: "data, ingest", cores: 4,
+  ram_mb: 8192, data_disk_gb: 100, moved: true } };
+const APPLY_STEPS = ["render", "init", "plan", "approval", "apply", "configure"].map((name, seq) => ({
+  seq, name, status: seq < 3 ? "done" : seq === 3 ? "waiting" : "pending", detail: null }));
+
+test("a rebuild plan lists the lost nodes with where each goes, and asks to approve and rebuild", async () => {
+  mockFetch(table({ "GET /api/operations/rb": [200, op({ id: "rb", kind: "tf.update", cluster_id: "c1", steps: APPLY_STEPS,
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 1, updates: 0, deletes: 0, configure: "rebuild 1 lost node (lab-d-04)" } },
+    change: { kind: "rebuild_nodes", warnings: ["lab-d-04 goes to pve2, not pve3 where it was"], nodes: RECOVERY_NODES } })] }));
+  render(<OperationDetail id="rb" />);
+  expect(await screen.findByText("The nodes this rebuilds", { selector: "h4" })).toBeInTheDocument();
+  const row = screen.getByText("lab-d-04").closest("tr")!;
+  expect(within(row).getByText("pve2")).toBeInTheDocument();
+  expect(within(row).getByText("4 cores, 8 GiB, 100 GB data")).toBeInTheDocument();
+  expect(screen.getByText("lab-d-04 goes to pve2, not pve3 where it was")).toBeInTheDocument();
+  expect(screen.getByText("Create 1 virtual machine")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Approve and rebuild" })).toBeInTheDocument();
+});
+
+test("a forget plan says nothing happens on Proxmox, lists the nodes, and still asks for an approval", async () => {
+  mockFetch(table({ "GET /api/operations/fg": [200, op({ id: "fg", kind: "tf.update", cluster_id: "c1", steps: APPLY_STEPS,
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 0, updates: 0, deletes: 0, has_changes: false,
+      configure: "forget 1 lost node (lab-d-04)" } },
+    change: { kind: "forget_nodes", warnings: [], nodes: RECOVERY_NODES } })] }));
+  render(<OperationDetail id="fg" />);
+  expect(await screen.findByText("The lost nodes this forgets", { selector: "h4" })).toBeInTheDocument();
+  expect(screen.getByText("Nothing: the machines are already gone")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve and forget" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(within(dialog).getByText(/Nothing is destroyed: the machines are already gone/)).toBeInTheDocument();
+});
+
+test("finished and failed recovery operations say what was and was not changed", async () => {
+  mockFetch(table({
+    "GET /api/operations/r1": [200, op({ id: "r1", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null,
+      change: { kind: "rebuild_nodes", nodes: RECOVERY_NODES } })],
+    "GET /api/operations/r2": [200, op({ id: "r2", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      error: "The new nodes did not all join", change: { kind: "rebuild_nodes", nodes: RECOVERY_NODES } })],
+    "GET /api/operations/f1": [200, op({ id: "f1", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null,
+      change: { kind: "forget_nodes", nodes: RECOVERY_NODES } })],
+    "GET /api/operations/f2": [200, op({ id: "f2", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      error: "x", change: { kind: "forget_nodes", nodes: RECOVERY_NODES } })] }));
+  let view = render(<OperationDetail id="r1" />);
+  expect(await screen.findByText("The rebuilt nodes joined the cluster")).toBeInTheDocument();
+  expect(screen.getByText(/empty disks fill from the others/)).toBeInTheDocument();
+  view.unmount();
+  view = render(<OperationDetail id="r2" />);
+  expect(await screen.findByText(/the rebuilt machines exist. Retry configures them again/)).toBeInTheDocument();
+  view.unmount();
+  view = render(<OperationDetail id="f1" />);
+  expect(await screen.findByText("The lost nodes are forgotten")).toBeInTheDocument();
+  view.unmount();
+  render(<OperationDetail id="f2" />);
+  expect(await screen.findByText(/Nothing was destroyed, because the machines were already gone/)).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

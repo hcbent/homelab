@@ -60,11 +60,13 @@ interface AddedNode {
 }
 
 /** Where each node an add-nodes change would make goes, with anything the placement wants the operator to know. */
-function AddedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
+function AddedNodes({ change, title = "Where each new node goes", first = "New node" }: {
+  change: NonNullable<Detail["change"]>; title?: string; first?: string;
+}) {
   const nodes = Object.entries((change.nodes ?? {}) as Record<string, Omit<AddedNode, "name">>)
     .map(([name, n]) => ({ name, ...n }));
   const columns: EuiBasicTableColumn<AddedNode>[] = [
-    { name: "New node", render: (n: AddedNode) => <span className="ecm-mono">{n.name}</span> },
+    { name: first, render: (n: AddedNode) => <span className="ecm-mono">{n.name}</span> },
     { name: "Proxmox host", render: (n: AddedNode) => <span className="ecm-mono">{n.host}</span> },
     { name: "Address", render: (n: AddedNode) => <span className="ecm-mono">{n.address}</span> },
     { field: "vm_id", name: "VM ID" },
@@ -73,8 +75,8 @@ function AddedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
   ];
   return (
     <div className="ecm-stack-lg">
-      <h4 className="ecm-label">Where each new node goes</h4>
-      <EuiBasicTable<AddedNode> tableCaption="Where each new node goes" items={nodes} columns={columns} rowHeader="name" />
+      <h4 className="ecm-label">{title}</h4>
+      <EuiBasicTable<AddedNode> tableCaption={title} items={nodes} columns={columns} rowHeader="name" />
       {(change.warnings ?? []).map((w) => (
         <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
     </div>
@@ -104,6 +106,25 @@ function RemovedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
       <EuiBasicTable<RemovedNode> tableCaption="The nodes this removes" items={nodes} columns={columns} rowHeader="name" />
       {(change.warnings ?? []).map((w) => (
         <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
+    </div>
+  );
+}
+
+/** The lost nodes a forget takes out of the record: nothing on Proxmox changes, because their machines are already gone. */
+function ForgottenNodes({ change }: { change: NonNullable<Detail["change"]> }) {
+  const nodes = Object.entries((change.nodes ?? {}) as Record<string, Omit<AddedNode, "name">>)
+    .map(([name, n]) => ({ name, ...n }));
+  const columns: EuiBasicTableColumn<AddedNode>[] = [
+    { name: "Node to forget", render: (n: AddedNode) => <span className="ecm-mono">{n.name}</span> },
+    { name: "Was on", render: (n: AddedNode) => <span className="ecm-mono">{n.host}</span> },
+    { name: "Address", render: (n: AddedNode) => <span className="ecm-mono">{n.address}</span> },
+    { field: "vm_id", name: "VM ID" },
+    { field: "roles", name: "Roles" },
+  ];
+  return (
+    <div className="ecm-stack-lg">
+      <h4 className="ecm-label">The lost nodes this forgets</h4>
+      <EuiBasicTable<AddedNode> tableCaption="The lost nodes this forgets" items={nodes} columns={columns} rowHeader="name" />
     </div>
   );
 }
@@ -154,6 +175,8 @@ export function OperationDetail({ id }: { id: string }) {
 
   const destroying = op.kind === "tf.destroy";
   const removing = op.kind === "tf.update" && op.change?.kind === "remove_nodes";
+  const forgetting = op.kind === "tf.update" && op.change?.kind === "forget_nodes";
+  const rebuilding = op.kind === "tf.update" && op.change?.kind === "rebuild_nodes";
   const drainFailed = op.steps.some((s) => s.name === "drain" && s.status === "failed");
   const summary = op.plan?.summary ?? null;
   const lines = op.logs.slice(-MAX_LOG_LINES);
@@ -199,7 +222,7 @@ export function OperationDetail({ id }: { id: string }) {
           aria-label="The plan">
           <h3 className="ecm-h3">The plan</h3>
           <EuiDescriptionList type="column" compressed listItems={[
-            { title: "On Proxmox", description: terraformText(op.kind, summary) },
+            { title: "On Proxmox", description: forgetting ? "Nothing: the machines are already gone" : terraformText(op.kind, summary) },
             ...(summary?.configure
               ? [{ title: "Then", description: summary.configure.charAt(0).toUpperCase() + summary.configure.slice(1) }]
               : []),
@@ -207,6 +230,8 @@ export function OperationDetail({ id }: { id: string }) {
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
           {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
+          {op.change?.kind === "rebuild_nodes" && <AddedNodes change={op.change} title="The nodes this rebuilds" first="Lost node" />}
+          {op.change?.kind === "forget_nodes" && <ForgottenNodes change={op.change} />}
           {op.dry_run && (
             <EuiCallOut size="s" color="primary" iconType="info" className="ecm-gap"
               title="This was a dry run: nothing was created, and it cannot be approved.">
@@ -215,7 +240,8 @@ export function OperationDetail({ id }: { id: string }) {
             <div className="ecm-detail__actions">
               <EuiButton fill color={destroying || removing ? "danger" : "primary"} isDisabled={busy}
                 onClick={() => setConfirming(true)}>
-                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
+                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : forgetting ? "Approve and forget"
+                  : rebuilding ? "Approve and rebuild" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
               <EuiButtonEmpty isDisabled={busy} onClick={() => act("cancel")}>Cancel</EuiButtonEmpty>
               <span className="ecm-small">Nothing changes until you approve.</span>
             </div>)}
@@ -229,7 +255,11 @@ export function OperationDetail({ id }: { id: string }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
           {!op.dry_run && op.kind === "tf.update" && (
-            removing ? (
+            forgetting ? (
+              <p>Nothing was destroyed, because the machines were already gone. Retry plans again and needs a new approval.</p>
+            ) : rebuilding ? (
+              <p>{"What Terraform already made is kept, so the rebuilt machines exist. Retry configures them again, which is safe to repeat."}</p>
+            ) : removing ? (
               <p>{drainFailed
                 ? "Nothing was destroyed: the data is moved off the nodes first, and the nodes are ordinary members of the cluster again. Retry plans the removal again and needs a new approval."
                 : "Once the machines were destroyed they stay gone. If the apply failed, nothing is forgotten and Retry plans again; if a later step failed, Retry runs the rest."}</p>
@@ -267,6 +297,17 @@ export function OperationDetail({ id }: { id: string }) {
           <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
+      {op.state === "succeeded" && rebuilding && (
+        <EuiCallOut color="success" iconType="check" title="The rebuilt nodes joined the cluster">
+          <p>Terraform made their machines again, and ECM configured and started only those nodes. The cluster is not red; the
+            nodes' empty disks fill from the others, which can take a while.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && forgetting && (
+        <EuiCallOut color="success" iconType="check" title="The lost nodes are forgotten">
+          <p>ECM took them out of its record and brought the nodes that remain in line with it. Nothing was destroyed.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
       {op.state === "succeeded" && removing && (
         <EuiCallOut color="success" iconType="check" title="The nodes are removed">
           <p>Elasticsearch moved the data off them, Terraform destroyed their machines, and the cluster is green with the
@@ -274,7 +315,8 @@ export function OperationDetail({ id }: { id: string }) {
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && op.kind === "tf.update"
-        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "remove_nodes" && (
+        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "remove_nodes"
+        && op.change?.kind !== "rebuild_nodes" && op.change?.kind !== "forget_nodes" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
             every few minutes; press Sync now there to see them at once.{" "}
@@ -306,6 +348,9 @@ export function OperationDetail({ id }: { id: string }) {
           onConfirm={() => { setConfirming(false); act("approve", { digest: op.plan!.digest }); }}>
           {destroying
             ? <p>{terraformText(op.kind, summary)}. The machines and anything stored on them are gone for good.</p>
+            : forgetting
+            ? <p>Nothing is destroyed: the machines are already gone. ECM takes the nodes out of its record. This approves exactly
+              the plan with this digest.</p>
             : removing
             ? <p>Elasticsearch moves the data off the nodes first. Then {terraformText(op.kind, summary).toLowerCase()}, and
               their disks go with them for good. This approves exactly the plan with this digest.</p>

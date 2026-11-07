@@ -109,6 +109,53 @@ def check_removal_plan(summary: PlanSummary, removing: frozenset[str]) -> list[s
     return problems
 
 
+def check_rebuild_plan(summary: PlanSummary, rebuilding: frozenset[str]) -> list[str]:
+    """Why a plan to rebuild these nodes must not be applied. Empty means it creates exactly the machines asked for.
+
+    It may create the named nodes' resources and change (never delete or replace) anything else, and it must create every
+    named node. A plan that leaves one out means its machine still exists in Terraform's state, and the steps that follow
+    (they start the node and restart it on a configuration change) must never run against a live node."""
+    problems: list[str] = []
+    created: set[str] = set()
+    for c in summary.changes:
+        if c.action in (NOOP, READ):
+            continue
+        node = node_of(c.address)
+        if c.action == CREATE and node in rebuilding:
+            created.add(node)
+        elif c.action == UPDATE:
+            continue
+        else:
+            verb = {"replace": "would replace (destroy and recreate)", "delete": "would delete",
+                    "create": "would create"}.get(c.action, f"would {c.action}")
+            problems.append(f"rebuilding nodes must only create the machines asked for, but the plan {verb} {c.address}")
+    for name in sorted(rebuilding - created):
+        problems.append(f"the plan does not create a machine for {name}, so Terraform believes it exists; a node whose "
+                        "machine exists is restarted, not rebuilt")
+    return problems
+
+
+def check_forget_plan(summary: PlanSummary, forgetting: frozenset[str]) -> list[str]:
+    """Why a plan to forget these lost nodes must not be applied. Empty means it touches no machine at all.
+
+    A node is forgotten only because its machine is already gone, which Terraform's refresh shows by dropping it from the
+    state, so the plan has nothing to delete. A delete (of anything) means a machine still exists, and the way to take a
+    live machine out is to remove it, which moves its data first."""
+    problems: list[str] = []
+    for c in summary.changes:
+        if c.action in (NOOP, READ, UPDATE):
+            continue
+        node = node_of(c.address)
+        verb = {"replace": "would replace (destroy and recreate)", "delete": "would delete",
+                "create": "would create"}.get(c.action, f"would {c.action}")
+        if c.action == DELETE and node in forgetting:
+            problems.append(f"the plan {verb} {c.address}: the machine of {node} still exists, so use Remove nodes, "
+                            "which moves its data off first")
+        else:
+            problems.append(f"forgetting nodes must not touch any machine, but the plan {verb} {c.address}")
+    return problems
+
+
 def check_plan_safety(summary: PlanSummary, operation_kind: str) -> list[str]:
     """Why this plan must not be applied for this kind of operation. Empty means it is safe."""
     if operation_kind not in ALLOWED:
