@@ -41,7 +41,7 @@ details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.
 | Phase | Scope |
 |---|---|
 | Rest of 4 | A live pass over the unverified items above, per-node overrides and a custom topology in the wizard, a custom Proxmox CA for Terraform |
-| 5 Lifecycle | **Started:** growing data disks is built and has run on a real test cluster (100 to 150 GB). Not started: adding or removing a node, resizing CPU and RAM, recovery |
+| 5 Lifecycle | **Started:** growing data disks has run on a real test cluster (100 to 150 GB). A *Resize nodes* preview plans a new CPU and RAM size and lets Terraform apply it, but ECM does not restart the machines yet and it has not run on a real cluster. Not started: the rolling restart, adding or removing a node, recovery |
 | 6 Kibana | Optional Kibana at create time and later, with TLS and a Caddy example |
 | 7 Adoption | Bring a discovered cluster under management, only through a zero-diff import |
 | 8 Upgrades and hardening | Rolling upgrades (the upgrade-path rules exist, the procedure does not), drift detection, the full doc set |

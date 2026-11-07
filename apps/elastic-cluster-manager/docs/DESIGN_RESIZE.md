@@ -1,6 +1,6 @@
 # Resizing CPU and RAM: proposed design, revision 2 (Phase 5, slice 2)
 
-**Status: PROPOSED. Nothing described here is built.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
+**Status: PROPOSED. Only the probe (below) is built, tested with fakes and not yet run on infra; the restart machinery is not.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
 applies the changes, then an Ansible playbook does the rolling restart**, masters last, the cluster back to green between
 nodes, and shard allocation restricted while a node is down. It replaces revision 1, which had ECM applying Terraform one VM at
 a time. Items marked *to confirm* are assumptions that nothing has checked on this project's Proxmox, provider or cluster.

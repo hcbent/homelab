@@ -110,7 +110,7 @@ role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-
 
 ## 7. Lifecycle procedures (`es/`)
 
-**Status: PLANNED, with some pieces built.** Disk growth is built and has run on infra once (section 6); resize, adding and removing a node and recovery are not. What exists: the upgrade-path rules in
+**Status: PLANNED, with some pieces built.** Disk growth is built and has run on infra once (section 6); a resize preview that applies a new CPU and RAM size without restarting anything is built and not yet run on infra; the rolling restart, adding and removing a node and recovery are not. What exists: the upgrade-path rules in
 `desired/versions.py` (`check_upgrade`: refuses downgrades, same-version upgrades and skipped majors, and enforces the
 latest-minor rule), which no operation calls yet; and placement (below).
 
