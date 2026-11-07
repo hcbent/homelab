@@ -36,5 +36,7 @@ Per ARCHITECTURE §3.
 ## Phase 8 — Upgrades and hardening
 Rolling upgrades and restarts, drift detection and reconcile workflow, security review, integration test suite (gated by an explicit `DISPOSABLE_TARGET` env), full docs (README, DEVELOPMENT, DEPLOYMENT, CONFIGURATION, SECURITY, TROUBLESHOOTING).
 - **Accept:** unsupported upgrades and downgrades are refused. Drift appears in the UI and is never auto-corrected. Integration tests refuse to run unless the target is explicitly flagged disposable. Backup and restore are demonstrated.
+- **Possible enhancements** (raised during live use, not committed to, and not part of the acceptance criteria):
+  - **Timestamps on the operation log.** Ansible prints a line only when a host finishes a task, so a step that waits on one slow machine (for example "Wait until SSH answers" with a node still booting) shows no sign of life for minutes, and there is no way to tell how long it has been quiet. Show a time on each log line, and consider a line that says which hosts a task is still waiting for. Each stored log line already has its own insert time (`operation_logs.ts`, returned by the API), so part of this may be a display change; the time Ansible itself reports for each task is not captured today (raised 2026-11-06).
 
 Documentation and tests accompany every phase rather than waiting for phase 8.
