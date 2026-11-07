@@ -273,3 +273,10 @@ def test_an_unsafe_cpu_type_is_rejected(cpu_type):
 def test_the_cpu_type_never_enters_the_hcl_text():
     files = render_workspace(make(cpu_type="Skylake-Server"))
     assert all("Skylake-Server" not in text for path, text in files.items() if path.endswith(".tf"))
+
+
+def test_a_vm_is_never_restarted_by_terraform_as_a_side_effect_of_an_update():
+    """A restart is ECM's rolling restart, one node at a time. Terraform restarting VMs by itself, two at a time,
+    could take the master quorum down."""
+    from app.provisioning.hcl import MODULE_MAIN_TF
+    assert "reboot_after_update = false" in MODULE_MAIN_TF

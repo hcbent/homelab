@@ -7,6 +7,7 @@ import { api, ApiError, ClusterDetail, NodeRow } from "./api";
 import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
 import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
 import { GrowDisks } from "./GrowDisks";
+import { Resize } from "./Resize";
 import { ago, bytes, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
 import { useReveals } from "./reveal";
@@ -205,6 +206,7 @@ export function ClusterDetailView({ id }: { id: string }) {
         {tab === "Operations" && <ClusterOperations clusterId={c.id} />}
       </EuiPanel>
 
+      <Resize cluster={c} />
       <GrowDisks cluster={c} />
       <ClusterLifecycle cluster={c} />
     </section>

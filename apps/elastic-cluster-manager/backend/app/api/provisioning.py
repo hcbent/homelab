@@ -15,7 +15,7 @@ from app.desired import (
 )
 from app.models import Cluster, User
 from app.provisioning import create as plan_create
-from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+from app.provisioning.lifecycle import ExpandDisk, ResizeNodes, plan_expand_disk, plan_resize
 from app.provisioning.operation import OperationRefused, remove_cluster, start_update
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
@@ -86,16 +86,14 @@ def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
         raise HTTPException(409, str(e)) from e
 
 
-@router.post("/{cluster_id}/expand-disk", status_code=202)
-async def expand_disk(cluster_id: str, body: ExpandDisk, db: Session = Depends(get_db),
-                      user: User = Depends(auth.current_user)):
-    """Plan growing the data disk of some nodes (or all that have one), and the filesystem on it. This only makes a
-    plan; nothing changes until it is approved on its operation page. A disk is only ever grown."""
+async def _plan_change(db: Session, cluster_id: str, user: User, make_params) -> dict:
+    """Plan a change to a built cluster from its current state and enqueue the job. Nothing changes until the plan
+    is approved on its operation page."""
     cluster = db.get(Cluster, cluster_id)
     if cluster is None:
         raise HTTPException(404, "cluster not found")
     try:
-        params = plan_expand_disk(db, cluster, body)
+        params = make_params(db, cluster)
         op = start_update(db, cluster_id=cluster.id, params=params, actor=user.username)
     except (OperationRefused, operations.OperationConflict) as e:
         raise HTTPException(409, str(e)) from e
@@ -107,6 +105,23 @@ async def expand_disk(cluster_id: str, body: ExpandDisk, db: Session = Depends(g
         audit.record(db, user.username, "operation.enqueue_failed", "operation", op.id, trigger="update")
         raise HTTPException(503, "Could not enqueue job") from e
     return {"operation_id": op.id, "change": params["change"]}
+
+
+@router.post("/{cluster_id}/expand-disk", status_code=202)
+async def expand_disk(cluster_id: str, body: ExpandDisk, db: Session = Depends(get_db),
+                      user: User = Depends(auth.current_user)):
+    """Plan growing the data disk of some nodes (or all that have one), and the filesystem on it. This only makes a
+    plan; nothing changes until it is approved on its operation page. A disk is only ever grown."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_expand_disk(d, c, body))
+
+
+@router.post("/{cluster_id}/resize", status_code=202)
+async def resize(cluster_id: str, body: ResizeNodes, db: Session = Depends(get_db),
+                 user: User = Depends(auth.current_user)):
+    """Plan giving some nodes (or all) a new number of cores and/or amount of RAM. This only makes a plan; nothing
+    changes until it is approved on its operation page. Terraform changes the machines' configuration, but ECM does
+    not restart them yet, so the new size takes effect when each one is restarted."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_resize(d, c, body))
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

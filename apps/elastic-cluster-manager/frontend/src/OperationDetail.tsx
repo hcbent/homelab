@@ -188,7 +188,13 @@ export function OperationDetail({ id }: { id: string }) {
               ? <>ECM kept its record because something still blocks removing it: <EuiLink href={`#/clusters/${op.cluster_id}`}>open the cluster</EuiLink> to see what.</>
               : "ECM has removed its record of the cluster; this history stays."}</p></EuiCallOut>)}
 
-      {op.state === "succeeded" && op.kind === "tf.update" && (
+      {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "resize" && (
+        <EuiCallOut color="warning" iconType="check" title="The new size is set in Proxmox, and the machines have not restarted">
+          <p>Terraform changed the machines' configuration. The new size takes effect when each machine is restarted,
+            which ECM does not do for you yet.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind !== "resize" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
             every few minutes; press Sync now there to see them at once.{" "}

@@ -50,6 +50,8 @@ def get_operation(op_id: str, db: Session = Depends(get_db), _: User = Depends(a
             "approval": {"digest": o.approved_digest, "by": o.approved_by, "at": o.approved_at}
             if o.approved_digest else None,
             "result": o.result,
+            # What a change to a built cluster asked for (kind, nodes, a description); no secrets are in it.
+            "change": (o.params or {}).get("change"),
             "steps": [{"seq": s.seq, "name": s.name, "status": s.status, "detail": s.detail}
                       for s in steps],
             "logs": [{"ts": line.ts, "stream": line.stream, "line": line.line} for line in logs]}

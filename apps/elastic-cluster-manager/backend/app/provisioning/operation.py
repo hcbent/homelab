@@ -57,6 +57,9 @@ CREATE_PHASES = [*PHASES, "configure"]  # a real create also builds the cluster 
 DRY_RUN_PHASES = ["render", "init", "plan"]  # a dry run has no approval or apply step to run
 # The kind the plan safety rules and the stored plan use.
 UPDATE_PHASES = [*PHASES, "configure"]  # a change to a built cluster ends with a converge of its nodes
+# A resize applies the new size and stops. There is no converge yet because it would write a bigger heap before the
+# machine has restarted with the RAM for it, and the rolling restart that belongs after it is not built.
+RESIZE_PHASES = PHASES
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
@@ -163,7 +166,8 @@ def start_update(db: Session, *, cluster_id: str, params: dict, actor: str) -> O
     foreign = foreign_machines(db, params)
     if foreign:
         raise OperationRefused("a change only touches machines ECM created, and these are not: " + ", ".join(foreign))
-    op = create_operation(db, UPDATE, UPDATE_PHASES, cluster_id=cluster.id, params=params, actor=actor)
+    phases = RESIZE_PHASES if (params.get("change") or {}).get("kind") == "resize" else UPDATE_PHASES
+    op = create_operation(db, UPDATE, phases, cluster_id=cluster.id, params=params, actor=actor)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=UPDATE, change=params.get("change"))
     return op
 
@@ -258,6 +262,7 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     names = [n["name"] for n in ((target.params or {}).get("state") or {}).get("nodes", [])] if target else []
     recorded = ((cluster.desired or {}).get("state") or {}).get("nodes", []) if cluster.bootstrapped_at else []
     data_disks = {n["name"]: n["data_disk_gb"] for n in recorded if n.get("data_disk_gb")}
+    sizes = {n["name"]: {"cores": n["cores"], "ram_mb": n["ram_mb"]} for n in recorded}
     blocker = _removal_blocker(db, cluster)
     return {
         "managed": True,
@@ -267,6 +272,7 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "bootstrapped": cluster.bootstrapped_at is not None,
         # What the cluster is now and whether a change can be planned: each data node's disk, from the recorded state
         "data_disks": data_disks,
+        "sizes": sizes,
         "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered

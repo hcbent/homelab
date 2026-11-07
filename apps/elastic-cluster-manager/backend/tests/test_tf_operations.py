@@ -1128,6 +1128,7 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
     assert got == {"managed": True, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
                    "bootstrapped": True, "can_remove": False,
                    "data_disks": {n: 100 for n in NODES}, "can_change": True,
+                   "sizes": {n: {"cores": 4, "ram_mb": 8192} for n in NODES},
                    "remove_blocker": "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"}
 
 
@@ -1617,3 +1618,89 @@ def test_the_lifecycle_says_what_can_be_changed_and_why_not_while_an_operation_r
     run(session, world, update)
     got = lifecycle(session, cluster)
     assert got["can_change"] is True and set(got["data_disks"].values()) == {200}   # the new size, once applied
+
+
+# ---- resizing CPU and RAM ---------------------------------------------------------------------------------------
+
+def a_resize(session, world, cluster, **sizes):
+    from app.provisioning.lifecycle import ResizeNodes, plan_resize
+    from app.provisioning.operation import start_update
+    session.refresh(cluster)
+    params = plan_resize(session, cluster, ResizeNodes(**sizes))
+    world.create_changes = [(a, "update") for a in ADDRS]
+    return run(session, world, start_update(session, cluster_id=cluster.id, params=params, actor="admin"))
+
+
+def test_a_resize_applies_the_new_size_and_stops_without_a_converge_or_a_restart(session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = a_resize(session, world, cluster, cores=8, ram_mb=16384)
+    assert update.state == "pending_approval" and update.plan_summary["updates"] == 3
+    assert "ECM does not do for you yet" in update.plan_summary["configure"]
+    assert [name for name, _ in steps(session, update)] == ["render", "init", "plan", "approval", "apply"]
+
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    update = run(session, world, update)
+
+    assert update.state == "succeeded" and world.calls.count("apply") == 2
+    assert [r.kind for r in world.ansible_requests] == ["create"]            # no converge: nothing ran on a node
+    session.refresh(cluster)
+    assert {(n["cores"], n["ram_mb"]) for n in cluster.desired["state"]["nodes"]} == {(8, 16384)}
+    assert "change" not in cluster.desired
+
+
+def test_a_resize_whose_plan_would_replace_a_machine_is_rejected_and_changes_nothing(session, world, cluster, conn):
+    from app.provisioning.lifecycle import ResizeNodes, plan_resize
+    from app.provisioning.operation import start_update
+    reach_success(session, world, cluster, conn)
+    session.refresh(cluster)
+    params = plan_resize(session, cluster, ResizeNodes(cores=8))
+    world.create_changes = [(ADDRS[0], "replace")]                          # the provider rebuilds the VM instead
+    update = start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+    with pytest.raises(PlanRejected, match="must not touch existing resources.*replace"):
+        run(session, world, update)
+    assert world.calls.count("apply") == 1
+    session.refresh(cluster)
+    assert {n["cores"] for n in cluster.desired["state"]["nodes"]} == {4}
+
+
+def test_the_resize_endpoint_makes_a_plan_and_the_operation_shows_what_was_asked(
+        logged_in, session, world, cluster, conn):
+    from procrastinate import testing
+
+    from app import jobs
+    reach_success(session, world, cluster, conn)
+    with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
+        r = logged_in.post(f"/api/clusters/{cluster.id}/resize", json={"cores": 8, "nodes": ["lab-b-01"]}, headers=H)
+        assert r.status_code == 202 and len(q.connector.jobs) == 1
+    detail = logged_in.get(f"/api/operations/{r.json()['operation_id']}").json()
+    assert detail["kind"] == "tf.update" and detail["change"]["kind"] == "resize"
+    assert detail["change"]["nodes"] == {"lab-b-01": {"cores": {"from": 4, "to": 8}}}
+    session.refresh(cluster)
+    assert {n["cores"] for n in cluster.desired["state"]["nodes"]} == {4}   # nothing changes before approval
+
+
+@pytest.mark.parametrize("body,status,text", [
+    ({"cores": 4}, 409, "already has 4 cores"),
+    ({"cores": 8, "nodes": ["nope"]}, 409, "no node named nope"),
+    ({}, 422, None),
+    ({"cores": 0}, 422, None),
+    ({"cores": 8, "extra": 1}, 422, None),
+])
+def test_the_resize_endpoint_refuses_a_bad_request_with_the_reason(
+        logged_in, session, world, cluster, conn, body, status, text):
+    reach_success(session, world, cluster, conn)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/resize", json=body, headers=H)
+    assert r.status_code == status
+    if text:
+        assert text in r.json()["detail"]
+    assert session.scalars(select(Operation).where(Operation.kind == "tf.update")).all() == []
+
+
+def test_the_resize_endpoint_needs_a_login_the_csrf_header_and_a_known_cluster(
+        logged_in, client, session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    path = f"/api/clusters/{cluster.id}/resize"
+    assert logged_in.post("/api/clusters/nope/resize", json={"cores": 8}, headers=H).status_code == 404
+    assert logged_in.post(path, json={"cores": 8}).status_code in (400, 403)
+    client.cookies.clear()
+    assert client.post(path, json={"cores": 8}, headers=H).status_code == 401

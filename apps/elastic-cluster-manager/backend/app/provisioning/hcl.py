@@ -248,6 +248,10 @@ MODULE_MAIN_TF = '''resource "proxmox_virtual_environment_vm" "this" {
   tags      = sort(["ecm", var.cluster_name])
   on_boot   = true
   started   = true
+  # Never restart a VM as a side effect of an update. A change that needs a restart (a new CPU or memory size) is
+  # applied by ECM's own rolling restart, one node at a time, so Terraform must not take two nodes down at once.
+  # If the provider cannot apply a change without taking the VM offline it fails instead (docs, v0.119.0).
+  reboot_after_update = false
 
   clone {
     vm_id        = var.template.vm_id

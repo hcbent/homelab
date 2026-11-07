@@ -7,12 +7,12 @@ Elasticsearch: the parameters go to `start_update`, which plans them and waits f
 import copy
 from collections import defaultdict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.desired.models import DesiredState
-from app.models import Cluster, PveStorage
+from app.models import Cluster, PveNode, PveStorage
 from app.provisioning.operation import OperationRefused
 
 GIB = 1024 ** 3
@@ -104,5 +104,105 @@ def plan_expand_disk(db: Session, cluster: Cluster, request: ExpandDisk) -> dict
         "nodes": {name: {"from_gb": before[name], "to_gb": request.data_disk_gb} for name in sorted(growth)},
         "describe": (f"grow the data disk of {names} to {request.data_disk_gb} GB and the filesystem on it; "
                      "nothing restarts"),
+    }
+    return params
+
+
+MIB = 1024 ** 2
+
+
+class ResizeNodes(BaseModel):
+    """Give some nodes, or every node, a new number of cores and/or amount of RAM."""
+
+    model_config = ConfigDict(extra="forbid")
+    cores: int | None = Field(default=None, ge=1, le=64)
+    ram_mb: int | None = Field(default=None, ge=2048, le=524288)
+    nodes: list[str] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _something_changes(self) -> "ResizeNodes":
+        if self.cores is None and self.ram_mb is None:
+            raise ValueError("give a number of cores, an amount of RAM, or both")
+        return self
+
+
+def _memory_room(db: Session, params: dict, growth_mb: dict[str, int]) -> list[str]:
+    """Problems with a host not having the memory a RAM increase needs, from the last sync. Hosts ECM has not
+    seen, or whose usage it does not know, are not counted against the change."""
+    placement = params.get("placement", {})
+    per_host: dict[str, int] = defaultdict(int)
+    for name, mb in growth_mb.items():
+        per_host[placement.get(name, "")] += mb
+    problems = []
+    for host, need_mb in sorted(per_host.items()):
+        row = db.scalars(select(PveNode).where(PveNode.name == host)).first()
+        usage = (row.usage or {}) if row else {}
+        total, used = usage.get("maxmem"), usage.get("mem")
+        if total is None or used is None:
+            continue
+        free_mb = (int(total) - int(used)) // MIB
+        if need_mb > free_mb:
+            problems.append(f"{host} has {free_mb} MiB of memory free and this needs {need_mb} MiB more there")
+    return problems
+
+
+def plan_resize(db: Session, cluster: Cluster, request: ResizeNodes) -> dict:
+    """The parameters with the chosen nodes resized. Refuses a single-node cluster (it would be down while its VM
+    restarts), a node the cluster does not have, a node already at that size, a pinned heap that would be more than
+    half of the new RAM, and a host without the memory for an increase."""
+    params = current_desired(cluster)
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster: it would be down while its machine restarts, and "
+                               "there is no replica to carry it, so ECM does not resize it")
+    nodes = {n.name: n for n in state.nodes}
+    chosen = request.nodes if request.nodes is not None else [n.name for n in state.nodes]
+    unknown = sorted(set(chosen) - set(nodes))
+    if unknown:
+        raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
+    problems: list[str] = []
+    changes: dict[str, dict] = {}
+    growth: dict[str, int] = {}
+    for name in chosen:
+        node = nodes[name]
+        cores = request.cores if request.cores is not None else node.cores
+        ram = request.ram_mb if request.ram_mb is not None else node.ram_mb
+        if (cores, ram) == (node.cores, node.ram_mb):
+            problems.append(f"{name} already has {node.cores} cores and {node.ram_mb} MiB of RAM")
+            continue
+        if node.heap_mb is not None and node.heap_mb > ram // 2:
+            problems.append(f"{name}'s heap is pinned at {node.heap_mb} MiB, which is more than half of {ram} MiB "
+                            "of RAM; unpin or lower it first")
+            continue
+        entry: dict = {}
+        if cores != node.cores:
+            entry["cores"] = {"from": node.cores, "to": cores}
+        if ram != node.ram_mb:
+            entry["ram_mb"] = {"from": node.ram_mb, "to": ram}
+            if ram > node.ram_mb:
+                growth[name] = ram - node.ram_mb
+        changes[name] = entry
+    if problems:
+        raise OperationRefused("; ".join(problems))
+    problems = _memory_room(db, params, growth)
+    if problems:
+        raise OperationRefused("; ".join(problems))
+
+    for entry in params["state"]["nodes"]:
+        if entry["name"] in changes:
+            entry["cores"] = request.cores if request.cores is not None else entry["cores"]
+            entry["ram_mb"] = request.ram_mb if request.ram_mb is not None else entry["ram_mb"]
+    DesiredState.model_validate(params["state"])  # the resized state must still be a valid cluster
+    parts = []
+    if request.cores is not None:
+        parts.append(f"{request.cores} cores")
+    if request.ram_mb is not None:
+        parts.append(f"{request.ram_mb} MiB of RAM")
+    params["change"] = {
+        "kind": "resize",
+        "nodes": {name: changes[name] for name in sorted(changes)},
+        "describe": (f"give {', '.join(sorted(changes))} {' and '.join(parts)}. Terraform changes the machines' "
+                     "configuration; the new size takes effect when each machine restarts, which ECM does not "
+                     "do for you yet"),
     }
     return params

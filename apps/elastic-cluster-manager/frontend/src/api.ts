@@ -48,6 +48,8 @@ export interface OperationDetail extends Operation {
   approval: { digest: string; by: string; at: string } | null;
   result: Record<string, unknown> | null;
   steps: OperationStep[]; logs: OperationLogLine[];
+  /** What a change to a built cluster asked for, with a plain description. */
+  change?: { kind: string; describe?: string; nodes?: Record<string, unknown> } | null;
 }
 
 export type Preset = "single_node" | "three_node" | "dedicated_masters";
@@ -88,6 +90,8 @@ export interface Lifecycle {
   bootstrapped?: boolean; can_remove?: boolean; remove_blocker?: string | null;
   /** Each data node's disk in GB, from the recorded state, and whether a change can be planned now. */
   data_disks?: Record<string, number>; can_change?: boolean;
+  /** Each node's cores and RAM (MB), from the recorded state. */
+  sizes?: Record<string, { cores: number; ram_mb: number }>;
 }
 
 export interface ClusterDetail extends ClusterSummary {
