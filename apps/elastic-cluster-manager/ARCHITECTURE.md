@@ -80,7 +80,7 @@ Adoption is a wizard with a mandatory dry-run:
 - One workspace directory per cluster: `/data/clusters/<cluster_id>/tf/` (**LIVE**). Config is generated from the desired state stored on the operation, so users never edit `.tf` files.
 - Backend: **Terraform `pg` backend**, one schema per cluster (`schema_name = tf_<cluster_id>`), which gives native locking with no shared state file (**LIVE**). By default the schemas live in ECM's own database; `ECM_TF_STATE_URL` points them at a separate one. A dry run on a cluster made only for it plans on local state instead and leaves no schema (**BUILT**). The nightly `pg_dump` as the backup is not set up by ECM.
 - Defence in depth: after every apply or import, the worker also stores an encrypted state snapshot row (`tf_state_snapshots`). **PLANNED**; no such table exists.
-- Operation types are distinct job kinds. **BUILT:** `tf.create` and `tf.destroy`. **PLANNED:** `tf.update`, `tf.import`. Each runs `render, init, plan`, stores the plan file and a JSON summary, waits for approval of that plan's digest, then applies that exact saved plan (a create then runs a `configure` step with Ansible). A dry run stops after the plan and cannot be approved.
+- Operation types are distinct job kinds. **BUILT:** `tf.create`, `tf.destroy` and `tf.update` (a change to a built cluster: it may create or change resources, never delete or replace them, and it ends with an Ansible converge; the only change built so far is growing data disks, not yet run on infra). **PLANNED:** `tf.import`. Each runs `render, init, plan`, stores the plan file and a JSON summary, waits for approval of that plan's digest, then applies that exact saved plan (a create then runs a `configure` step with Ansible). A dry run stops after the plan and cannot be approved.
 - `-lock-timeout` is set on plan and apply (**BUILT**). A force-unlock action in the UI is **PLANNED**.
 - A failed apply never triggers automatic destroy. Partial state is retained, the logs and the plan are stored, and the operation page offers Retry, which re-plans and needs a new approval (**BUILT**; a retry after a failed *configure* has run live and finished a green cluster, while a retry after a failed *apply* has only run against fakes).
 
@@ -104,13 +104,13 @@ role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-
 - `node.roles` is **omitted** when the node's role mode is `default`. It is `[]` for coordinating-only, and it is an explicit list only in `custom` mode.
 - `cluster.initial_master_nodes` is rendered only when the job is `create` and the cluster has no `bootstrapped_at` timestamp. It is stripped on later runs. After first successful health check the app sets `bootstrapped_at`.
 - TLS: a cluster CA is generated once with `elasticsearch-certutil`. The CA lives in encrypted storage and is distributed to nodes. Joins use the verified CA, not enrollment tokens, and `validate_certs` is never disabled.
-- Data disk: the device is addressed by its `/dev/disk/by-id` path (not `/dev/sdb`), formatted only if it has no filesystem, and mounted by UUID (**BUILT**). Expansion with `growpart` and `resize2fs`/`xfs_growfs` after Terraform enlarges the disk, and refusing a shrink, are **PLANNED** (Phase 5); neither exists yet.
+- Data disk: the device is addressed by its `/dev/disk/by-id` path (not `/dev/sdb`), formatted only if it has no filesystem, and mounted by UUID (**BUILT**). After Terraform enlarges the disk, the role grows the partition (`growpart`) and the filesystem (`resize2fs` or `xfs_growfs`) of a disk it already recognises, and the API refuses a shrink (**BUILT**, tested only with fakes and a syntax check; the Ansible steps have not run on a host).
 - Version-aware install pins the apt package to the exact version. Settings that differ per major version live in version-keyed templates.
 - A cluster is reported successful only when health checks pass (expected node count joined, status green, or yellow for single-node dev) (**LIVE**). It can read yellow for a short while after a create and settle to green by itself, as `lab-d` did.
 
 ## 7. Lifecycle procedures (`es/`)
 
-**Status: PLANNED, with two pieces built.** No lifecycle procedure exists yet. What exists: the upgrade-path rules in
+**Status: PLANNED, with some pieces built.** Disk growth is built (section 6; not yet run on infra); resize, adding and removing a node and recovery are not. What exists: the upgrade-path rules in
 `desired/versions.py` (`check_upgrade`: refuses downgrades, same-version upgrades and skipped majors, and enforces the
 latest-minor rule), which no operation calls yet; and placement (below).
 

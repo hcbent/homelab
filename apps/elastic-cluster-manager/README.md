@@ -40,7 +40,7 @@ details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.
 | Phase | Scope |
 |---|---|
 | Rest of 4 | A live pass over the unverified items above, per-node overrides and a custom topology in the wizard, a custom Proxmox CA for Terraform |
-| 5 Lifecycle | Add or remove a node, resize, disk expansion, recovery. Disk expansion does not exist yet |
+| 5 Lifecycle | **Started:** growing data disks is built and tested with fakes, and has not run on a real cluster. Not started: adding or removing a node, resizing CPU and RAM, recovery |
 | 6 Kibana | Optional Kibana at create time and later, with TLS and a Caddy example |
 | 7 Adoption | Bring a discovered cluster under management, only through a zero-diff import |
 | 8 Upgrades and hardening | Rolling upgrades (the upgrade-path rules exist, the procedure does not), drift detection, the full doc set |
@@ -56,7 +56,9 @@ See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for each phase's 
    and opens its operation page.
 3. On the operation page, check the plan and its digest, then **Approve and build**. The steps, the plan and the
    redacted log update as it runs. A failed build keeps its machines and can be retried.
-4. On a managed cluster's page, **Tear down cluster** plans a destroy of the machines ECM made (you type the cluster
+4. On a managed cluster's page, **Grow data disks** plans a larger data disk for some or all data nodes (a disk can only
+   be grown, never shrunk); you approve the plan on its operation page, and ECM grows the disk, the partition and the
+   filesystem without a restart. **Tear down cluster** plans a destroy of the machines ECM made (you type the cluster
    name, then approve the plan). When it finishes, ECM removes its record of the cluster and keeps the history.
 5. `scripts/ecm_cli.py --help` does the same from a terminal: `ops`, `create`, `show`, `watch`, `approve`,
    `retry`, `cleanup` and `remove`. It asks for the admin password and never prints it.
