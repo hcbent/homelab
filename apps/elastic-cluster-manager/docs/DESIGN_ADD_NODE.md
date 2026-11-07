@@ -1,6 +1,6 @@
 # Adding a node: proposed design (Phase 5, slice 3)
 
-**Status: BUILT on 2026-11-07 with the operator's changes below, and tested offline; it has not been run on a real cluster.** It was written for the operator to review first, because
+**Status: BUILT on 2026-11-07 with the operator's changes below, and tested offline; the operator reports it has run on a real test cluster (see the end of this document).** It was written for the operator to review first, because
 adding a node changes a live cluster's membership. Items marked *to confirm* have not been checked against this project's
 Proxmox, provider or Elasticsearch.
 
@@ -118,3 +118,12 @@ green, not that shards finished rebalancing; (4) **several nodes of one kind can
   certificate, the first start) reuse roles a create exercises but have not run for a node joining a live cluster; that Elasticsearch adds
   a new master-eligible node to the voting configuration by itself; that `GET _cluster/health` and `_nodes/os` give what the join check reads
   (the check stops with a message if not); and the clone and boot of the new VM while the cluster is busy.
+
+## First live results (2026-11-07, the operator's reports)
+
+- **Two nodes with roles `ml` and `remote_cluster_client`** were added to the three-node `test` cluster and the operator reported the job
+  completed.
+- **One more master-eligible node was refused**, as the quorum rule says it must be with three masters on three hosts.
+- **Two master-eligible nodes added together worked, and the cluster is green again**, which is the first time a node has joined a live
+  cluster's voting configuration through ECM. No log, response or cluster state was shown for it, so that Elasticsearch added them to the
+  voting configuration by itself is **still not directly seen**: the only evidence is that the operation succeeded and health is green.
