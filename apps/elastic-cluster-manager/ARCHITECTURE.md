@@ -98,7 +98,7 @@ Adoption is a wizard with a mandatory dry-run:
 
 **Status: LIVE for create.** Clean-room roles, idempotent, with no action dispatcher. **Built:** `os_base`, `data_disk`, `es_package`, `es_tls`,
 `es_node` and `es_bootstrap`, with the playbooks `create.yml` and `converge.yml` (`infra/ansible/README.md`). **PLANNED:** the `kibana`
-role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-d` clusters and a seven-node `lab-d` (three masters, three data nodes, one coordinating node). It does not yet survive a node's SSH dropping while cloud-init is still running; a retry finishes the job.
+role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-d` clusters and a seven-node `lab-d` (three masters, three data nodes, one coordinating node). A node whose SSH drops while cloud-init is still running is waited for and asked again (`wait_for_first_boot.yml`; tested offline with real Ansible against a stand-in for ssh, not yet run live); until that ran live, a retry finished the job.
 
 - Inventory is generated from the DB into a temp directory (mode 0700) for each run, and deleted afterwards.
 - `node.roles` is **omitted** when the node's role mode is `default`. It is `[]` for coordinating-only, and it is an explicit list only in `custom` mode.
