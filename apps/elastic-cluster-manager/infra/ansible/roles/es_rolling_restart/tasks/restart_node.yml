@@ -1,0 +1,157 @@
+---
+# Restart one node's VM, with the cluster held steady around it. es_rr_name is the node.
+- name: Look up this node
+  ansible.builtin.set_fact:
+    es_rr_node: "{{ hostvars[es_rr_name] }}"
+    es_rr_allocation_changed: false
+
+- name: Restart {{ es_rr_name }}
+  block:
+    - name: Wait for green with every node present, before restarting {{ es_rr_name }}
+      ansible.builtin.include_tasks: gate.yml
+      vars:
+        es_rr_status: green
+        es_rr_what: "before restarting {{ es_rr_name }}"
+
+    - name: Restrict shard allocation to primaries, so no replica is rebuilt elsewhere while the node is down
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_cluster/settings"
+        method: PUT
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        body_format: json
+        body:
+          persistent:
+            cluster.routing.allocation.enable: primaries
+      no_log: true
+
+    - name: Remember that allocation is restricted
+      ansible.builtin.set_fact:
+        es_rr_allocation_changed: true
+
+    - name: Flush, so the node recovers quickly (not essential)
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_flush"
+        method: POST
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+      failed_when: false
+      no_log: true
+
+    - name: Ask Proxmox to restart {{ es_rr_name }}'s VM, which applies its new size
+      ansible.builtin.uri:
+        url: "{{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/reboot"
+        method: POST
+        headers:
+          Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
+        validate_certs: "{{ pve_verify_tls | bool }}"
+        ca_path: "{{ pve_ca_file | default(omit) }}"
+        return_content: true
+      register: es_rr_reboot
+      no_log: true
+
+    - name: Wait for Proxmox to finish restarting it
+      ansible.builtin.uri:
+        url: >-
+          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/tasks/{{ es_rr_reboot.json.data | urlencode }}/status
+        headers:
+          Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
+        validate_certs: "{{ pve_verify_tls | bool }}"
+        ca_path: "{{ pve_ca_file | default(omit) }}"
+        return_content: true
+      register: es_rr_task
+      until: es_rr_task.json.data.status | default('') == 'stopped'
+      retries: "{{ (es_rr_pve_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
+      delay: "{{ es_rr_poll }}"
+      no_log: true
+
+    - name: Stop if Proxmox reports the restart failed
+      ansible.builtin.fail:
+        msg: "Proxmox reports the restart of {{ es_rr_name }} ended with: {{ es_rr_task.json.data.exitstatus | default('no status') }}"
+      when: es_rr_task.json.data.exitstatus | default('') != 'OK'
+
+    - name: Wait for {{ es_rr_name }} to rejoin the cluster at its new size
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_nodes/os"
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        return_content: true
+        status_code: [200, 503]
+      register: es_rr_back
+      until: >-
+        es_rr_back.status == 200 and
+        (es_rr_back.json.nodes.values() | selectattr('name', 'equalto', es_rr_name) | list | length) == 1 and
+        ((es_rr_back.json.nodes.values() | selectattr('name', 'equalto', es_rr_name) | first).os.available_processors | int
+         == es_rr_node.es_desired_cores | int)
+      retries: "{{ (es_rr_rejoin_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
+      delay: "{{ es_rr_poll }}"
+      no_log: true
+
+    - name: Wait for every primary to be active again (yellow or better) with every node present
+      ansible.builtin.include_tasks: gate.yml
+      vars:
+        es_rr_status: yellow
+        es_rr_what: "after {{ es_rr_name }} rejoined"
+
+    - name: Allow shard allocation again
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_cluster/settings"
+        method: PUT
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        body_format: json
+        body:
+          persistent:
+            cluster.routing.allocation.enable: null
+      no_log: true
+
+    - name: Remember that allocation is allowed again
+      ansible.builtin.set_fact:
+        es_rr_allocation_changed: false
+
+    - name: Wait for green before the next node
+      ansible.builtin.include_tasks: gate.yml
+      vars:
+        es_rr_status: green
+        es_rr_what: "after {{ es_rr_name }} was restarted"
+
+  rescue:
+    - name: Look for every node, to know whether it is safe to allow allocation again
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask | default(es_rr_nodes[0].ansible_host) }}:{{ es_rr_http_port }}/_cluster/health"
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        return_content: true
+      register: es_rr_after
+      failed_when: false
+      no_log: true
+      when: es_rr_allocation_changed | bool
+
+    - name: Allow shard allocation again if every node is present
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_cluster/settings"
+        method: PUT
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        body_format: json
+        body:
+          persistent:
+            cluster.routing.allocation.enable: null
+      register: es_rr_restored
+      failed_when: false
+      no_log: true
+      when:
+        - es_rr_allocation_changed | bool
+        - es_rr_after.json.number_of_nodes | default(0) | int == es_expected_nodes | int
+
+    - name: Stop, and say what state the cluster is in
+      ansible.builtin.fail:
+        msg: >-
+          The rolling restart stopped at {{ es_rr_name }}: {{ ansible_failed_result.msg | default('a step failed') }}.
+          {% if es_rr_allocation_changed | bool and es_rr_restored is defined and es_rr_restored.skipped | default(false) %}
+          Shard allocation is still restricted to primaries, because not every node is present; once the node is back,
+          allow it again with PUT _cluster/settings {"persistent": {"cluster.routing.allocation.enable": null}}.
+          {% elif es_rr_allocation_changed | bool %}
+          Shard allocation was allowed again.
+          {% endif %}
+          Nodes restarted before this one stay restarted. Retry resumes at the first node not yet at its target size.

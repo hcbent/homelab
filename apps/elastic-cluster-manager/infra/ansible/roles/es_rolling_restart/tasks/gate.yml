@@ -1,0 +1,35 @@
+---
+# Wait until the cluster has this status (or better) with every node present. Asks a node other than es_rr_name
+# when one is being restarted, so the answer does not depend on the node that is down.
+- name: Pick a node to ask
+  ansible.builtin.set_fact:
+    es_rr_ask: >-
+      {{ (es_rr_nodes | rejectattr('es_node_name', 'equalto', es_rr_name | default('')) | list)[0].ansible_host }}
+
+- name: Wait for the cluster to be {{ es_rr_status }} with every node present, {{ es_rr_what }}
+  ansible.builtin.uri:
+    url: >-
+      {{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_cluster/health?wait_for_status={{ es_rr_status }}&timeout=5s
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 408]
+    return_content: true
+  register: es_rr_health
+  until: >-
+    es_rr_health.status == 200 and not (es_rr_health.json.timed_out | default(false))
+    and es_rr_health.json.number_of_nodes | int == es_expected_nodes | int
+  retries: "{{ (es_rr_health_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
+  delay: "{{ es_rr_poll }}"
+  no_log: true
+  ignore_errors: true
+
+- name: Stop if the cluster did not get there
+  ansible.builtin.fail:
+    msg: >-
+      The cluster was not {{ es_rr_status }} with all {{ es_expected_nodes }} nodes present {{ es_rr_what }}
+      (last seen: {{ es_rr_health.json.status | default('no answer') }},
+      {{ es_rr_health.json.number_of_nodes | default('unknown') }} nodes).
+  when: >-
+    es_rr_health is failed or es_rr_health.status | default(0) != 200
+    or es_rr_health.json.timed_out | default(true)
+    or es_rr_health.json.number_of_nodes | int != es_expected_nodes | int

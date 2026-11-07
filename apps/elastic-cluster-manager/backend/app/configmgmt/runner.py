@@ -33,7 +33,8 @@ from app.crypto import redact, register_secret
 from app.desired.models import DesiredState
 
 MIN_PASSWORD_LENGTH = 20  # the same floor the es_node role enforces
-PLAYBOOKS = {"create": "playbooks/create.yml", "converge": "playbooks/converge.yml"}
+PLAYBOOKS = {"create": "playbooks/create.yml", "converge": "playbooks/converge.yml",
+             "restart": "playbooks/rolling_restart.yml"}
 _RECAP = re.compile(r"^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)")
 _NEEDLES = ("fatal:", "[ERROR]", "FAILED!")
 
@@ -53,6 +54,17 @@ class AnsibleRequest:
     elastic_password: str | None = field(default=None, repr=False)  # a create needs it; it is used once
     ca_cert_pem: str | None = None  # reuse the cluster's CA when nodes need certificates
     ca_key_pem: str | None = field(default=None, repr=False)
+    # A rolling restart only. It asks Elasticsearch about its health (with the ECM API key and the cluster's CA) and
+    # asks Proxmox to restart each VM (with the Terraform token), so it needs where each VM is and both credentials.
+    vm_ids: dict[str, int] | None = None
+    placement: dict[str, str] | None = None
+    es_api_key: str | None = field(default=None, repr=False)  # the encoded API key
+    es_ca_pem: str | None = None  # the cluster's CA certificate (public)
+    pve_api_url: str | None = None
+    pve_token_id: str | None = None
+    pve_token_secret: str | None = field(default=None, repr=False)
+    pve_ca_pem: str | None = None  # a custom Proxmox CA, when the connection has one
+    pve_verify_tls: bool = True
 
 
 @dataclass
@@ -144,7 +156,7 @@ class CliAnsibleRunner:
 
     def run(self, request: AnsibleRequest) -> AnsibleOutcome:
         self._check_request(request)
-        for secret in (request.elastic_password, request.ca_key_pem):
+        for secret in (request.elastic_password, request.ca_key_pem, request.es_api_key, request.pve_token_secret):
             if secret:
                 register_secret(secret)
         _register_pem(request.ca_key_pem)
@@ -163,12 +175,14 @@ class CliAnsibleRunner:
                     state=request.state, addresses=request.addresses, operation_kind=request.kind,
                     bootstrapped_at=request.bootstrapped_at, ssh_user=self.ssh_user,
                     ssh_key_path=self.ssh_key_path, known_hosts_path=str(run_dir / "known_hosts"),
-                    search_domain=request.search_domain, artifacts_dir=str(artifacts))))
+                    search_domain=request.search_domain, artifacts_dir=str(artifacts),
+                    vm_ids=request.vm_ids, placement=request.placement)))
             except InventoryError as exc:
                 raise AnsibleError(str(exc)) from exc
 
             args = [self.binary, "-i", str(inventory)]
             secrets = self._secret_vars(request)
+            secrets.update(self._restart_vars(request, run_dir))
             if secrets:
                 extra = run_dir / "extra-vars.json"
                 _write_private(extra, json.dumps(secrets))
@@ -205,6 +219,18 @@ class CliAnsibleRunner:
                                    "characters")
         if bool(request.ca_cert_pem) != bool(request.ca_key_pem):
             raise AnsibleError("pass the cluster CA certificate and key together, or neither")
+        if request.kind == "restart":
+            if request.check:
+                raise AnsibleError("a rolling restart cannot be checked: check mode cannot simulate it")
+            missing = [name for name, value in (
+                ("the ECM API key", request.es_api_key), ("the cluster's CA certificate", request.es_ca_pem),
+                ("the Proxmox API address", request.pve_api_url), ("the Proxmox token id", request.pve_token_id),
+                ("the Proxmox token secret", request.pve_token_secret), ("each node's VMID", request.vm_ids),
+                ("each node's Proxmox host", request.placement)) if not value]
+            if missing:
+                raise AnsibleError("a rolling restart needs " + ", ".join(missing))
+            if not str(request.pve_api_url).startswith("https://"):
+                raise AnsibleError("the Proxmox API address must start with https://")
 
     @staticmethod
     def _secret_vars(request: AnsibleRequest) -> dict[str, str]:
@@ -214,6 +240,26 @@ class CliAnsibleRunner:
         if request.ca_cert_pem and request.ca_key_pem:
             out["es_ca_cert_pem"] = request.ca_cert_pem
             out["es_ca_key_pem"] = request.ca_key_pem
+        return out
+
+    @staticmethod
+    def _restart_vars(request: AnsibleRequest, run_dir: Path) -> dict[str, str | bool]:
+        """What a rolling restart needs beyond the inventory: the two credentials, and the CA files it checks them
+        against. The certificates are public and go in files in the private run directory; the credentials go in
+        the extra-vars file with the other secrets."""
+        if request.kind != "restart":
+            return {}
+        es_ca = run_dir / "es-ca.crt"
+        _write_private(es_ca, request.es_ca_pem or "")
+        out: dict[str, str | bool] = {
+            "es_api_key": request.es_api_key or "", "es_ca_file": str(es_ca),
+            "pve_api_url": (request.pve_api_url or "").rstrip("/"), "pve_token_id": request.pve_token_id or "",
+            "pve_token_secret": request.pve_token_secret or "", "pve_verify_tls": request.pve_verify_tls,
+        }
+        if request.pve_ca_pem:
+            pve_ca = run_dir / "pve-ca.crt"
+            _write_private(pve_ca, request.pve_ca_pem)
+            out["pve_ca_file"] = str(pve_ca)
         return out
 
     def _env(self, run_dir: Path) -> dict[str, str]:

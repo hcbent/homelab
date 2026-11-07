@@ -49,7 +49,9 @@ ADDRS = [f'module.node["{n}"].proxmox_virtual_environment_vm.node' for n in NODE
 
 
 # What the token Terraform uses may do on the fake Proxmox, in the shape /access/permissions reports it.
-GOOD_PERMS = {"/pool/ecm": {"VM.Allocate": 1, "VM.Audit": 1}, "/storage/tank": {"Datastore.AllocateSpace": 1},
+GOOD_PERMS = {"/pool/ecm": {"VM.Allocate": 1, "VM.Audit": 1, "VM.Config.CPU": 1, "VM.Config.Memory": 1,
+                            "VM.PowerMgmt": 1},
+              "/storage/tank": {"Datastore.AllocateSpace": 1},
               "/vms/8000": {"VM.Clone": 1}}
 
 
@@ -91,6 +93,7 @@ class World:
     # What the fake Ansible does: the outcome it returns (or the error it raises), and the requests it was given.
     ansible_outcome: AnsibleOutcome = field(default_factory=good_ansible_outcome)
     ansible_error: str | None = None
+    restart_error: str | None = None                      # only the rolling restart fails
     ansible_requests: list = field(default_factory=list)
 
     def factory(self, line_log):
@@ -109,6 +112,8 @@ class FakeAnsible:
         self.log("PLAY RECAP *****")
         if self.w.ansible_error:
             raise AnsibleError(self.w.ansible_error)
+        if request.kind == "restart" and self.w.restart_error:
+            raise AnsibleError(self.w.restart_error)
         return self.w.ansible_outcome
 
 
@@ -1631,21 +1636,29 @@ def a_resize(session, world, cluster, **sizes):
     return run(session, world, start_update(session, cluster_id=cluster.id, params=params, actor="admin"))
 
 
-def test_a_resize_applies_the_new_size_and_stops_without_a_converge_or_a_restart(session, world, cluster, conn):
+def test_a_resize_applies_the_new_size_then_converges_then_restarts_the_nodes(session, world, cluster, conn):
     reach_success(session, world, cluster, conn)
     update = a_resize(session, world, cluster, cores=8, ram_mb=16384)
     assert update.state == "pending_approval" and update.plan_summary["updates"] == 3
-    assert "ECM does not do for you yet" in update.plan_summary["configure"]
-    assert [name for name, _ in steps(session, update)] == ["render", "init", "plan", "approval", "apply"]
+    assert "then ECM restarts the nodes one at a time" in update.plan_summary["configure"]
+    assert [name for name, _ in steps(session, update)] == [
+        "render", "init", "plan", "approval", "apply", "configure", "restart"]
 
     operations.approve_operation(session, update.id, update.plan_digest, "admin")
     update = run(session, world, update)
 
     assert update.state == "succeeded" and world.calls.count("apply") == 2
-    assert [r.kind for r in world.ansible_requests] == ["create"]            # no converge: nothing ran on a node
+    assert [r.kind for r in world.ansible_requests] == ["create", "converge", "restart"]
+    converge, restart = world.ansible_requests[1:]
+    assert {(n.cores, n.ram_mb) for n in converge.state.nodes} == {(8, 16384)}   # the converge writes the new heap
+    assert restart.kind == "restart" and restart.check is False and restart.elastic_password is None
+    assert restart.vm_ids == update.params["vm_ids"] and restart.placement == update.params["placement"]
+    assert restart.es_api_key == API_KEY and restart.es_ca_pem == CA_CERT        # ECM's own key and the cluster's CA
+    assert restart.pve_api_url == conn.api_url and restart.pve_token_secret == SECRET
     session.refresh(cluster)
     assert {(n["cores"], n["ram_mb"]) for n in cluster.desired["state"]["nodes"]} == {(8, 16384)}
     assert "change" not in cluster.desired
+    assert "every node runs at its new size" in logs(session, update)
 
 
 def test_a_resize_whose_plan_would_replace_a_machine_is_rejected_and_changes_nothing(session, world, cluster, conn):
@@ -1704,3 +1717,55 @@ def test_the_resize_endpoint_needs_a_login_the_csrf_header_and_a_known_cluster(
     assert logged_in.post(path, json={"cores": 8}).status_code in (400, 403)
     client.cookies.clear()
     assert client.post(path, json={"cores": 8}, headers=H).status_code == 401
+
+
+def test_a_failed_rolling_restart_stops_the_operation_and_a_retry_runs_the_rest_without_applying_again(
+        session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = a_resize(session, world, cluster, cores=8)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    world.restart_error = "The rolling restart stopped at lab-b-02: the cluster was not green"
+    with pytest.raises(tfop.RestartFailed, match="stopped at lab-b-02.*Nodes already restarted stay restarted"):
+        run(session, world, update)
+    assert update.state == "failed" and world.calls.count("apply") == 2
+    session.refresh(cluster)
+    assert {n["cores"] for n in cluster.desired["state"]["nodes"]} == {8}      # Terraform has it, so it is the state
+
+    world.restart_error = None
+    world.create_changes = []                                                  # the retry's plan sees nothing to do
+    operations.retry_operation(session, update.id)
+    update = run(session, world, update)
+    assert update.state == "succeeded" and world.calls.count("apply") == 2     # not applied a second time
+    assert [r.kind for r in world.ansible_requests] == ["create", "converge", "restart", "converge", "restart"]
+
+
+def test_a_resize_is_refused_at_plan_time_when_the_token_cannot_change_or_restart_the_vms(
+        session, world, cluster, conn):
+    from app.provisioning.lifecycle import ResizeNodes, plan_resize
+    from app.provisioning.operation import start_update
+    reach_success(session, world, cluster, conn)
+    session.refresh(cluster)
+    params = plan_resize(session, cluster, ResizeNodes(cores=8))
+    world.perms["/pool/ecm"].pop("VM.PowerMgmt")
+    update = start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+    with pytest.raises(PreflightFailed, match="no VM.PowerMgmt on /pool/ecm, which a resize needs"):
+        run(session, world, update)
+    assert world.calls.count("apply") == 1                                     # nothing was applied
+
+
+def test_a_disk_change_does_not_need_the_rights_to_change_cpu_or_restart_a_vm(session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    for privilege in ("VM.PowerMgmt", "VM.Config.CPU", "VM.Config.Memory"):
+        world.perms["/pool/ecm"].pop(privilege)
+    assert an_update(session, world, cluster).state == "pending_approval"      # planned, not refused
+
+
+def test_a_resize_cannot_restart_a_cluster_ecm_holds_no_api_key_for(session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = a_resize(session, world, cluster, cores=8)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    for cred in session.scalars(select(Credential).where(Credential.kind == "es_api_key")):
+        session.delete(cred)
+    session.commit()
+    with pytest.raises(tfop.RestartFailed, match="no API key or CA certificate"):
+        run(session, world, update)

@@ -223,3 +223,72 @@ def test_a_bad_input_leaves_nothing_on_disk(tmp_path):
             make(ssh_user="bad user"), parent=str(tmp_path)):
         pass
     assert list(tmp_path.iterdir()) == []
+
+
+# ---- a rolling restart --------------------------------------------------------------------------------------
+
+def test_a_restart_inventory_names_each_nodes_proxmox_host_vmid_and_target_size():
+    from datetime import UTC, datetime
+
+    from app.configmgmt import InventoryInput, render_inventory
+    state = build_desired_state(TopologyPreset.three_node, "lab-b", "9.5.6")
+    names = [n.name for n in state.nodes]
+    inv = render_inventory(InventoryInput(
+        state=state, addresses={n: f"192.0.2.{10 + i}" for i, n in enumerate(names)}, operation_kind="restart",
+        bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC), ssh_user="bret", ssh_key_path="/run/ecm/ssh/k",
+        known_hosts_path="/tmp/kh", vm_ids={n: 500 + i for i, n in enumerate(names)},
+        placement={n: f"pve{i + 1}" for i, n in enumerate(names)}))
+    hosts = inv["all"]["children"]["es_nodes"]["hosts"]
+    assert hosts["lab-b-03"]["es_pve_node"] == "pve3" and hosts["lab-b-03"]["es_vmid"] == 502
+    assert hosts["lab-b-01"]["es_desired_cores"] == 4 and hosts["lab-b-01"]["es_desired_ram_mb"] == 8192
+    assert "es_initial_master_nodes" not in inv["all"]["vars"] and inv["all"]["vars"]["es_allow_restart"] is False
+
+
+def test_other_kinds_do_not_carry_the_restart_variables():
+    from datetime import UTC, datetime
+
+    from app.configmgmt import InventoryInput, render_inventory
+    state = build_desired_state(TopologyPreset.three_node, "lab-b", "9.5.6")
+    inv = render_inventory(InventoryInput(
+        state=state, addresses={n.name: f"192.0.2.{10 + i}" for i, n in enumerate(state.nodes)},
+        operation_kind="converge", bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC), ssh_user="bret",
+        ssh_key_path="/run/ecm/ssh/k", known_hosts_path="/tmp/kh"))
+    host = inv["all"]["children"]["es_nodes"]["hosts"]["lab-b-01"]
+    assert not any(k in host for k in ("es_pve_node", "es_vmid", "es_desired_cores", "es_desired_ram_mb"))
+
+
+def test_a_restart_needs_a_bootstrapped_cluster_and_a_host_and_vmid_for_every_node():
+    from datetime import UTC, datetime
+
+    from app.configmgmt import InventoryError, InventoryInput, render_inventory
+    state = build_desired_state(TopologyPreset.three_node, "lab-b", "9.5.6")
+    names = [n.name for n in state.nodes]
+    base = {"state": state, "addresses": {n: f"192.0.2.{10 + i}" for i, n in enumerate(names)},
+            "operation_kind": "restart", "ssh_user": "bret", "ssh_key_path": "/run/ecm/ssh/k",
+            "known_hosts_path": "/tmp/kh"}
+    good = {"vm_ids": {n: 500 + i for i, n in enumerate(names)}, "placement": {n: "pve1" for n in names}}
+    with pytest.raises(InventoryError, match="has bootstrapped"):
+        render_inventory(InventoryInput(**base, bootstrapped_at=None, **good))
+    with pytest.raises(InventoryError, match="vm_ids for every node; missing: lab-b-03"):
+        render_inventory(InventoryInput(**base, bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC),
+                                        vm_ids={n: 500 for n in names[:2]}, placement=good["placement"]))
+    with pytest.raises(InventoryError, match="placement for every node"):
+        render_inventory(InventoryInput(**base, bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC),
+                                        vm_ids=good["vm_ids"], placement=None))
+
+
+def test_a_restart_inventory_classes_each_node_for_the_order_masters_last():
+    from datetime import UTC, datetime
+
+    from app.configmgmt import InventoryInput, render_inventory
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-x", "9.5.6", data_nodes=2, coordinating_nodes=1)
+    names = [n.name for n in state.nodes]
+    inv = render_inventory(InventoryInput(
+        state=state, addresses={n: f"192.0.2.{10 + i}" for i, n in enumerate(names)}, operation_kind="restart",
+        bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC), ssh_user="bret", ssh_key_path="/run/ecm/ssh/k",
+        known_hosts_path="/tmp/kh", vm_ids={n: 500 + i for i, n in enumerate(names)},
+        placement={n: "pve1" for n in names}))
+    hosts = inv["all"]["children"]["es_nodes"]["hosts"]
+    assert {n: hosts[n]["es_restart_class"] for n in names} == {
+        "lab-x-01": "master", "lab-x-02": "master", "lab-x-03": "master",
+        "lab-x-04": "data", "lab-x-05": "data", "lab-x-06": "coordinating"}

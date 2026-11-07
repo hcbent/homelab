@@ -57,9 +57,9 @@ CREATE_PHASES = [*PHASES, "configure"]  # a real create also builds the cluster 
 DRY_RUN_PHASES = ["render", "init", "plan"]  # a dry run has no approval or apply step to run
 # The kind the plan safety rules and the stored plan use.
 UPDATE_PHASES = [*PHASES, "configure"]  # a change to a built cluster ends with a converge of its nodes
-# A resize applies the new size and stops. There is no converge yet because it would write a bigger heap before the
-# machine has restarted with the RAM for it, and the rolling restart that belongs after it is not built.
-RESIZE_PHASES = PHASES
+# A resize applies the new size with Terraform, writes the new heap with a converge, then restarts the nodes one at a
+# time (docs/DESIGN_RESIZE.md). The converge restarts nothing, so a bigger heap sits unused until a node restarts.
+RESIZE_PHASES = [*PHASES, "configure", "restart"]
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
@@ -86,6 +86,10 @@ class ApplyRefused(Exception):
 
 class ApplyFailed(Exception):
     """Terraform started the apply and it failed. Partial state is kept; nothing was destroyed."""
+
+
+class RestartFailed(Exception):
+    """The rolling restart stopped. The nodes already restarted stay restarted; a retry resumes with the rest."""
 
 
 class ConfigureFailed(Exception):
@@ -374,7 +378,8 @@ class _Handlers:
 
     def handlers(self) -> dict[str, Callable[[], None]]:
         return {"render": self.render, "init": self.init, "plan": self.plan,
-                "approval": self.approval, "apply": self.apply, "configure": self.configure}
+                "approval": self.approval, "apply": self.apply, "configure": self.configure,
+                "restart": self.restart}
 
     # -- helpers --
 
@@ -416,7 +421,8 @@ class _Handlers:
                                   "reachable") from e
         problems = proxmox.preflight_problems(
             perms, pool_id=params.get("pool_id", "ecm"), datastore=params.get("datastore_id", "tank"),
-            template_vmid=(params.get("template") or {}).get("vm_id"), creating=self.kind == CREATE)
+            template_vmid=(params.get("template") or {}).get("vm_id"), creating=self.kind == CREATE,
+            resizing=self.kind == UPDATE and (params.get("change") or {}).get("kind") == "resize")
         if problems:
             raise PreflightFailed(f"the token Terraform uses is missing rights this operation needs: "
                                   f"{'; '.join(problems)}. Fix its permissions in Proxmox, then retry")
@@ -610,6 +616,36 @@ class _Handlers:
         if not outcome.ok:
             raise ConfigureFailed(f"{outcome.error or 'the converge failed'}. {kept}")
         log(self.db, self.op.id, "the change is applied on every node")
+
+    def restart(self) -> None:
+        """Restart the nodes that are not yet at their new size, one at a time (playbooks/rolling_restart.yml). It
+        asks Elasticsearch about the cluster with ECM's API key and asks Proxmox to restart each VM with the
+        Terraform token, and a node already at its target size is skipped, so a retry resumes where it stopped."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        conn = _connection(self.db, params)
+        api_key = self._credential(self._names()[2])
+        if api_key is None or not cluster.tls_ca_pem:
+            raise RestartFailed("ECM has no API key or CA certificate for this cluster, so it cannot check the "
+                                "cluster's health between restarts")
+        token_id, token_secret = self._proxmox_token()
+        profile = NetworkProfile.model_validate(params["profile"])
+        request = AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind="restart",
+            bootstrapped_at=cluster.bootstrapped_at, search_domain=profile.search_domain,
+            vm_ids=params["vm_ids"], placement=params["placement"],
+            es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=cluster.tls_ca_pem,
+            pve_api_url=conn.api_url, pve_token_id=token_id, pve_token_secret=token_secret,
+            pve_ca_pem=conn.tls_ca_pem, pve_verify_tls=conn.tls_verify)
+        log(self.db, self.op.id, "restarting the nodes one at a time, masters last")
+        resumes = "Nodes already restarted stay restarted; retry resumes with the nodes not yet at their new size"
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise RestartFailed(f"{e}. {resumes}") from e
+        if not outcome.ok:
+            raise RestartFailed(f"{outcome.error or 'the rolling restart failed'}. {resumes}")
+        log(self.db, self.op.id, "every node runs at its new size and the cluster is green")
 
     def configure(self) -> None:
         if self.kind == UPDATE:

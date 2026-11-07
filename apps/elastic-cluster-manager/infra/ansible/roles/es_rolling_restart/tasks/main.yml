@@ -1,0 +1,88 @@
+---
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - pve_api_url is defined and pve_token_id is defined and pve_token_secret is defined
+      - es_expected_nodes is defined
+      - groups['es_nodes'] | length > 1
+    fail_msg: >-
+      A rolling restart needs the ECM API key, the cluster CA, the Proxmox address and token, the expected node
+      count and a cluster of more than one node.
+  no_log: true
+
+- name: Describe each node
+  ansible.builtin.set_fact:
+    es_rr_nodes: >-
+      {{ groups['es_nodes'] | map('extract', hostvars) | list }}
+    es_rr_headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+  no_log: true
+
+- name: Ask one node for the cluster's health, with every node present, before anything changes
+  ansible.builtin.include_tasks: gate.yml
+  vars:
+    es_rr_status: green
+    es_rr_what: before any node is restarted
+
+- name: Read what each node runs on now, and which node is the elected master
+  ansible.builtin.uri:
+    url: "{{ es_rr_scheme }}://{{ es_rr_nodes[0].ansible_host }}:{{ es_rr_http_port }}/_nodes/os"
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_os
+  no_log: true
+
+- name: Read the elected master
+  ansible.builtin.uri:
+    url: "{{ es_rr_scheme }}://{{ es_rr_nodes[0].ansible_host }}:{{ es_rr_http_port }}/_cat/master?format=json"
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_master
+  no_log: true
+
+- name: Work out which nodes need a restart, and in what order
+  ansible.builtin.set_fact:
+    es_rr_actual: >-
+      {{ dict(es_rr_os.json.nodes.values() | map(attribute='name') | zip(es_rr_os.json.nodes.values() | map(attribute='os') | list)) }}
+    es_rr_elected: "{{ es_rr_master.json[0].node | default('') }}"
+  no_log: true
+
+- name: Put the nodes that are not at their target size in order
+  ansible.builtin.set_fact:
+    es_rr_todo: >-
+      {%- set behind = [] -%}
+      {%- for n in es_rr_nodes -%}
+        {%- set seen = es_rr_actual.get(n.es_node_name) -%}
+        {%- set want_ram = n.es_desired_ram_mb | int -%}
+        {%- set have_ram = ((seen.mem.total_in_bytes | int) / 1048576) if seen else 0 -%}
+        {%- if (not seen) or (seen.available_processors | int != n.es_desired_cores | int)
+               or (have_ram > want_ram) or (have_ram < want_ram * (es_rr_ram_tolerance | float)) -%}
+          {%- set _ = behind.append(n) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set ordered = [] -%}
+      {%- for cls in ['coordinating', 'data', 'master'] -%}
+        {%- for n in behind if n.es_restart_class == cls and n.es_node_name != es_rr_elected -%}
+          {%- set _ = ordered.append(n.es_node_name) -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {%- for n in behind if n.es_node_name == es_rr_elected -%}
+        {%- set _ = ordered.append(n.es_node_name) -%}
+      {%- endfor -%}
+      {{ ordered }}
+
+- name: Say what will be restarted
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Restarting, in this order: ' ~ (es_rr_todo | join(', ')) if es_rr_todo | length > 0
+         else 'Every node already runs at its target size; nothing to restart.' }}
+
+- name: Restart each node in turn
+  ansible.builtin.include_tasks: restart_node.yml
+  loop: "{{ es_rr_todo }}"
+  loop_control:
+    loop_var: es_rr_name

@@ -1,5 +1,5 @@
 import {
-  EuiBadge, EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFieldNumber, EuiFormRow, EuiLink, EuiPanel,
+  EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFieldNumber, EuiFormRow, EuiLink, EuiPanel,
 } from "@elastic/eui";
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
@@ -10,9 +10,9 @@ const whole = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
 const gib = (mb: number) => `${mb / 1024} GiB`;
 
 /**
- * Give nodes of a cluster ECM built a new number of cores and/or amount of RAM. This is a preview: it asks ECM to plan
- * the change and Terraform applies it to the machines' configuration, but ECM does not restart the machines yet, so
- * the new size takes effect only when each one is restarted. The plan is approved on its operation page.
+ * Give nodes of a cluster ECM built a new number of cores and/or amount of RAM. It asks ECM to plan the change. After the
+ * plan is approved on its operation page, Terraform changes the machines' configuration and ECM restarts the nodes one
+ * at a time, waiting for the cluster to be green between them.
  */
 export function Resize({ cluster }: { cluster: ClusterDetail }) {
   const life = cluster.lifecycle;
@@ -55,13 +55,15 @@ export function Resize({ cluster }: { cluster: ClusterDetail }) {
   return (
     <EuiPanel hasBorder hasShadow={false} paddingSize="l" borderRadius="m" className="ecm-lifecycle"
       aria-labelledby="resize-title">
-      <h3 id="resize-title" className="ecm-h3">Resize nodes <EuiBadge color="warning">preview</EuiBadge></h3>
+      <h3 id="resize-title" className="ecm-h3">Resize nodes</h3>
       <p>Current sizes: {names.map((n, i) => (
         <span key={n}>{i > 0 && "; "}<span className="ecm-mono">{n}</span> {sizes[n].cores} cores, {gib(sizes[n].ram_mb)}</span>
       ))}.</p>
-      <EuiCallOut color="warning" iconType="warning" size="s" title="ECM does not restart the machines yet">
-        <p>Terraform changes the machines' configuration, and the new size takes effect only when each machine is
-          restarted. Try this on a disposable cluster.</p></EuiCallOut>
+      <EuiCallOut color="primary" iconType="info" size="s" title="Each node is restarted, one at a time">
+        <p>Terraform changes the machines' configuration, then ECM restarts the nodes: coordinating nodes first, then
+          data nodes, then masters with the elected master last. Before each restart it waits for the cluster to be
+          green, and it holds back shard allocation while a node is down. Each node is briefly out of the cluster.</p>
+      </EuiCallOut>
       {error && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="That did not work" size="s">
           <p>{error}</p></EuiCallOut>)}
@@ -98,8 +100,8 @@ export function Resize({ cluster }: { cluster: ClusterDetail }) {
         <ConfirmAction action="Resize nodes of" confirmText="Plan the resize" resource={cluster.name}
           onCancel={() => setAsking(false)} onConfirm={plan}>
           <p>ECM will plan the new size for {chosen.length} node{chosen.length === 1 ? "" : "s"} and show you the plan.
-            This step changes nothing. After you approve it, Terraform changes the machines' configuration, but they are
-            not restarted: the new size takes effect when you restart each one.</p>
+            This step changes nothing. After you approve it, Terraform changes the machines' configuration and ECM
+            restarts the nodes one at a time, each briefly out of the cluster.</p>
         </ConfirmAction>)}
     </EuiPanel>
   );

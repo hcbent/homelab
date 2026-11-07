@@ -1,0 +1,11 @@
+---
+es_rr_scheme: https
+es_rr_http_port: 9200
+# How long to wait, and how often to look, for each thing a restart waits for. Overridable, mostly for tests.
+es_rr_health_wait: 900        # seconds for green with every node present, before and after each node
+es_rr_pve_wait: 900           # seconds for Proxmox to finish restarting a VM
+es_rr_rejoin_wait: 900        # seconds for a restarted node to rejoin at its new size
+es_rr_poll: 10                # seconds between looks
+# A guest reports slightly less memory than the VM is given, so "at its target size" means between this share of the
+# target and the target itself. A node reporting more than the target is above it, and is restarted.
+es_rr_ram_tolerance: 0.9

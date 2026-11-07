@@ -25,7 +25,7 @@ from typing import Literal
 from app.desired.models import DesiredState
 from app.desired.roles import OMIT, discovery_settings, render_node_roles
 
-OperationKind = Literal["create", "converge"]
+OperationKind = Literal["create", "converge", "restart"]
 
 _SSH_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./-]+$")  # absolute, nothing a shell or ssh option could misread
@@ -47,6 +47,9 @@ class InventoryInput:
     known_hosts_path: str  # a per-run file, so a rebuilt VM at a reused address never trips an old entry
     search_domain: str | None = None
     artifacts_dir: str | None = None  # where the CA and the API key are handed back to ECM
+    # A rolling restart reaches each machine through Proxmox, so it needs each node's host and VMID.
+    vm_ids: dict[str, int] | None = None
+    placement: dict[str, str] | None = None
 
 
 def _check(inp: InventoryInput) -> None:
@@ -60,6 +63,13 @@ def _check(inp: InventoryInput) -> None:
             raise InventoryError(f"{what} must be an absolute path of letters, digits and _ . / - only")
     if inp.search_domain is not None and not _DOMAIN.match(inp.search_domain):
         raise InventoryError("search_domain is not a valid DNS domain")
+    if inp.operation_kind == "restart":
+        if inp.bootstrapped_at is None:
+            raise InventoryError("a rolling restart is for a cluster that has bootstrapped")
+        for what, mapping in (("vm_ids", inp.vm_ids), ("placement", inp.placement)):
+            gaps = sorted(n.name for n in inp.state.nodes if not mapping or n.name not in mapping)
+            if gaps:
+                raise InventoryError(f"a rolling restart needs {what} for every node; missing: {', '.join(gaps)}")
     if inp.operation_kind == "create" and inp.bootstrapped_at is not None:
         raise InventoryError("this cluster has already bootstrapped; a create would re-render "
                              "cluster.initial_master_nodes and could split it. Use converge.")
@@ -133,6 +143,13 @@ def render_inventory(inp: InventoryInput) -> dict:
             host["es_node_roles"] = roles
         if node.data_disk_gb is not None:
             host["es_data_disk_gb"] = node.data_disk_gb
+        if inp.operation_kind == "restart":
+            # The order a rolling restart goes in: nodes that only route requests, then data nodes, then the
+            # master-eligible nodes (the elected master last of those, which only the running cluster knows).
+            order = "master" if node.is_master_eligible else ("data" if node.effective_roles else "coordinating")
+            host.update({"es_pve_node": inp.placement[node.name], "es_vmid": int(inp.vm_ids[node.name]),
+                         "es_desired_cores": node.cores, "es_desired_ram_mb": node.ram_mb,
+                         "es_restart_class": order})
         hosts[node.name] = host
 
     return {

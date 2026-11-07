@@ -130,13 +130,14 @@ def sizes(params):
     return {n["name"]: (n["cores"], n["ram_mb"]) for n in params["state"]["nodes"]}
 
 
-def test_every_node_is_resized_and_the_description_says_the_restart_is_not_done_for_you(session, built):
+def test_every_node_is_resized_and_the_description_says_how_they_are_restarted(session, built):
     new = plan_resize(session, built, ResizeNodes(cores=8, ram_mb=16384))
     assert set(sizes(new).values()) == {(8, 16384)}
     assert set(new["change"]["nodes"]) == {f"lab-x-0{i}" for i in range(1, 7)}
     assert new["change"]["kind"] == "resize"
     assert "8 cores and 16384 MiB of RAM" in new["change"]["describe"]
-    assert "ECM does not do for you yet" in new["change"]["describe"]
+    assert "then ECM restarts the nodes one at a time" in new["change"]["describe"]
+    assert "the elected master last" in new["change"]["describe"]
     assert sizes(built.desired)["lab-x-01"] == (2, 4096)                   # the record is not touched
 
 

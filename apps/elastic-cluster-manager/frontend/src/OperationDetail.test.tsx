@@ -174,14 +174,22 @@ test("a finished change says so and links to the cluster; a failed one says what
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
-test("a finished resize says the new size is set but the machines have not restarted", async () => {
+test("a finished resize says every node has its new size, and a failed one says what is kept", async () => {
   mockFetch(table({ "GET /api/operations/rs": [200, op({ id: "rs", kind: "tf.update", state: "succeeded",
     cluster_id: "c1", plan: null, change: { kind: "resize", describe: "give lab-d-01 8 cores" } })] }));
   render(<OperationDetail id="rs" />);
-  expect(await screen.findByText(/The new size is set in Proxmox, and the machines have not restarted/)).toBeInTheDocument();
-  expect(screen.getByText(/which ECM does not do for you yet/)).toBeInTheDocument();
+  expect(await screen.findByText("Every node has its new size")).toBeInTheDocument();
+  expect(screen.getByText(/ECM restarted the nodes one at a time/)).toBeInTheDocument();
   expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Open the cluster" })).toHaveAttribute("href", "#/clusters/c1");
+});
+
+test("a failed resize says every node already restarted stays restarted", async () => {
+  mockFetch(table({ "GET /api/operations/rb": [200, op({ id: "rb", kind: "tf.update", state: "failed", cluster_id: "c1",
+    plan: null, error: "The rolling restart stopped at lab-d-02", change: { kind: "resize" } })] }));
+  render(<OperationDetail id="rb" />);
+  expect(await screen.findByText(/and so is every node already restarted/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {

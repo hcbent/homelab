@@ -201,8 +201,8 @@ def plan_resize(db: Session, cluster: Cluster, request: ResizeNodes) -> dict:
     params["change"] = {
         "kind": "resize",
         "nodes": {name: changes[name] for name in sorted(changes)},
-        "describe": (f"give {', '.join(sorted(changes))} {' and '.join(parts)}. Terraform changes the machines' "
-                     "configuration; the new size takes effect when each machine restarts, which ECM does not "
-                     "do for you yet"),
+        "describe": (f"give {', '.join(sorted(changes))} {' and '.join(parts)}: Terraform changes the machines' "
+                     "configuration, then ECM restarts the nodes one at a time (coordinating nodes, data nodes, "
+                     "then masters, the elected master last), waiting for the cluster to be green between them"),
     }
     return params

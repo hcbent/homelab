@@ -170,7 +170,9 @@ export function OperationDetail({ id }: { id: string }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
           {!op.dry_run && op.kind === "tf.update" && (
-            <p>What Terraform already changed is kept. Retry plans again and runs the rest.</p>)}
+            <p>What Terraform already changed is kept{op.change?.kind === "resize"
+              ? ", and so is every node already restarted. Retry plans again and carries on with the nodes not yet at their new size"
+              : ". Retry plans again and runs the rest"}.</p>)}
           {!op.dry_run && op.kind === "tf.create" && (
             <p>Machines it already made are kept. Retry resumes where it stopped. To remove them instead,{" "}
               {op.cluster_id
@@ -189,9 +191,9 @@ export function OperationDetail({ id }: { id: string }) {
               : "ECM has removed its record of the cluster; this history stays."}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "resize" && (
-        <EuiCallOut color="warning" iconType="check" title="The new size is set in Proxmox, and the machines have not restarted">
-          <p>Terraform changed the machines' configuration. The new size takes effect when each machine is restarted,
-            which ECM does not do for you yet.{" "}
+        <EuiCallOut color="success" iconType="check" title="Every node has its new size">
+          <p>Terraform changed the machines' configuration and ECM restarted the nodes one at a time. The cluster is
+            green.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind !== "resize" && (

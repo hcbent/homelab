@@ -275,3 +275,81 @@ def test_the_worker_builds_its_runner_from_settings():
                                       ansible_dir="/opt/ecm/ansible"))
     assert (r.ssh_user, r.ssh_key_path, r.ansible_dir) == ("bret", "/run/ecm/ssh/github_rsa", "/opt/ecm/ansible")
     assert r.binary == "ansible-playbook"
+
+
+# ---- a rolling restart -----------------------------------------------------------------------------------------
+
+API_KEY = "FakeEncodedEcmApiKeyForTheRestartTests0001"
+PVE_SECRET = "fake-proxmox-terraform-token-secret-0001"
+PVE_CA = pem("CERTIFICATE", "FakeProxmoxCaCertificateBody0001")
+
+
+def restart_request(**kw) -> AnsibleRequest:
+    names = ["lab-b-01", "lab-b-02", "lab-b-03"]
+    base = {"vm_ids": {n: 500 + i for i, n in enumerate(names)}, "placement": dict(zip(names, ["pve1", "pve2", "pve3"])),
+            "es_api_key": API_KEY, "es_ca_pem": CA_CERT, "pve_api_url": "https://pve.example.test:8006/",
+            "pve_token_id": "terraform@pve!ecm", "pve_token_secret": PVE_SECRET}
+    base.update(kw)
+    return request("restart", **base)
+
+
+def test_a_restart_gets_each_nodes_host_and_vmid_in_the_inventory_and_the_credentials_only_in_the_private_file(tmp_path):
+    binary, record = fake(tmp_path)
+    runner(tmp_path, binary)[0].run(restart_request(pve_ca_pem=PVE_CA))
+    rec = recorded(record)
+    assert rec["argv"][-1] == "playbooks/rolling_restart.yml" and "--check" not in rec["argv"]
+    host = rec["inventory"]["all"]["children"]["es_nodes"]["hosts"]["lab-b-02"]
+    assert (host["es_pve_node"], host["es_vmid"], host["es_desired_cores"], host["es_desired_ram_mb"]) == (
+        "pve2", 501, 4, 8192)
+    extra = rec["extra"]
+    assert extra["es_api_key"] == API_KEY and extra["pve_token_secret"] == PVE_SECRET
+    assert extra["pve_api_url"] == "https://pve.example.test:8006"                  # no trailing slash
+    assert extra["pve_token_id"] == "terraform@pve!ecm" and extra["pve_verify_tls"] is True
+    assert rec["extra_mode"] == "0o600"
+    everything_else = json.dumps([rec["argv"], rec["env"], rec["inventory"]])
+    assert API_KEY not in everything_else and PVE_SECRET not in everything_else
+
+
+def test_the_ca_files_a_restart_checks_against_are_written_private_and_removed_with_the_run(tmp_path):
+    binary, record = fake(tmp_path)
+    runner(tmp_path, binary)[0].run(restart_request(pve_ca_pem=PVE_CA))
+    extra = recorded(record)["extra"]
+    assert Path(extra["es_ca_file"]).name == "es-ca.crt" and Path(extra["pve_ca_file"]).name == "pve-ca.crt"
+    assert work_dir_is_empty(tmp_path)                                               # all of it gone afterwards
+
+
+def test_a_restart_without_a_custom_proxmox_ca_names_none(tmp_path):
+    binary, record = fake(tmp_path)
+    runner(tmp_path, binary)[0].run(restart_request(pve_verify_tls=False))
+    extra = recorded(record)["extra"]
+    assert "pve_ca_file" not in extra and extra["pve_verify_tls"] is False
+
+
+def test_both_credentials_are_redacted_from_the_log_if_a_task_echoes_them(tmp_path):
+    binary, _ = fake(tmp_path, echo_extra=True)
+    r, lines = runner(tmp_path, binary)
+    r.run(restart_request())
+    text = "\n".join(lines)
+    assert "[REDACTED]" in text and API_KEY not in text and PVE_SECRET not in text
+
+
+@pytest.mark.parametrize("kw,message", [
+    ({"check": True}, "cannot be checked"),
+    ({"es_api_key": None}, "the ECM API key"),
+    ({"pve_token_secret": None}, "the Proxmox token secret"),
+    ({"es_ca_pem": None}, "the cluster's CA certificate"),
+    ({"vm_ids": None}, "each node's VMID"),
+    ({"placement": None}, "each node's Proxmox host"),
+    ({"pve_api_url": "http://pve.example.test:8006"}, "must start with https://"),
+])
+def test_a_bad_restart_request_is_refused_before_ansible_starts(tmp_path, kw, message):
+    binary, record = fake(tmp_path)
+    r, _ = runner(tmp_path, binary)
+    with pytest.raises(AnsibleError, match=message):
+        r.run(restart_request(**kw))
+    assert not record.exists() and work_dir_is_empty(tmp_path)
+
+
+def test_credentials_do_not_appear_in_the_repr_of_a_restart_request():
+    text = repr(restart_request())
+    assert API_KEY not in text and PVE_SECRET not in text

@@ -34,11 +34,13 @@ const cores = () => screen.getByLabelText("Cores per node (leave empty to keep)"
 const ram = () => screen.getByLabelText("RAM per node, GiB (leave empty to keep)");
 const plan = () => screen.getByRole("button", { name: "Plan the resize" });
 
-test("the panel is marked a preview, says the machines are not restarted, and shows the current sizes", async () => {
+test("the panel says how the nodes are restarted and shows the current sizes", async () => {
   app(LIFE);
   await panel();
-  expect(screen.getByText("preview")).toBeInTheDocument();
-  expect(screen.getByText("ECM does not restart the machines yet")).toBeInTheDocument();
+  expect(screen.getByText("Each node is restarted, one at a time")).toBeInTheDocument();
+  expect(screen.getByText(/masters with the elected master last/)).toBeInTheDocument();
+  expect(screen.getByText(/holds back shard allocation while a node is down/)).toBeInTheDocument();
+  expect(screen.queryByText("preview")).not.toBeInTheDocument();
   expect(screen.getAllByText(/2 cores, 4 GiB/).length).toBeGreaterThanOrEqual(2);       // two nodes have that size
   expect(plan()).toBeDisabled();
 });
@@ -66,7 +68,7 @@ test("RAM is entered in GiB and sent in MB, with a node list only when fewer tha
   await userEvent.type(ram(), "16");
   await userEvent.click(plan());
   const dialog = await screen.findByRole("alertdialog");
-  expect(within(dialog).getByText(/they are\s+not restarted|not restarted/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/restarts the nodes one at a time, each briefly out of the cluster/)).toBeInTheDocument();
   await userEvent.click(within(dialog).getByRole("button", { name: "Plan the resize" }));
   await waitFor(() => expect(window.location.hash).toBe("#/operations/rs1"));
   expect(posted(fn, "/api/clusters/c1/resize")).toEqual([{ cores: 8, ram_mb: 16384, nodes: ["lab-d-01", "lab-d-02"] }]);

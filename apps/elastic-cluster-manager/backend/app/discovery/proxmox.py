@@ -240,7 +240,7 @@ def check_terraform_rights(perms: dict, pool_id: str, datastore: str,
 
 
 def preflight_problems(perms: dict, *, pool_id: str, datastore: str, template_vmid: int | None,
-                       creating: bool) -> list[str]:
+                       creating: bool, resizing: bool = False) -> list[str]:
     """What the token lacks for the operation about to be planned. Empty means it can proceed.
 
     A plan only reads, so it cannot notice lost write rights; an apply would then fail part way and leave partial
@@ -248,6 +248,11 @@ def preflight_problems(perms: dict, *, pool_id: str, datastore: str, template_vm
     needs only VM.Allocate on the pool, so a teardown is not refused for rights it never uses.
     """
     problems: list[str] = []
+    if resizing:
+        # Changing a VM's CPU or memory, and the restart that applies it, are done on the VMs in the pool.
+        for privilege in ("VM.Config.CPU", "VM.Config.Memory", "VM.PowerMgmt"):
+            if not has_privilege(perms, f"/pool/{pool_id}", privilege):
+                problems.append(f"no {privilege} on /pool/{pool_id}, which a resize needs on the VMs in it")
     if not has_privilege(perms, f"/pool/{pool_id}", "VM.Allocate"):
         problems.append(f"no VM.Allocate on /pool/{pool_id} (does the pool exist, and does the token have rights on it?)")
     if creating:
