@@ -27,10 +27,10 @@ Verified on the lab (Proxmox on `pve1` to `pve3`, ECM on `infra`):
 Also run live on 2026-11-06: a seven-node `lab-d` (three dedicated masters, three data nodes, one coordinating
 node) built through the wizard after its dry run, with Terraform limited to two operations at a time because ten
 at once timed out on Proxmox's storage lock; and a build whose configure step failed on one node, then finished
-green on the same machines when it was retried.
+green on the same machines when it was retried. Tearing that cluster down from its page removed it from the list
+by itself (the operator's report).
 
-Built and tested with fakes, **not yet confirmed on the real infrastructure**: that a teardown also removes ECM's
-record of the cluster (a teardown ran, and the name could be created again afterwards), marking and checking which
+Built and tested with fakes, **not yet confirmed on the real infrastructure**: marking and checking which
 VMs ECM created (`tf_managed`), the installable-version filter, the master quorum rule that refuses a placement,
 a retry after a failed *apply*, and the two warnings about a Terraform token that reaches beyond its pool. The
 details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.md).
