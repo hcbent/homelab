@@ -21,3 +21,16 @@ What to look at first, none of it confirmed:
 
 Done when the pills and the clear button draw correctly in dark and light mode with one, two and several roles chosen (check at least
 `ml` and `remote_cluster_client`, the two longest-looking cases), with a note in `DECISIONS.md` on the cause.
+
+## Spacing on the plan page around "Where each new node goes"
+
+**Found 2026-11-07 on infra, from the operator's screenshot of an add-nodes operation.** On the plan panel, the "WHERE EACH NEW NODE
+GOES" heading sits directly under the "Plan digest" row with no gap, while the rest of the panel is spaced (the title, then the three
+rows, then the table with room around it). The spacing between the parts of the plan panel is not consistent.
+
+Probably the table block (`AddedNodes` in `src/OperationDetail.tsx`, in a `.ecm-stack-lg` wrapper) is placed straight after the
+description list with no margin of its own, so its gap applies inside it and not above it. Not confirmed, and the dry-run note and the
+Approve buttons below it should be looked at in the same pass, since they were spaced by hand elsewhere (`ecm-gap`, `ecm-detail__actions`).
+
+Done when the heading has the same space above it as the other blocks in the panel, in dark and light mode, for an add-nodes plan with
+and without placement warnings and with and without the dry-run note.
