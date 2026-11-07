@@ -1127,6 +1127,7 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
     got = lifecycle(session, cluster)
     assert got == {"managed": True, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
                    "bootstrapped": True, "can_remove": False,
+                   "data_disks": {n: 100 for n in NODES}, "can_change": True,
                    "remove_blocker": "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"}
 
 
@@ -1603,3 +1604,16 @@ def test_the_expand_disk_endpoint_refuses_a_cluster_with_an_operation_running(lo
     assert update.state == "pending_approval"
     r = logged_in.post(f"/api/clusters/{cluster.id}/expand-disk", json={"data_disk_gb": 300}, headers=H)
     assert r.status_code == 409 and "already has an active operation" in r.json()["detail"]
+
+
+def test_the_lifecycle_says_what_can_be_changed_and_why_not_while_an_operation_runs(session, world, cluster, conn):
+    assert lifecycle(session, cluster)["can_change"] is False and lifecycle(session, cluster)["data_disks"] == {}
+    reach_success(session, world, cluster, conn)
+    assert lifecycle(session, cluster)["can_change"] is True
+    update = an_update(session, world, cluster)                              # planned, waiting for approval
+    got = lifecycle(session, cluster)
+    assert got["can_change"] is False and got["busy_operation_id"] == update.id
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    run(session, world, update)
+    got = lifecycle(session, cluster)
+    assert got["can_change"] is True and set(got["data_disks"].values()) == {200}   # the new size, once applied

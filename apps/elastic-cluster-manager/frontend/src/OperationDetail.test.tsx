@@ -143,6 +143,36 @@ test("a finished teardown says the record is gone, or where to look when it was 
   expect(screen.getByRole("link", { name: "open the cluster" })).toHaveAttribute("href", "#/clusters/c7");
 });
 
+test("a change to a built cluster is named, approved as a change, and ends with a link back", async () => {
+  const fn = mockFetch(table({
+    "GET /api/operations/up1": [200, op({ id: "up1", kind: "tf.update", cluster_id: "c1",
+      plan: { digest: DIGEST, summary: { adds: 0, updates: 3, deletes: 0,
+        configure: "grow the data disk of lab-d-04 to 200 GB and the filesystem on it; nothing restarts" },
+        approvable: true } })],
+    "POST /api/operations/up1/approve": [202, { id: "up1" }] }));
+  render(<OperationDetail id="up1" />);
+  expect(await screen.findByRole("heading", { name: "Change cluster" })).toBeInTheDocument();
+  expect(screen.getByText("Change 3")).toBeInTheDocument();
+  expect(screen.getByText(/Grow the data disk of lab-d-04 to 200 GB/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve the change" }));
+  await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+  await waitFor(() => expect(posted(fn, "/api/operations/up1/approve")).toEqual([{ digest: DIGEST }]));
+});
+
+test("a finished change says so and links to the cluster; a failed one says what is kept", async () => {
+  mockFetch(table({
+    "GET /api/operations/ok": [200, op({ id: "ok", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null })],
+    "GET /api/operations/bad": [200, op({ id: "bad", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      error: "ansible-playbook failed" })] }));
+  const { unmount } = render(<OperationDetail id="ok" />);
+  expect(await screen.findByText("The change is applied")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open the cluster" })).toHaveAttribute("href", "#/clusters/c1");
+  unmount();
+  render(<OperationDetail id="bad" />);
+  expect(await screen.findByText(/What Terraform already changed is kept/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

@@ -9,7 +9,8 @@ import { useInterval } from "./useInterval";
 
 const TERMINAL = ["succeeded", "failed", "cancelled"];
 export const KIND: Record<string, string> = {
-  "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "demo.noop": "Demo job",
+  "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "tf.update": "Change cluster",
+  "demo.noop": "Demo job",
 };
 const STATE_COLOR: Record<string, string> = {
   succeeded: "success", failed: "danger", running: "primary", pending_approval: "warning", cancelled: "subdued",
@@ -155,7 +156,7 @@ export function OperationDetail({ id }: { id: string }) {
             <div className="ecm-detail__actions">
               <EuiButton fill color={destroying ? "danger" : "primary"} isDisabled={busy}
                 onClick={() => setConfirming(true)}>
-                {destroying ? "Approve and destroy" : "Approve and build"}</EuiButton>
+                {destroying ? "Approve and destroy" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
               <EuiButtonEmpty isDisabled={busy} onClick={() => act("cancel")}>Cancel</EuiButtonEmpty>
               <span className="ecm-small">Nothing changes until you approve.</span>
             </div>)}
@@ -168,6 +169,8 @@ export function OperationDetail({ id }: { id: string }) {
       {op.state === "failed" && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
+          {!op.dry_run && op.kind === "tf.update" && (
+            <p>What Terraform already changed is kept. Retry plans again and runs the rest.</p>)}
           {!op.dry_run && op.kind === "tf.create" && (
             <p>Machines it already made are kept. Retry resumes where it stopped. To remove them instead,{" "}
               {op.cluster_id
@@ -184,6 +187,11 @@ export function OperationDetail({ id }: { id: string }) {
             {op.cluster_id
               ? <>ECM kept its record because something still blocks removing it: <EuiLink href={`#/clusters/${op.cluster_id}`}>open the cluster</EuiLink> to see what.</>
               : "ECM has removed its record of the cluster; this history stays."}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && op.kind === "tf.update" && (
+        <EuiCallOut color="success" iconType="check" title="The change is applied">
+          <p>It is applied on every node.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && done && op.cluster_id && (
         <EuiCallOut color="success" iconType="check" title="The cluster is up">

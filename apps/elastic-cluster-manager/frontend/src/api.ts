@@ -86,6 +86,8 @@ export interface NodeRow {
 export interface Lifecycle {
   managed: boolean; busy_operation_id?: string | null; teardown_of?: string | null; nodes?: string[];
   bootstrapped?: boolean; can_remove?: boolean; remove_blocker?: string | null;
+  /** Each data node's disk in GB, from the recorded state, and whether a change can be planned now. */
+  data_disks?: Record<string, number>; can_change?: boolean;
 }
 
 export interface ClusterDetail extends ClusterSummary {

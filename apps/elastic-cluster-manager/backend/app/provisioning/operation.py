@@ -256,6 +256,8 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     target = next((o for o in ops if o.kind == CREATE and not o.dry_run and o.state in ("failed", "succeeded")
                    and (o.result or {}).get("resources_in_state") and not _torn_down(db, o.id)), None)
     names = [n["name"] for n in ((target.params or {}).get("state") or {}).get("nodes", [])] if target else []
+    recorded = ((cluster.desired or {}).get("state") or {}).get("nodes", []) if cluster.bootstrapped_at else []
+    data_disks = {n["name"]: n["data_disk_gb"] for n in recorded if n.get("data_disk_gb")}
     blocker = _removal_blocker(db, cluster)
     return {
         "managed": True,
@@ -263,6 +265,9 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "teardown_of": target.id if target and not busy else None,
         "nodes": names if target and not busy else [],
         "bootstrapped": cluster.bootstrapped_at is not None,
+        # What the cluster is now and whether a change can be planned: each data node's disk, from the recorded state
+        "data_disks": data_disks,
+        "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered
         "remove_blocker": blocker,
