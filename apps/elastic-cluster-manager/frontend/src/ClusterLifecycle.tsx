@@ -67,7 +67,9 @@ export function ClusterLifecycle({ cluster }: { cluster: ClusterDetail }) {
             its operations is kept.</p>
           <div><EuiButton color="danger" onClick={() => setAsking("remove")}>Remove record</EuiButton></div>
         </>
-      ) : <p className="ecm-muted">There is nothing to tear down or remove right now.</p>}
+      ) : <p className="ecm-muted">{life.remove_blocker
+        ? `This cluster cannot be removed yet: ${life.remove_blocker}.`
+        : "There is nothing to tear down or remove right now."}</p>}
 
       {asking === "teardown" && (
         <ConfirmAction action="Tear down" confirmText="Plan the teardown" resource={cluster.name} destructive

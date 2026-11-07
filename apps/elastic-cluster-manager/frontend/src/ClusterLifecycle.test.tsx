@@ -116,3 +116,11 @@ test("the Operations tab lists this cluster's operations only, each linked", asy
   expect(within(table).getByText("dry run")).toBeInTheDocument();
   expect(within(table).getByText("waiting for approval")).toBeInTheDocument();
 });
+
+test("when nothing can be offered, the panel says why instead of claiming there is nothing to do", async () => {
+  app({ managed: true, busy_operation_id: null, teardown_of: null, nodes: [], bootstrapped: false, can_remove: false,
+    remove_blocker: "VMs named lab-d-01 still exist in Proxmox; remove them first" });
+  await panel();
+  expect(screen.getByText(/cannot be removed yet: VMs named lab-d-01 still exist in Proxmox/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Remove record" })).not.toBeInTheDocument();
+});

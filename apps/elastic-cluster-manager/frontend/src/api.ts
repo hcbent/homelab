@@ -85,7 +85,7 @@ export interface NodeRow {
 /** What can be done to a cluster now. `teardown_of` is the create a teardown would clean up. */
 export interface Lifecycle {
   managed: boolean; busy_operation_id?: string | null; teardown_of?: string | null; nodes?: string[];
-  bootstrapped?: boolean; can_remove?: boolean;
+  bootstrapped?: boolean; can_remove?: boolean; remove_blocker?: string | null;
 }
 
 export interface ClusterDetail extends ClusterSummary {
