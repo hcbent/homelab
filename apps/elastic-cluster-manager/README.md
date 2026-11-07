@@ -1,11 +1,108 @@
-# Elasticsearch Cluster Manager
+# Elasticsearch Cluster Manager (ECM)
 
-Self-hosted web app for provisioning and managing Elasticsearch clusters on Proxmox VMs.
+A self-hosted web app that builds and manages Elasticsearch clusters on Proxmox virtual machines. It reads what is
+already running, plans a new cluster with Terraform and Ansible, shows you the plan, and changes nothing until you
+approve that exact plan.
 
-**Status: design phase. Nothing is implemented.** Start with:
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/REPO_AUDIT.md](docs/REPO_AUDIT.md)
-- [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)
-- [docs/DECISIONS.md](docs/DECISIONS.md)
+**Status as of 2026-11-06: Phase 4 (provisioning) is mostly done.** You can create a three-node cluster from the
+browser, watch it build, and tear it down. Everything after that (adding or removing nodes, Kibana, adopting an
+existing cluster, upgrades) is planned and not started. This page keeps *works* and *planned* apart on purpose.
 
-Other required docs (DEVELOPMENT, DEPLOYMENT, CONFIGURATION, SECURITY, TROUBLESHOOTING) will be written alongside the phases that make them true.
+## What works
+
+Verified on the lab (Proxmox on `pve1` to `pve3`, ECM on `infra`):
+
+- **Discovery and dashboard, read-only.** ECM reads Proxmox (hosts, VMs, storage, bridges, templates) and
+  Elasticsearch clusters you register, links each Elasticsearch node to its VM only on verified evidence, and
+  shows both. It never writes to Proxmox or to a discovered cluster.
+- **Create a cluster.** The *Create cluster* wizard (single node, three nodes, or three dedicated masters plus
+  data and coordinating nodes) checks the plan with a dry run, then makes a plan you approve on the operation page.
+  Approving builds the VMs with Terraform and installs, secures and starts Elasticsearch with Ansible. `lab-c`
+  (through the terminal helper) and `lab-d` (through the wizard) were built this way and came up green, three nodes
+  each, with the master-eligible nodes on different Proxmox hosts.
+- **Tear a cluster down.** Done through the terminal helper (`lab-c`) and through the *Tear down cluster* button
+  on the cluster page (the first `lab-d`, whose machines were destroyed). That teardown left ECM's record of the
+  cluster in the list; a later change, below, makes a teardown remove it.
+
+Built and tested with fakes, **not yet used on the real infrastructure**: a teardown that also removes ECM's
+record of the cluster, marking and checking which VMs ECM created (`tf_managed`), dry runs that leave nothing
+behind, the installable-version filter, the master quorum rule that refuses a placement, and the two warnings
+about a Terraform token that reaches beyond its pool. The details and the honest limits of each are in
+[docs/DECISIONS.md](docs/DECISIONS.md).
+
+## What is planned, not built
+
+| Phase | Scope |
+|---|---|
+| Rest of 4 | A live pass over the unverified items above, per-node overrides and a custom topology in the wizard, a custom Proxmox CA for Terraform |
+| 5 Lifecycle | Add or remove a node, resize, disk expansion, recovery. Disk expansion does not exist yet |
+| 6 Kibana | Optional Kibana at create time and later, with TLS and a Caddy example |
+| 7 Adoption | Bring a discovered cluster under management, only through a zero-diff import |
+| 8 Upgrades and hardening | Rolling upgrades (the upgrade-path rules exist, the procedure does not), drift detection, the full doc set |
+
+See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for each phase's acceptance criteria.
+
+## Using it
+
+1. Sign in. The *Clusters* page lists every registered cluster with its health, nodes and linked VMs.
+   *Infrastructure* holds the Proxmox and Elasticsearch connections, the inventory and the network profiles.
+2. **Create cluster** (on the Clusters page): name, version, topology, sizes, then the Proxmox choices. The Review
+   step runs a dry run and shows where each node would go and what Terraform would do. *Plan the build* makes a plan
+   and opens its operation page.
+3. On the operation page, check the plan and its digest, then **Approve and build**. The steps, the plan and the
+   redacted log update as it runs. A failed build keeps its machines and can be retried.
+4. On a managed cluster's page, **Tear down cluster** plans a destroy of the machines ECM made (you type the cluster
+   name, then approve the plan). When it finishes, ECM removes its record of the cluster and keeps the history.
+5. `scripts/ecm_cli.py --help` does the same from a terminal: `ops`, `create`, `show`, `watch`, `approve`,
+   `retry`, `cleanup` and `remove`. It asks for the admin password and never prints it.
+
+Safety rules the code enforces: nothing is applied without approval of the exact plan digest shown; ECM only
+destroys machines it created; one operation runs per cluster at a time; secrets are encrypted at rest and redacted
+from logs; and ECM never edits your Caddyfile (an example is in `caddy/`).
+
+## Running it
+
+ECM runs as four containers (`postgres`, `api`, `worker`, `web`) plus a one-shot `migrate`. The worker is the only one
+that holds Terraform, Ansible and the SSH key.
+
+```bash
+cd deploy
+cp .env.example .env        # then edit it; every setting is commented
+docker compose --env-file .env up -d --build
+```
+
+You need at least a master key for encrypting stored credentials, an admin password hash (made with
+`python -m app.hashpw` from `backend/`), and the path of the SSH key the worker uses to reach new VMs. The web
+container listens on `127.0.0.1:8480`; put your own reverse proxy in front of it, as in `caddy/Caddyfile.example`.
+The worker image is built for the platform you build it on, and the Terraform provider and checksums are pinned in
+`backend/Dockerfile`.
+
+## Developing
+
+```bash
+# backend (Python 3.12)
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest          # 616 tests as of 2026-11-06
+.venv/bin/ruff check app tests
+
+# frontend (React, TypeScript, Elastic UI)
+cd frontend && npm install
+npm test -- --run                   # 61 tests as of 2026-11-06
+npx tsc --noEmit -p . && npx vite build
+```
+
+Tests use fakes and recorded fixtures for Proxmox, Elasticsearch, Terraform and Ansible; the discovery fixtures
+refuse any request that is not a GET. Nothing in the test suite touches real infrastructure. Integration tests
+against a disposable target are planned (Phase 8) and will refuse to run unless the target is flagged disposable.
+
+## Documents
+
+- [ARCHITECTURE.md](ARCHITECTURE.md): the design, with what is built marked in each section
+- [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md): the phases and their acceptance criteria
+- [docs/DECISIONS.md](docs/DECISIONS.md): the dated log of decisions, live results and corrections
+- [docs/REPO_AUDIT.md](docs/REPO_AUDIT.md): what was reused from this repository and what was not
+- [infra/ansible/README.md](infra/ansible/README.md): the Ansible roles and playbooks
+- [CLAUDE.md](CLAUDE.md): rules and conventions for working on the code
+
+The other documents the plan calls for (DEVELOPMENT, DEPLOYMENT, CONFIGURATION, SECURITY, TROUBLESHOOTING) are
+planned for Phase 8 and do not exist yet; this page and `deploy/.env.example` are what stand in for them.

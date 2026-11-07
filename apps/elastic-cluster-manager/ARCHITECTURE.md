@@ -1,6 +1,8 @@
-# Architecture (Proposed — nothing here is implemented yet)
+# Architecture
 
-Status legend: **PLANNED** = designed only. Nothing is built.
+Status as of 2026-11-06. Each section says what is built. Legend: **BUILT** = in the code and tested;
+**LIVE** = also run on the real lab infrastructure; **PARTLY** = some of it; **PLANNED** = designed only, with no code.
+`docs/DECISIONS.md` has the dated log behind every status here, including what was only tested with fakes.
 
 ## 1. Stack
 
@@ -10,26 +12,32 @@ Status legend: **PLANNED** = designed only. Nothing is built.
 | API | FastAPI + Pydantic v2 + SQLAlchemy 2 + Alembic | As specified |
 | DB | PostgreSQL 16 | As specified. Also the job queue and the Terraform state backend. |
 | Jobs | **Procrastinate** (Postgres-backed), not Celery or RQ | Durable and survives restarts, with retries and no Redis. One fewer service. Per-cluster serialization is enforced by the app (see §5). |
-| Provisioning | Terraform (or OpenTofu, see DECISIONS.md) with `bpg/proxmox`, pinned | |
-| Config mgmt | Ansible, run via `ansible-runner` in the worker container | |
+| Provisioning | Terraform with `bpg/proxmox`, both pinned and checksummed in the worker image (the provider spike said go; `spike/FINDINGS.md`) | **LIVE** |
+| Config mgmt | Ansible, run as the `ansible-playbook` command by `CliAnsibleRunner` in the worker container (not the `ansible-runner` library) | **LIVE** |
 | Secrets | Fernet envelope encryption in Postgres. Master key from an env var or Docker secret. | Never in Git |
 
-Containers: `web` (nginx serving the SPA, or Caddy), `api`, `worker` (has terraform, ansible, and ssh), `postgres`. Caddy on `infra` reverse-proxies to `web` and `api`. An example snippet is provided and the existing Caddyfile is never edited.
+Containers (**LIVE**): `web` (serves the SPA and proxies `/api`), `api`, `worker` (has Terraform, Ansible and the SSH client), `postgres`, and a one-shot `migrate`. The web container listens on `127.0.0.1:8480`; a reverse proxy on `infra` points at it. An example snippet is provided in `caddy/` and the existing Caddyfile is never edited.
 
 ## 2. Component boundaries (Python packages under `backend/app/`)
 
+As built (**BUILT**):
+
 ```
-api/           HTTP routes, auth, schemas (no business logic)
-discovery/     Proxmox + Elasticsearch read-only collectors, correlation
-desired/       Desired-state models, validation, topology presets, version rules
-provisioning/  Terraform runner: render → plan → (approved) apply/import/destroy
-config/        Ansible runner: inventory generation, playbook invocation
-es/            Elasticsearch REST client + lifecycle procedures (safe removal, upgrades)
-jobs/          Procrastinate tasks, operation state machine, locks
+api/           HTTP routes (auth, discovery, network profiles, operations, clusters, versions); no business logic
+discovery/     Proxmox + Elasticsearch read-only collectors, correlation (correlate.py), sync
+desired/       Desired-state models, validation, topology presets, placement, network allocation, version rules
+provisioning/  create.py (plan a create), operation.py (the tf.create and tf.destroy operations), render.py and
+               hcl.py (generate the Terraform files), runner.py (the Terraform CLI), workspace.py, plan.py,
+               ownership.py (which VMs ECM made), vmid.py
+configmgmt/    Ansible: inventory.py (the inventory and variables) and runner.py (the ansible-playbook CLI)
+jobs.py        Procrastinate tasks, including the scheduled sync
+operations.py  The operation state machine: phases, approval, cancel, retry
 crypto.py      Encryption, redaction, credential access (not named "secrets": the parent .gitignore would hide it)
-network/       IP allocation/validation, optional UniFi adapter
-monitoring/    Empty extension-point interface (v1 has no implementation)
+network_profiles.py, audit.py, auth.py, config.py, db.py, models.py   as their names say
 ```
+
+Not built (**PLANNED**): `es/` (lifecycle procedures: safe node removal, rolling upgrade), a UniFi `network/` adapter,
+and the `monitoring/` extension point. Node removal, upgrades and resize live in sections 7 and are Phases 5 and 8.
 
 Rules: `api` calls services only. Services depend on interfaces (`ProxmoxClient`, `ESClient`, `TerraformRunner`, `AnsibleRunner`, `DnsProvider`) so tests inject fakes. Terraform and Ansible are invisible to the frontend. No endpoint returns state files or rendered secrets.
 
@@ -41,14 +49,20 @@ Rules: `api` calls services only. Services depend on interfaces (`ProxmoxClient`
 - Every mutating job checks ownership, resource-level ownership (`vms.tf_managed`), and the cluster lock at the service layer. The API layer is not trusted for this.
 - Destroy is allowed only on resources with `tf_managed = true`. Destroy also requires a typed-name confirmation and an audit event.
 
-### Discovery and correlation (PLANNED)
+**Status: PARTLY.** Ownership (`discovered | managed`; `adopted` is Phase 7) is enforced on every Terraform operation, and one
+active operation per cluster is enforced by the database (section 5). `vms.tf_managed` is derived from the creates ECM
+ran (`provisioning/ownership.py`), set after each Proxmox sync, and checked when a teardown is planned and again
+before it applies. It guards teardown only; resize and node removal (Phase 5) will need the same check. The typed
+name and an audit event are in place for teardown (**BUILT**; teardown from the button was run on infra once).
+
+### Discovery and correlation (**LIVE**)
 
 1. The Proxmox collector reads nodes, `qemu` VMs, configs, storage, and bridges. It uses a read-only token.
 2. The ES collector connects to registered endpoints (manual registration, plus candidate endpoints from VM IPs and a configured port scan list). It reads `_cluster/health`, `_nodes`, `_nodes/stats`, `_cat/shards`, and `_cluster/settings`.
 3. Correlation joins an ES node to a VM through **verified evidence only**: node `host`/`ip` matching the VM's guest-agent IPs or cloud-init IP, and matching MACs where available. Each link stores its evidence and a confidence of `verified | probable | unlinked`. A VM that merely contains Elasticsearch is never auto-assigned to a cluster.
 4. Cluster identity is the ES `cluster_uuid`, never the cluster name.
 
-### Adoption (PLANNED, phase 7)
+### Adoption (**PLANNED**, phase 7)
 
 Adoption is a wizard with a mandatory dry-run:
 
@@ -61,96 +75,112 @@ Adoption is a wizard with a mandatory dry-run:
 
 ## 4. Terraform state management
 
-- One workspace directory per cluster: `/data/clusters/<cluster_id>/tf/`. Config is generated from `desired_state` JSON, so users never edit `.tf` files.
-- Backend: **Terraform `pg` backend**, one schema per cluster (`schema_name = tf_<cluster_id>`), in a separate `tfstate` database. This gives native locking with no shared state file. The nightly `pg_dump` is the backup.
-- Defence in depth: after every apply or import, the worker also stores an encrypted state snapshot row (`tf_state_snapshots`) so recovery does not depend on the DB dump being current.
-- Operation types are distinct job kinds: `tf.create`, `tf.update`, `tf.import`, `tf.destroy`. Each runs `plan → store plan file + JSON summary → wait for approval → apply that exact saved plan`.
-- `-lock-timeout` is set. A stuck lock is shown in the UI with a force-unlock action that requires confirmation.
-- A failed apply never triggers automatic destroy. Partial state is retained, the logs and the plan are stored, and the UI offers "retry apply" and "refresh and re-plan".
+**Status: PARTLY (create and destroy are LIVE).**
+
+- One workspace directory per cluster: `/data/clusters/<cluster_id>/tf/` (**LIVE**). Config is generated from the desired state stored on the operation, so users never edit `.tf` files.
+- Backend: **Terraform `pg` backend**, one schema per cluster (`schema_name = tf_<cluster_id>`), which gives native locking with no shared state file (**LIVE**). By default the schemas live in ECM's own database; `ECM_TF_STATE_URL` points them at a separate one. A dry run on a cluster made only for it plans on local state instead and leaves no schema (**BUILT**). The nightly `pg_dump` as the backup is not set up by ECM.
+- Defence in depth: after every apply or import, the worker also stores an encrypted state snapshot row (`tf_state_snapshots`). **PLANNED**; no such table exists.
+- Operation types are distinct job kinds. **BUILT:** `tf.create` and `tf.destroy`. **PLANNED:** `tf.update`, `tf.import`. Each runs `render, init, plan`, stores the plan file and a JSON summary, waits for approval of that plan's digest, then applies that exact saved plan (a create then runs a `configure` step with Ansible). A dry run stops after the plan and cannot be approved.
+- `-lock-timeout` is set on plan and apply (**BUILT**). A force-unlock action in the UI is **PLANNED**.
+- A failed apply never triggers automatic destroy. Partial state is retained, the logs and the plan are stored, and the operation page offers Retry, which re-plans and needs a new approval (**BUILT**; a retry after a failed apply has only run against fakes).
 
 ## 5. Jobs and locking
 
+**Status: LIVE**, apart from cancellation.
+
 - `operations` table = source of truth for the UI (phases, status, logs). Procrastinate handles delivery and retries.
-- Conflict prevention: partial unique index on `operations(cluster_id)` where `status IN ('pending_approval','running')`. This guarantees one active mutating operation per cluster at the DB level. Read-only syncs are exempt.
+- Conflict prevention: partial unique index `uq_operations_one_active_per_cluster` on `operations(cluster_id)` where `state IN ('pending_approval','running')`. This guarantees one active mutating operation per cluster at the DB level. Read-only syncs are exempt.
 - Phases are persisted before and after each step. On worker restart, a running operation resumes at its last unfinished phase. Each phase must be idempotent, so a re-run after a crash is safe.
-- Cancellation is cooperative. It is only honoured at phase boundaries, and never during a `terraform apply` or an ES data migration wait. The UI says "cancel after current step".
+- Cancellation is **PARTLY** built, and simpler than designed: an operation can be cancelled only while it waits for approval, when nothing is running. Cancelling a running operation, at a phase boundary, is **PLANNED**.
 - Progress is derived from real phase completion, not timers.
 
 ## 6. Ansible design
 
-Clean-room roles (`es_node`, `es_bootstrap`, `kibana`, `os_base`, `data_disk`), idempotent, with no action dispatcher.
+**Status: LIVE for create.** Clean-room roles, idempotent, with no action dispatcher. **Built:** `os_base`, `data_disk`, `es_package`, `es_tls`,
+`es_node` and `es_bootstrap`, with the playbooks `create.yml` and `converge.yml` (`infra/ansible/README.md`). **PLANNED:** the `kibana`
+role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-d` clusters.
 
 - Inventory is generated from the DB into a temp directory (mode 0700) for each run, and deleted afterwards.
 - `node.roles` is **omitted** when the node's role mode is `default`. It is `[]` for coordinating-only, and it is an explicit list only in `custom` mode.
 - `cluster.initial_master_nodes` is rendered only when the job is `create` and the cluster has no `bootstrapped_at` timestamp. It is stripped on later runs. After first successful health check the app sets `bootstrapped_at`.
 - TLS: a cluster CA is generated once with `elasticsearch-certutil`. The CA lives in encrypted storage and is distributed to nodes. Joins use the verified CA, not enrollment tokens, and `validate_certs` is never disabled.
-- Data disk: detect the device by serial or ID (not `/dev/sdb`), partition, format only if no filesystem exists, mount by UUID. Expansion runs `growpart` and `resize2fs`/`xfs_growfs` after Terraform enlarges the disk. Shrinking is refused.
+- Data disk: the device is addressed by its `/dev/disk/by-id` path (not `/dev/sdb`), formatted only if it has no filesystem, and mounted by UUID (**BUILT**). Expansion with `growpart` and `resize2fs`/`xfs_growfs` after Terraform enlarges the disk, and refusing a shrink, are **PLANNED** (Phase 5); neither exists yet.
 - Version-aware install pins the apt package to the exact version. Settings that differ per major version live in version-keyed templates.
-- A cluster is reported successful only when health checks pass (expected node count joined, status green, or yellow for single-node dev).
+- A cluster is reported successful only when health checks pass (expected node count joined, status green, or yellow for single-node dev) (**LIVE**). It can read yellow for a short while after a create and settle to green by itself, as `lab-d` did.
 
 ## 7. Lifecycle procedures (`es/`)
+
+**Status: PLANNED, with two pieces built.** No lifecycle procedure exists yet. What exists: the upgrade-path rules in
+`desired/versions.py` (`check_upgrade`: refuses downgrades, same-version upgrades and skipped majors, and enforces the
+latest-minor rule), which no operation calls yet; and placement (below).
 
 - **Remove node:** refuse if removing it breaks the master quorum, if it is the last holder of a primary shard copy, or if the remaining disk cannot absorb its data (watermarks included). Otherwise use the node shutdown API (`PUT _nodes/<id>/shutdown`, type `remove`), wait for completion, then `tf.update`. Master and data nodes are checked separately.
 - **Upgrade:** rolling, one node at a time, using the official upgrade-path rules (e.g. 8.19 → 9.x). The app checks the prerequisites (latest minor on the previous major, deprecation API clean). Downgrades are refused. The sequence is: health gate → node shutdown API → upgrade → rejoin → health gate.
 - **Resize:** CPU and RAM change via Terraform (with a reboot step orchestrated one node at a time). Heap is recomputed (≤50% of RAM and ≤ ~31 GB) unless it was set manually.
-- **Placement:** a scoring function (free CPU and RAM per host, storage, anti-affinity for master-eligible nodes across pve1–3). It uses live Proxmox data and is a recommendation the user can override.
+- **Placement (BUILT):** a scoring function over free CPU, RAM and storage per host, using the last Proxmox sync. Master-eligible nodes are spread across hosts as a rule, not a recommendation: a host may hold at most `(master-eligible nodes - 1) // 2` of them, so losing one host keeps the quorum, and a plan that cannot meet it is refused with the reason. A node can be pinned to a host.
 
 ## 8. Networking
 
+**Status: BUILT and LIVE** for profiles and allocation; the UniFi adapter is **PLANNED**.
+
 - Network profiles (bridge, VLAN, CIDR, gateway, DNS, search domain, allocation range) are stored and editable.
-- IP assignment is static via cloud-init. Duplicate checks run against (a) the app DB, (b) Proxmox VM configs and guest-agent IPs, and (c) UniFi if configured. **Ping and ARP results are never used as proof of availability**. They are shown only as an extra warning.
+- IP assignment is static via cloud-init. Duplicate checks run against (a) the app DB and (b) Proxmox VM configs and guest-agent IPs (**BUILT**), and (c) UniFi if configured (**PLANNED**). **Ping and ARP results are never used as proof of availability**. They are shown only as an extra warning.
 - UniFi integration is an optional adapter (`DnsProvider`). v1 ships with the manual workflow (the UI shows the DNS records and reservations to create) and a stub interface. DNS creation is a separate retryable job.
 
 ## 9. Security
 
-Session-cookie login with a single admin (Argon2id) and CSRF protection. Users and roles tables exist from day one to allow future RBAC. Proxmox uses an API token. ES uses API keys, with the `elastic` password used only for initial bootstrap and then discarded. SSH uses a dedicated keypair generated per install. A log redaction filter runs over all subprocess output. An append-only `audit_events` table. Containers run as a non-root user. The worker is the only container with Terraform, Ansible, and SSH keys.
+**Status: BUILT** except where marked. Session-cookie login with a single admin (Argon2id) and a CSRF header check. A `users` table with a role exists to allow future RBAC. Proxmox uses API tokens: a read-only one for discovery and, optionally, a second, narrower one for Terraform, with warnings when a Terraform token reaches beyond its pool. ES uses API keys; the `elastic` password is used once to bootstrap and then deleted. Stored credentials are encrypted. A redaction filter runs over subprocess output and operation logs before they are stored. An `audit_events` table records logins and logouts, adding or changing a cluster, connection, credential or network profile, removing a cluster, and every operation's start, approval, cancellation and retry. Containers run as a non-root user, and the worker is the only container with Terraform, Ansible and the SSH key.
+
+**Differs from the original design:** SSH does not use a keypair generated per install. The operator chose one existing key (`~/.ssh/github_rsa`), which the worker mounts read-only as a copy owned by its own user (`ECM_SSH_KEY_FILE`; `docs/DECISIONS.md` has why a copy and not an ACL). The audit table is written only by insert in the code, but nothing in the database enforces that.
 
 ## 10. Data model (SQLAlchemy / Postgres)
 
+**Built** (**LIVE**; migrations `0001` to `0006`):
+
 ```
-users(id, username, password_hash, role, created_at)
-credentials(id, kind[proxmox_token|es_api_key|ssh_key|unifi|es_elastic], name, ciphertext, key_version, scope_cluster_id?, created_at, rotated_at)
-proxmox_clusters(id, name, api_url, credential_id, tls_ca/verify, last_sync_at)
-network_profiles(id, name, bridge, vlan, cidr, gateway, dns[], search_domain, range_start, range_end)
-clusters(id, name, es_cluster_uuid UNIQUE NULL, ownership, es_version, topology_preset,
-         es_endpoint_urls[], es_credential_id, bootstrapped_at, monitoring_ref NULL,
-         desired_state JSONB, desired_version int, last_sync_at, created_at)
-nodes(id, cluster_id, name, es_node_id NULL, vm_id NULL, roles_mode[default|coordinating|custom], roles[], heap_mb NULL, extra_settings JSONB, es_version)
-vms(id, proxmox_cluster_id, pve_node, vmid, name, config_snapshot JSONB, tf_managed bool, tf_address, observed_at)
-vm_links(node_id, vm_id, evidence JSONB, confidence)
-ip_allocations(id, cidr_profile_id, address UNIQUE, owner_type, owner_id, status[reserved|assigned|released], source)
-kibana_instances(id, cluster_id, vm_id, version, resources JSONB, status)
-observations(id, cluster_id, source[es|proxmox|terraform], captured_at, data JSONB)    -- reported state
-drift_findings(id, cluster_id, scope, path, desired, observed, status[open|accepted|reconciled|ignored], first_seen, last_seen)
-operations(id, cluster_id, kind, state, phase, params JSONB, plan_ref, approved_by, approved_at, started_at, finished_at, error, parent_op NULL)
-operation_steps(id, operation_id, seq, name, status, started_at, finished_at, detail)
-operation_logs(id, operation_id, seq, ts, stream, line)       -- redacted before insert
-tf_state_snapshots(id, cluster_id, operation_id, ciphertext, created_at)
-dns_records(id, cluster_id, fqdn, address, provider, status, last_error)
-audit_events(id, ts, actor, action, target_type, target_id, details JSONB)   -- insert-only
+users, sessions
+credentials               encrypted secrets by kind (Proxmox tokens, Elasticsearch API key and CA key, the one-time elastic password)
+proxmox_connections       a Proxmox API endpoint, its discovery token and optional Terraform token
+pve_nodes, pve_storages   what the last Proxmox sync saw
+vms                       Proxmox VMs, with tf_managed (true only for machines a create of ECM's made)
+clusters                  name, ownership, Elasticsearch uuid and version, endpoints, TLS, bootstrapped_at, last snapshot
+es_nodes                  nodes of a cluster as Elasticsearch reported them, with the VM link and its evidence and confidence
+network_profiles
+operations                kind, state, phase, params (the desired state, placement, addresses, VMIDs), plan digest and summary,
+                          approval, result, parent operation; a partial unique index allows one active operation per cluster
+operation_steps, operation_logs   (logs are redacted before insert)
+audit_events
 ```
 
-The three-way state comparison in the UI uses `desired_state` (intent), `observations` (reported), and Terraform state (read via `terraform show -json`).
+The design's other tables are **PLANNED** and do not exist: `kibana_instances` (Phase 6), `observations` and
+`drift_findings` (Phase 8; the last sync's snapshot is kept on `clusters` meanwhile), `tf_state_snapshots`, `dns_records`,
+and `ip_allocations` (addresses are chosen at planning time, checked against the inventory and recorded in the
+operation's parameters, with no table of their own). The design's `vm_links` is `es_nodes.link_*`, and `desired_state`
+lives in the create operation's parameters, not on `clusters`.
+
+The three-way comparison (intent, reported, Terraform state) is **PLANNED** (Phase 8). Today the UI keeps what Elasticsearch reported and what Proxmox reported apart and shows them side by side; the intent of a cluster ECM built is in its create operation.
 
 ## 11. Repo layout
 
 ```
 apps/elastic-cluster-manager/
   README.md  ARCHITECTURE.md  CLAUDE.md  docs/
-  backend/{app/…, alembic/, tests/}
-  frontend/{src/…, tests}
-  infra/{terraform/modules/es_node, ansible/{roles,playbooks}}
-  deploy/{docker-compose.yml, Dockerfile.*, caddy/Caddyfile.example, .env.example}
-  tests/{fixtures/{proxmox,elasticsearch}, integration/}
+  backend/{app/…, alembic/, tests/ (with tests/fixtures), Dockerfile}
+  frontend/{src/…, public/fonts}
+  infra/ansible/{roles, playbooks}          (the Terraform files are generated by backend/app/provisioning, not kept here)
+  deploy/{docker-compose.yml, .env.example}
+  caddy/Caddyfile.example
+  scripts/ecm_cli.py
+  spike/                                    the provider spike (spike/FINDINGS.md)
 ```
 
-Nothing refers to the parent repo's paths. Defaults such as `pve1.lab...` come only from `.env` or the first-run setup UI.
+Integration tests (`tests/integration/`) are **PLANNED** (Phase 8). Nothing refers to the parent repo's paths. Defaults such as `pve1.lab...` come only from `.env` or the settings UI.
 
 ## 12. Technical risks
 
 | # | Risk | Mitigation |
 |---|---|---|
-| 1 | `bpg/proxmox` may not cover a needed feature (clone plus second disk plus static cloud-init, or import fidelity). | Provider spike before building on it |
+| 1 | `bpg/proxmox` may not cover a needed feature (clone plus second disk plus static cloud-init, or import fidelity). | Provider spike before building on it. **Closed for create:** the spike said go and creates run live; import fidelity is still open until Phase 7 |
 | 2 | Adoption: imported state may show drift on attributes the module doesn't model, which would lead to replacements. | Zero-diff gate, reject any delete or replace action, explicit ignore list |
 | 3 | The worker runs Terraform and Ansible with powerful credentials. | Dedicated least-privilege Proxmox role, only the worker holds keys, audit log |
 | 4 | Correlating VM to ES node can be ambiguous (multiple NICs, DHCP changes). | Evidence-based links, `probable` links never grant ownership |
