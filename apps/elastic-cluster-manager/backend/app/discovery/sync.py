@@ -9,6 +9,7 @@ from app.discovery import correlate, es, proxmox
 from app.discovery.factory import es_client, proxmox_client
 from app.discovery.http import DiscoveryError
 from app.models import Cluster, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
+from app.provisioning.ownership import mark_tf_managed
 
 
 def _now() -> datetime:
@@ -56,6 +57,8 @@ def sync_proxmox(db: Session, conn: ProxmoxConnection, client=None) -> None:
     old_vm = {v.vmid: v for v in db.scalars(select(Vm).where(Vm.connection_id == conn.id))}
     for v in snap.vms:
         row = old_vm.pop(v.vmid, None) or Vm(connection_id=conn.id, vmid=v.vmid)
+        if row.name is not None and row.name != v.name:
+            row.tf_managed = False  # a different VM now has this VMID; it is not ECM's until a create says so
         row.pve_node, row.name, row.status, row.is_template = v.pve_node, v.name, v.status, v.is_template
         row.cpu_cores, row.memory_mb = v.cpu_cores, v.memory_mb
         row.disks, row.nets, row.ips, row.usage, row.config = v.disks, v.nets, v.ips, v.usage, v.config
@@ -63,6 +66,8 @@ def sync_proxmox(db: Session, conn: ProxmoxConnection, client=None) -> None:
         db.add(row)
     for gone in old_vm.values():
         db.delete(gone)
+    db.flush()
+    mark_tf_managed(db, conn.id)  # machines ECM created only appear here, so this is where they are marked
 
     conn.last_sync_at, conn.last_sync_error = now, None
     db.commit()

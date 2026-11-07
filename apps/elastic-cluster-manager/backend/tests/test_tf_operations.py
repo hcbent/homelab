@@ -1095,20 +1095,16 @@ def test_a_teardown_drops_the_stored_proxmox_rows_of_the_machines_it_destroyed(s
     sync, which blocked removing the cluster's record and creating the same name again."""
     from app.models import Vm
     created = reach_success(session, world, cluster, conn)
-    ids = created.params["vm_ids"]
-    first = next(iter(ids))
-    for name, vmid in ids.items():
-        # rows are unique per connection and VMID, so the first VMID's row carries a different name here, as it
-        # would if a sync had already found another VM at that id
-        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=int(vmid),
-                       name="someone-elses" if name == first else name, status="running"))
+    for name, vmid in created.params["vm_ids"].items():
+        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=int(vmid), name=name, status="running"))
+    session.add(Vm(connection_id=conn.id, pve_node="pve2", vmid=999, name="unrelated", status="running"))
     session.commit()
 
     teardown = finish_teardown(session, world, created)
 
     left = sorted(n for (n,) in session.execute(select(Vm.name)))
-    assert left == ["someone-elses"]                                  # ours are gone, the other VM is untouched
-    assert "2 destroyed machines dropped from the Proxmox inventory" in logs(session, teardown)
+    assert left == ["unrelated"]                                      # ours are gone, the other VM is untouched
+    assert "3 destroyed machines dropped from the Proxmox inventory" in logs(session, teardown)
     assert session.get(Cluster, cluster.id) is None                   # and with them gone the record could go too
 
 
@@ -1205,3 +1201,138 @@ def test_an_operation_still_names_its_cluster_after_a_teardown_removed_it(logged
         got = logged_in.get(f"/api/operations/{op.id}").json()
         assert got["cluster_id"] is None and got["cluster_name"] == "lab-b"
     assert {o["cluster_name"] for o in logged_in.get("/api/operations").json()} == {"lab-b"}
+
+
+# ---- vms.tf_managed: which machines ECM created -------------------------------------------------------------
+
+def vm_rows(session, conn, ids, **names):
+    """Inventory rows for a create's machines, as a Proxmox sync would leave them (unmarked)."""
+    from app.models import Vm
+    for name, vmid in ids.items():
+        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=int(vmid), name=names.get(name, name),
+                       status="running"))
+    session.commit()
+
+
+def flags(session):
+    from app.models import Vm
+    return {name: managed for name, managed in session.execute(select(Vm.name, Vm.tf_managed))}
+
+
+def test_machines_a_create_made_are_marked_and_an_unrelated_vm_is_not(session, world, cluster, conn):
+    from app.models import Vm
+    from app.provisioning.ownership import mark_tf_managed
+    created = reach_success(session, world, cluster, conn)
+    vm_rows(session, conn, created.params["vm_ids"])
+    session.add(Vm(connection_id=conn.id, pve_node="pve2", vmid=999, name="unrelated", status="running"))
+    session.commit()
+    assert set(flags(session).values()) == {False}                  # a sync leaves them unmarked
+
+    assert mark_tf_managed(session, conn.id) == 3
+    session.commit()
+
+    assert flags(session) == {"lab-b-01": True, "lab-b-02": True, "lab-b-03": True, "unrelated": False}
+    assert mark_tf_managed(session, conn.id) == 0                   # nothing more to change
+
+
+def test_a_create_that_failed_part_way_claims_only_the_machines_it_made(session, world, cluster, conn):
+    from app.provisioning.ownership import mark_tf_managed
+    failed = reach_failed_apply(session, world, cluster, conn)       # two of the three VMs exist
+    vm_rows(session, conn, failed.params["vm_ids"])
+    assert mark_tf_managed(session, conn.id) == 2
+    assert sorted(n for n, managed in flags(session).items() if managed) == ["lab-b-01", "lab-b-02"]
+
+
+def test_a_dry_run_and_a_torn_down_create_claim_nothing(session, world, cluster, conn):
+    from app.provisioning.ownership import created_machines
+    dry = run(session, world, begin(session, cluster, conn, dry_run=True))
+    assert dry.state == "succeeded" and created_machines(session) == set()
+    other = Cluster(name="lab-b", ownership="managed")
+    session.add(other)
+    session.commit()
+    created = reach_success(session, world, other, conn)
+    assert len(created_machines(session)) == 3
+    assert finish_teardown(session, world, created).state == "succeeded"
+    assert created_machines(session) == set()
+
+
+def fixture_proxmox(logged_in, session, monkeypatch):
+    """The fixture Proxmox, registered and ready to sync. Its VM 301 is named fxa-01."""
+    from app.discovery import factory
+    from app.models import ProxmoxConnection
+    from tests.fixtures.transport import FixtureTransport
+    monkeypatch.setattr(factory, "transport", FixtureTransport())
+    added = logged_in.post("/api/proxmox", json={"name": "lab", "api_url": "https://pve.test:8006",
+                                                 "token_id": "ro@pve!ecm", "token_secret": "fixture-pve-secret-value"},
+                           headers=H).json()
+    return session.get(ProxmoxConnection, added["id"])
+
+
+def a_create_that_made(session, cluster, conn, name, vmid):
+    session.add(Operation(kind="tf.create", state="succeeded", cluster_id=cluster.id, dry_run=False,
+                          params={"proxmox_connection_id": conn.id, "vm_ids": {name: vmid}},
+                          result={"resources_in_state": [f'module.node["{name}"].proxmox_virtual_environment_vm.node']}))
+    session.commit()
+
+
+def test_a_sync_marks_the_machines_a_create_made_and_nothing_else(logged_in, session, cluster, monkeypatch):
+    from app.discovery import sync
+    pve = fixture_proxmox(logged_in, session, monkeypatch)
+    a_create_that_made(session, cluster, pve, "fxa-01", 301)
+    sync.sync_proxmox(session, pve)
+    assert [n for n, managed in flags(session).items() if managed] == ["fxa-01"]
+
+
+def test_a_sync_clears_the_mark_when_a_different_vm_has_the_id_of_one_ecm_made(
+        logged_in, session, cluster, monkeypatch):
+    """ECM made lab-x-01 at VMID 301. If that machine is replaced out-of-band by another VM at 301, the row's name
+    changes on the next sync and the stale mark must not carry over to the stranger."""
+    from app.discovery import sync
+    from app.models import Vm
+    pve = fixture_proxmox(logged_in, session, monkeypatch)
+    sync.sync_proxmox(session, pve)                                    # row 301 exists, named fxa-01
+    a_create_that_made(session, cluster, pve, "lab-x-01", 301)
+    row = session.scalar(select(Vm).where(Vm.vmid == 301))
+    row.name, row.tf_managed = "lab-x-01", True                        # as it was while ECM's machine had the id
+    session.commit()
+
+    sync.sync_proxmox(session, pve)                                    # the fixture now reports fxa-01 at 301
+
+    assert flags(session)["fxa-01"] is False and session.scalar(select(Vm).where(Vm.vmid == 301)).name == "fxa-01"
+
+
+def test_a_teardown_is_refused_while_another_vm_has_one_of_the_creates_ids(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    ids = created.params["vm_ids"]
+    first = next(iter(ids))
+    vm_rows(session, conn, ids, **{first: "someone-elses"})
+    with pytest.raises(OperationRefused, match=r"only destroys machines ECM created.*\(someone-elses\)"):
+        start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin", confirm_data_loss=True)
+
+
+def test_a_teardown_right_after_a_create_marks_the_machines_first_instead_of_waiting_for_a_sync(
+        session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    vm_rows(session, conn, created.params["vm_ids"])                   # seen by a sync, not yet marked
+    assert finish_teardown(session, world, created).state == "succeeded"
+
+
+def test_a_machine_with_the_right_name_that_no_create_made_blocks_a_teardown(session, world, cluster, conn):
+    """A failed create that never made lab-b-03 must not destroy a lab-b-03 someone else has at that id."""
+    failed = reach_failed_apply(session, world, cluster, conn)         # made lab-b-01 and lab-b-02 only
+    vm_rows(session, conn, failed.params["vm_ids"])
+    with pytest.raises(OperationRefused, match=r"2 \(lab-b-03\)|\(lab-b-03\)"):
+        start_cleanup(session, create_op_id=failed.id, confirm_name="lab-b", actor="admin")
+
+
+def test_the_destroy_checks_again_just_before_it_applies(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                             confirm_data_loss=True)
+    teardown = run(session, world, teardown)                           # planned, waiting for approval
+    first = next(iter(created.params["vm_ids"]))
+    vm_rows(session, conn, created.params["vm_ids"], **{first: "someone-elses"})   # a sync saw a stranger meanwhile
+    operations.approve_operation(session, teardown.id, teardown.plan_digest, "admin")
+    with pytest.raises(tfop.ApplyRefused, match="only destroys machines ECM created"):
+        run(session, world, teardown)
+    assert world.calls.count("apply") == 1                             # only the create's apply ever ran

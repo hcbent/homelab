@@ -39,6 +39,8 @@ from app.discovery import factory, proxmox
 from app.discovery.http import DiscoveryError
 from app.models import ACTIVE_STATES, Cluster, Credential, EsNode, Operation, ProxmoxConnection, Vm
 from app.operations import AwaitingApproval, create_operation, log, run_phases
+from app.provisioning.ownership import foreign_machines
+from app.provisioning.ownership import torn_down as _torn_down
 from app.provisioning.plan import check_plan_safety
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
 from app.provisioning.runner import CliTerraformRunner, TerraformError, TerraformRunner
@@ -173,17 +175,16 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
     if not left:
         raise OperationRefused("the create left nothing in Terraform state, so there is nothing to clean up")
     _check_params(db, cluster.id, parent.params)
+    foreign = foreign_machines(db, parent.params)
+    if foreign:
+        raise OperationRefused("a teardown only destroys machines ECM created, and these are not: "
+                               + ", ".join(foreign))
     op = create_operation(db, DESTROY, PHASES, cluster_id=cluster.id, params=parent.params, actor=actor,
                           parent_op_id=parent.id)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=DESTROY, parent=parent.id,
                  parent_state=parent.state, resources=len(left), bootstrapped=cluster.bootstrapped_at is not None,
                  data_loss_confirmed=bool(confirm_data_loss))
     return op
-
-
-def _torn_down(db: Session, create_op_id: str) -> bool:
-    return bool(db.scalar(select(Operation.id).where(Operation.parent_op_id == create_op_id,
-                                                     Operation.kind == DESTROY, Operation.state == "succeeded")))
 
 
 def _removal_blocker(db: Session, cluster: Cluster, tearing_down: Operation | None = None) -> str | None:
@@ -424,6 +425,11 @@ class _Handlers:
         stored = ws.verify_for_apply(self.plan_kind)  # raises StalePlan if anything changed since the plan
         if stored.approval_digest != op.approved_digest:
             raise ApplyRefused("the plan on disk is not the one that was approved; plan again")
+        if self.kind == DESTROY:
+            foreign = foreign_machines(self.db, op.params)
+            if foreign:
+                raise ApplyRefused("a teardown only destroys machines ECM created, and these are not: "
+                                   + ", ".join(foreign))
         log(self.db, op.id, f"applying approved plan {op.approved_digest}")
         outcome = self.runner.apply(ws, self._env())
         op.result = {"ok": outcome.ok, "error": outcome.error, "resources_in_state": outcome.resources_in_state,
