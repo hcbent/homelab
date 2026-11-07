@@ -1,0 +1,26 @@
+---
+# One ask of cloud-init. If the connection dropped, the next ask first waits for the machine to answer again.
+# Included by wait_for_first_boot.yml, and by itself again after a drop until first_boot_attempts asks are used.
+- name: Wait for the machine to answer again, since its connection dropped
+  ansible.builtin.wait_for_connection:
+    delay: "{{ first_boot_poll_delay | int }}"
+    timeout: "{{ first_boot_ssh_wait | int }}"
+  when: cloud_init is defined and cloud_init.rc is not defined
+  ignore_errors: true         # the next ask goes ahead regardless, and the check after the asks says plainly if it never came back
+
+- name: Ask cloud-init to finish
+  ansible.builtin.command: cloud-init status --wait
+  register: cloud_init
+  changed_when: false
+  failed_when: false          # a degraded cloud-init is not ours to fail on; the roles check what they need
+  ignore_unreachable: true    # keep the host in the run if its connection drops, and wait for it on the next ask
+  timeout: 900
+
+- name: Note whether cloud-init answered, and how many times it was asked
+  ansible.builtin.set_fact:
+    cloud_init_finished: "{{ cloud_init.rc is defined }}"
+    first_boot_asks: "{{ (first_boot_asks | default(0) | int) + 1 }}"
+
+- name: Ask again, since the connection dropped
+  ansible.builtin.include_tasks: first_boot_ask.yml
+  when: not cloud_init_finished and (first_boot_asks | int) < (first_boot_attempts | int)

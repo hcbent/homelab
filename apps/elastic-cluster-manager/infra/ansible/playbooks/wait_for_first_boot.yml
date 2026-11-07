@@ -1,0 +1,37 @@
+---
+# Wait until each new machine has finished its first boot, even if its connection drops while it does.
+#
+# Terraform returns as soon as the machines exist, so on a real create they may still be booting, and cloud-init
+# may still be running (and holding the apt lock). Wait for both before touching anything.
+#
+# Cloud-init can restart sshd, or reboot the machine, partway through. "SSH answers" is true before that, so the
+# next command can find the port closed ("Connection refused"). An unreachable host is normally dropped from the
+# rest of the run, which failed a seven-node create on one slow node. So asking cloud-init ignores an unreachable
+# result; if the machine dropped out, the next ask waits for it to answer again first, up to first_boot_attempts
+# asks in all. Ansible's retries/until does not retry an unreachable result, and a `when` on a looped include is
+# decided before the first item runs, which is why this includes itself again instead. On the normal path the
+# machine answers the first time and nothing is repeated. A machine that never comes back fails here with a plain
+# message instead of as "unreachable".
+- name: Wait for the machines to accept SSH and finish their first boot
+  hosts: es_nodes
+  gather_facts: false
+  vars:
+    first_boot_attempts: 4        # asks of cloud-init in all
+    first_boot_ssh_wait: 300      # seconds to wait for a machine that dropped out to answer again
+    first_boot_connect_timeout: 600
+    first_boot_poll_delay: 5      # seconds before the first check of a machine, and between checks
+  tasks:
+    - name: Wait until SSH answers
+      ansible.builtin.wait_for_connection:
+        delay: "{{ first_boot_poll_delay | int }}"
+        timeout: "{{ first_boot_connect_timeout | int }}"
+
+    - name: Wait for cloud-init to finish, however often the connection drops meanwhile
+      ansible.builtin.include_tasks: tasks/first_boot_ask.yml
+
+    - name: Stop if a machine never finished its first boot
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} did not finish its first boot: its connection kept dropping, or cloud-init did
+          not finish. The machine is kept. Retry once it answers (check its console in Proxmox).
+      when: not (cloud_init_finished | default(false))
