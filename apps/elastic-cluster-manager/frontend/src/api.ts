@@ -92,6 +92,8 @@ export interface Lifecycle {
   data_disks?: Record<string, number>; can_change?: boolean;
   /** Each node's cores and RAM (MB), from the recorded state. */
   sizes?: Record<string, { cores: number; ram_mb: number }>;
+  /** Each node's roles (empty for coordinating only), Proxmox host and whether it counts towards the master quorum. */
+  node_roles?: Record<string, { roles: string[]; master_eligible: boolean; holds_data: boolean; host: string | null }>;
 }
 
 export interface ClusterDetail extends ClusterSummary {

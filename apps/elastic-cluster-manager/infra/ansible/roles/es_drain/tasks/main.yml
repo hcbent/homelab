@@ -1,0 +1,46 @@
+---
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - es_expected_nodes is defined
+      - es_removing is defined and es_removing | length > 0
+      - es_dr_phase in ['drain', 'after']
+      - groups['es_nodes'] | default([]) | length > 1
+    fail_msg: >-
+      Removing nodes needs the ECM API key, the cluster CA, the number of nodes that remain, the names of the nodes going,
+      a phase (drain or after) and at least two nodes that remain.
+
+- name: Say how to reach the cluster
+  ansible.builtin.set_fact:
+    es_dr_contact: "{{ hostvars[groups['es_nodes'][0]].ansible_host }}"
+    es_dr_headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+  no_log: true
+
+- name: Read which of the nodes going the cluster still has
+  ansible.builtin.uri:
+    url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes?filter_path=nodes.*.name"
+    headers: "{{ es_dr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_dr_nodes
+
+- name: Work out their node ids
+  ansible.builtin.set_fact:
+    es_dr_ids: >-
+      {%- set out = {} -%}
+      {%- for node_id, info in es_dr_nodes.json.nodes.items() -%}
+        {%- if info.name in es_removing -%}{%- set _ = out.update({info.name: node_id}) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+    es_dr_known_ids: "{{ es_dr_nodes.json.nodes.keys() | list }}"
+
+- name: Drain them
+  ansible.builtin.include_tasks: drain.yml
+  when: es_dr_phase == 'drain'
+
+- name: Check the cluster once they are gone
+  ansible.builtin.include_tasks: after.yml
+  when: es_dr_phase == 'after'

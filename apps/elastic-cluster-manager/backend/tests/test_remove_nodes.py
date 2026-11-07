@@ -325,3 +325,57 @@ def test_a_node_whose_name_starts_with_a_named_one_is_not_deleted_by_naming_the_
     p = summary(('module.node["lab-x-10"].vm', "delete"))
     out = check_removal_plan(p, frozenset({"lab-x-1"}))
     assert any("lab-x-10" in o for o in out) and any("does not delete lab-x-1" in o for o in out)
+
+
+# -- the inventory and the request for the playbooks ----------------------------------------------------------------------
+
+def _inventory(kind="remove_drain", removing=("lab-x-07",), bootstrapped=True, drop=None):
+    from app.configmgmt import InventoryInput, render_inventory
+    from app.desired import build_desired_state
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-x", "9.5.6", data_nodes=2, coordinating_nodes=1)
+    if drop:
+        state = state.model_copy(update={"nodes": state.nodes[:drop]})
+    return render_inventory(InventoryInput(
+        state=state, addresses={n.name: f"192.0.2.{10 + i}" for i, n in enumerate(state.nodes)}, operation_kind=kind,
+        bootstrapped_at=datetime(2026, 11, 6, tzinfo=UTC) if bootstrapped else None, ssh_user="bret",
+        ssh_key_path="/run/ecm/ssh/k", known_hosts_path="/tmp/kh", removing=list(removing) or None))
+
+
+def test_the_inventory_names_the_nodes_going_and_the_count_that_remains():
+    inv = _inventory(removing=("lab-x-08", "lab-x-07"))
+    assert inv["all"]["vars"]["es_removing"] == ["lab-x-07", "lab-x-08"] and inv["all"]["vars"]["es_expected_nodes"] == 6
+    assert "es_removing" not in _inventory(kind="converge", removing=())["all"]["vars"]
+
+
+def test_the_inventory_refuses_a_removal_with_nothing_named_a_node_that_remains_or_a_cluster_not_built():
+    from app.configmgmt import InventoryError
+    for kwargs, text in (({"removing": ()}, "needs the names"), ({"removing": ("lab-x-02",)}, "must not be in the state"),
+                         ({"bootstrapped": False}, "has bootstrapped"), ({"drop": 1}, "single node")):
+        with pytest.raises(InventoryError, match=text):
+            _inventory(**kwargs)
+
+
+def test_the_request_for_a_removal_needs_the_names_the_key_and_the_ca_and_cannot_be_a_check(tmp_path):
+    from app.configmgmt import AnsibleError
+    from app.configmgmt.runner import AnsibleRequest, CliAnsibleRunner
+    from app.desired import build_desired_state
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-x", "9.5.6", data_nodes=2, coordinating_nodes=1)
+    base = {"state": state, "addresses": {n.name: "192.0.2.10" for n in state.nodes}, "kind": "remove_drain",
+            "bootstrapped_at": datetime.now(UTC)}
+    runner = CliAnsibleRunner(str(tmp_path), "bret", "/run/ecm/ssh/k")
+    with pytest.raises(AnsibleError, match="the names of the nodes being removed, the ECM API key, the cluster's CA"):
+        runner.run(AnsibleRequest(**base))
+    with pytest.raises(AnsibleError, match="cannot be checked"):
+        runner.run(AnsibleRequest(**base, check=True, removing=["a"], es_api_key="k", es_ca_pem="c"))
+
+
+def test_the_nodes_a_removal_deletes_are_taken_from_the_recorded_change_for_the_ownership_check(session, built):
+    from app.models import Vm
+    from app.provisioning.ownership import foreign_machines
+    conn_id = built.desired["proxmox_connection_id"]
+    session.add(Vm(connection_id=conn_id, pve_node="pve1", vmid=built.desired["vm_ids"]["lab-x-06"], name="stranger",
+                   status="running", tf_managed=False))
+    session.commit()
+    params = ask(session, built, "lab-x-06")
+    assert "lab-x-06" not in params["vm_ids"]                                   # the plain parameters no longer list it
+    assert foreign_machines(session, params) == [f"{built.desired['vm_ids']['lab-x-06']} (stranger)"]

@@ -5,6 +5,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, OperationDetail as Detail, PlanSummary } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { bytes } from "./format";
 import { useInterval } from "./useInterval";
 
 const TERMINAL = ["succeeded", "failed", "cancelled"];
@@ -24,7 +25,7 @@ const STEP_STATUS: Record<string, string> = {
 };
 const STEP_TEXT: Record<string, string> = {
   render: "Prepare the configuration", init: "Initialise Terraform", plan: "Plan the changes",
-  approval: "Wait for your approval", apply: "Make the changes on Proxmox", configure: "Install and start Elasticsearch",
+  approval: "Wait for your approval", drain: "Move the data off the nodes", apply: "Make the changes on Proxmox", configure: "Install and start Elasticsearch",
 };
 const MAX_LOG_LINES = 400;
 
@@ -80,6 +81,33 @@ function AddedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
   );
 }
 
+interface RemovedNode {
+  name: string; host: string; address: string; vm_id: number; roles: string; cores: number; ram_mb: number;
+  data_disk_gb: number | null; shards: number; data_bytes: number;
+}
+
+/** Which nodes a removal would destroy, where they run and how much data has to move off them first. */
+function RemovedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
+  const nodes = Object.entries((change.nodes ?? {}) as Record<string, Omit<RemovedNode, "name">>)
+    .map(([name, n]) => ({ name, ...n }));
+  const columns: EuiBasicTableColumn<RemovedNode>[] = [
+    { name: "Node to remove", render: (n: RemovedNode) => <span className="ecm-mono">{n.name}</span> },
+    { name: "Proxmox host", render: (n: RemovedNode) => <span className="ecm-mono">{n.host}</span> },
+    { name: "Address", render: (n: RemovedNode) => <span className="ecm-mono">{n.address}</span> },
+    { field: "vm_id", name: "VM ID" },
+    { field: "roles", name: "Roles" },
+    { name: "Data to move", render: (n: RemovedNode) => (n.shards ? `${n.shards} shard${n.shards === 1 ? "" : "s"}, ${bytes(n.data_bytes)}` : "none") },
+  ];
+  return (
+    <div className="ecm-stack-lg">
+      <h4 className="ecm-label">The nodes this removes</h4>
+      <EuiBasicTable<RemovedNode> tableCaption="The nodes this removes" items={nodes} columns={columns} rowHeader="name" />
+      {(change.warnings ?? []).map((w) => (
+        <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
+    </div>
+  );
+}
+
 /** One operation: its steps, the plan and its digest, the actions that apply, the result and the log. */
 export function OperationDetail({ id }: { id: string }) {
   const [op, setOp] = useState<Detail | null>(null);
@@ -125,6 +153,8 @@ export function OperationDetail({ id }: { id: string }) {
   }
 
   const destroying = op.kind === "tf.destroy";
+  const removing = op.kind === "tf.update" && op.change?.kind === "remove_nodes";
+  const drainFailed = op.steps.some((s) => s.name === "drain" && s.status === "failed");
   const summary = op.plan?.summary ?? null;
   const lines = op.logs.slice(-MAX_LOG_LINES);
   const hidden = op.logs.length - lines.length;
@@ -176,15 +206,16 @@ export function OperationDetail({ id }: { id: string }) {
             { title: "Plan digest", description: <span className="ecm-mono ecm-small ecm-clip">{op.plan.digest}</span> },
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
+          {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
           {op.dry_run && (
             <EuiCallOut size="s" color="primary" iconType="info" className="ecm-gap"
               title="This was a dry run: nothing was created, and it cannot be approved.">
               <p>Go back and plan the build for real to get a plan you can approve.</p></EuiCallOut>)}
           {op.plan.approvable && (
             <div className="ecm-detail__actions">
-              <EuiButton fill color={destroying ? "danger" : "primary"} isDisabled={busy}
+              <EuiButton fill color={destroying || removing ? "danger" : "primary"} isDisabled={busy}
                 onClick={() => setConfirming(true)}>
-                {destroying ? "Approve and destroy" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
+                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
               <EuiButtonEmpty isDisabled={busy} onClick={() => act("cancel")}>Cancel</EuiButtonEmpty>
               <span className="ecm-small">Nothing changes until you approve.</span>
             </div>)}
@@ -198,11 +229,16 @@ export function OperationDetail({ id }: { id: string }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
           {!op.dry_run && op.kind === "tf.update" && (
+            removing ? (
+              <p>{drainFailed
+                ? "Nothing was destroyed: the data is moved off the nodes first, and the nodes are ordinary members of the cluster again. Retry plans the removal again and needs a new approval."
+                : "Once the machines were destroyed they stay gone. If the apply failed, nothing is forgotten and Retry plans again; if a later step failed, Retry runs the rest."}</p>
+            ) : (
             <p>What Terraform already changed is kept{op.change?.kind === "add_node"
               ? ", so the new machines exist. Retry configures them again, which is safe to repeat"
               : op.change?.kind === "resize"
               ? ", and so is every node already restarted. Retry plans again and carries on with the nodes not yet at their new size"
-              : ". Retry plans again and runs the rest"}.</p>)}
+              : ". Retry plans again and runs the rest"}.</p>))}
           {!op.dry_run && op.kind === "tf.create" && (
             <p>Machines it already made are kept. Retry resumes where it stopped. To remove them instead,{" "}
               {op.cluster_id
@@ -231,8 +267,14 @@ export function OperationDetail({ id }: { id: string }) {
           <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
+      {op.state === "succeeded" && removing && (
+        <EuiCallOut color="success" iconType="check" title="The nodes are removed">
+          <p>Elasticsearch moved the data off them, Terraform destroyed their machines, and the cluster is green with the
+            nodes that remain.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
       {op.state === "succeeded" && op.kind === "tf.update"
-        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && (
+        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "remove_nodes" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
             every few minutes; press Sync now there to see them at once.{" "}
@@ -264,6 +306,9 @@ export function OperationDetail({ id }: { id: string }) {
           onConfirm={() => { setConfirming(false); act("approve", { digest: op.plan!.digest }); }}>
           {destroying
             ? <p>{terraformText(op.kind, summary)}. The machines and anything stored on them are gone for good.</p>
+            : removing
+            ? <p>Elasticsearch moves the data off the nodes first. Then {terraformText(op.kind, summary).toLowerCase()}, and
+              their disks go with them for good. This approves exactly the plan with this digest.</p>
             : <p>{terraformText(op.kind, summary)}.{summary?.configure
               ? ` Then ${summary.configure}.` : ""} This approves exactly the plan with this digest.</p>}
         </ConfirmAction>)}

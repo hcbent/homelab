@@ -1,0 +1,11 @@
+---
+# A node that is already gone (a retry after Terraform destroyed it) needs no drain. The cluster is then checked, afterwards.
+- name: Say what is being drained
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Draining ' ~ (es_dr_ids.keys() | sort | join(', ')) ~ '.' if es_dr_ids | length > 0
+         else 'None of ' ~ (es_removing | join(', ')) ~ ' is in the cluster any more; there is nothing to drain.' }}
+
+- name: Drain the nodes that are still there
+  ansible.builtin.include_tasks: drain_present.yml
+  when: es_dr_ids | length > 0

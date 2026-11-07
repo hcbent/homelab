@@ -1,0 +1,134 @@
+---
+# Nothing is destroyed here, so a failure leaves the cluster as it was once the shutdowns are cancelled.
+- name: Move the shards off the nodes going, and cancel if it cannot be done
+  block:
+    - name: Wait for the cluster to be green with every node, those going included
+      ansible.builtin.uri:
+        url: >-
+          {{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_cluster/health?wait_for_status=green&timeout=5s
+        headers: "{{ es_dr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        status_code: [200, 408]
+        return_content: true
+      register: es_dr_health
+      until: >-
+        es_dr_health.status == 200 and not (es_dr_health.json.timed_out | default(false))
+        and es_dr_health.json.number_of_nodes | int == es_expected_nodes | int + es_dr_ids | length
+      retries: "{{ (es_dr_health_wait | int / es_dr_poll | int) | round(0, 'ceil') | int }}"
+      delay: "{{ es_dr_poll }}"
+      ignore_errors: true
+
+    - name: Stop if the cluster is not healthy
+      ansible.builtin.fail:
+        msg: >-
+          The cluster was not green with all {{ es_expected_nodes | int + es_dr_ids | length }} of its nodes
+          (last seen: {{ es_dr_health.json.status | default('no answer') }},
+          {{ es_dr_health.json.number_of_nodes | default('unknown') }} nodes), so no node was drained.
+      when: >-
+        es_dr_health is failed or es_dr_health.status | default(0) != 200
+        or es_dr_health.json.timed_out | default(true)
+        or es_dr_health.json.number_of_nodes | int != es_expected_nodes | int + es_dr_ids | length
+
+    - name: Read where every shard copy is
+      ansible.builtin.uri:
+        url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_cat/shards?format=json&h=index,shard,state,node"
+        headers: "{{ es_dr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        return_content: true
+      register: es_dr_shards
+
+    - name: Work out whether any shard has no copy outside the nodes going
+      ansible.builtin.set_fact:
+        es_dr_not_started: "{{ es_dr_shards.json | rejectattr('state', 'equalto', 'STARTED') | list | length }}"
+        es_dr_only_copy: >-
+          {%- set where = {} -%}
+          {%- for s in es_dr_shards.json if s.state == 'STARTED' -%}
+            {%- set key = s.index ~ '[' ~ s.shard ~ ']' -%}
+            {%- set _ = where.update({key: where.get(key, []) + [s.node]}) -%}
+          {%- endfor -%}
+          {%- set out = [] -%}
+          {%- for key, nodes in where.items() if (nodes | difference(es_removing)) | length == 0 -%}
+            {%- set _ = out.append(key) -%}
+          {%- endfor -%}
+          {{ out | sort }}
+
+    - name: Stop before anything is drained if a shard would lose its last copy
+      ansible.builtin.fail:
+        msg: >-
+          {{ es_dr_not_started }} shard cop{{ 'y is' if es_dr_not_started | int == 1 else 'ies are' }} not started and
+          {{ es_dr_only_copy | length }} shard{{ '' if es_dr_only_copy | length == 1 else 's' }} would have no copy left
+          ({{ es_dr_only_copy[:5] | join(', ') }}). Nothing was drained.
+      when: es_dr_not_started | int > 0 or es_dr_only_copy | length > 0
+
+    - name: Ask Elasticsearch to move everything off each node
+      ansible.builtin.uri:
+        url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes/{{ item.value }}/shutdown"
+        method: PUT
+        headers: "{{ es_dr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        body_format: json
+        body:
+          type: remove
+          reason: "ECM is removing {{ item.key }}"
+      loop: "{{ es_dr_ids | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Wait until each node has been emptied
+      ansible.builtin.uri:
+        url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes/{{ item.value }}/shutdown"
+        headers: "{{ es_dr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        return_content: true
+      register: es_dr_status
+      until: >-
+        ((es_dr_status.json.nodes | default([]) | first | default({})).status | default('')) in ['COMPLETE', 'STALLED']
+      retries: "{{ (es_dr_drain_wait | int / es_dr_poll | int) | round(0, 'ceil') | int }}"
+      delay: "{{ es_dr_poll }}"
+      loop: "{{ es_dr_ids | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Work out which nodes were not emptied
+      ansible.builtin.set_fact:
+        es_dr_unfinished: >-
+          {%- set out = [] -%}
+          {%- for r in es_dr_status.results -%}
+            {%- set st = (r.json.nodes | default([]) | first | default({})) -%}
+            {%- if st.status | default('') != 'COMPLETE' -%}
+              {%- set _ = out.append(r.item.key ~ ' is ' ~ (st.status | default('not reporting')) ~
+                  ((' (' ~ st.shard_migration.explanation ~ ')') if st.shard_migration is defined
+                   and st.shard_migration.explanation is defined else '')) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Stop if a node could not be emptied
+      ansible.builtin.fail:
+        msg: "Elasticsearch could not empty every node: {{ es_dr_unfinished | join('; ') }}."
+      when: es_dr_unfinished | length > 0
+
+    - name: Say the nodes are empty
+      ansible.builtin.debug:
+        msg: "{{ es_dr_ids.keys() | sort | join(', ') }} no longer hold any shards."
+
+  rescue:
+    - name: Put the nodes back as ordinary members of the cluster
+      ansible.builtin.uri:
+        url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes/{{ item.value }}/shutdown"
+        method: DELETE
+        headers: "{{ es_dr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        status_code: [200, 404]
+      loop: "{{ es_dr_ids | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: false
+
+    - name: Stop, with nothing destroyed
+      ansible.builtin.fail:
+        msg: >-
+          {{ ansible_failed_result.msg | default('a call to Elasticsearch failed') }}
+          Nothing was destroyed, and the shutdown of {{ es_dr_ids.keys() | sort | join(', ') }} was cancelled, so
+          {{ 'it is an ordinary member' if es_dr_ids | length == 1 else 'they are ordinary members' }} of the cluster again.
+          Retry plans the removal again.

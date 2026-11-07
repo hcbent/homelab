@@ -44,7 +44,7 @@ from app.models import ACTIVE_STATES, Cluster, Credential, EsNode, Operation, Pr
 from app.operations import AwaitingApproval, create_operation, log, run_phases
 from app.provisioning.ownership import foreign_machines
 from app.provisioning.ownership import torn_down as _torn_down
-from app.provisioning.plan import check_plan_safety
+from app.provisioning.plan import check_plan_safety, check_removal_plan, node_of
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
 from app.provisioning.runner import CliTerraformRunner, TerraformError, TerraformRunner
 from app.provisioning.workspace import existing_workspace, open_workspace, remove_workspace
@@ -60,6 +60,10 @@ UPDATE_PHASES = [*PHASES, "configure"]  # a change to a built cluster ends with 
 # A resize applies the new size with Terraform, writes the new heap with a converge, then restarts the nodes one at a
 # time (docs/DESIGN_RESIZE.md). The converge restarts nothing, so a bigger heap sits unused until a node restarts.
 RESIZE_PHASES = [*PHASES, "configure", "restart"]
+# Removing nodes empties them first (Elasticsearch moves their shards away while they still run), and only then lets
+# Terraform destroy the machines (docs/DESIGN_REMOVE_NODE.md). The drain is after the approval, since it changes the
+# cluster, and before the apply, since a machine must be empty when it goes.
+REMOVE_PHASES = ["render", "init", "plan", "approval", "drain", "apply", "configure"]
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
@@ -90,6 +94,10 @@ class ApplyFailed(Exception):
 
 class RestartFailed(Exception):
     """The rolling restart stopped. The nodes already restarted stay restarted; a retry resumes with the rest."""
+
+
+class DrainFailed(Exception):
+    """The nodes could not be emptied. Nothing was destroyed and the shutdowns were cancelled."""
 
 
 class ConfigureFailed(Exception):
@@ -170,7 +178,8 @@ def start_update(db: Session, *, cluster_id: str, params: dict, actor: str) -> O
     foreign = foreign_machines(db, params)
     if foreign:
         raise OperationRefused("a change only touches machines ECM created, and these are not: " + ", ".join(foreign))
-    phases = RESIZE_PHASES if (params.get("change") or {}).get("kind") == "resize" else UPDATE_PHASES
+    phases = {"resize": RESIZE_PHASES, "remove_nodes": REMOVE_PHASES}.get((params.get("change") or {}).get("kind"),
+                                                                           UPDATE_PHASES)
     op = create_operation(db, UPDATE, phases, cluster_id=cluster.id, params=params, actor=actor)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=UPDATE, change=params.get("change"))
     return op
@@ -267,6 +276,12 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     recorded = ((cluster.desired or {}).get("state") or {}).get("nodes", []) if cluster.bootstrapped_at else []
     data_disks = {n["name"]: n["data_disk_gb"] for n in recorded if n.get("data_disk_gb")}
     sizes = {n["name"]: {"cores": n["cores"], "ram_mb": n["ram_mb"]} for n in recorded}
+    placement = (cluster.desired or {}).get("placement") or {}
+    members = ({n.name: n for n in DesiredState.model_validate(cluster.desired["state"]).nodes}
+               if cluster.desired and cluster.bootstrapped_at else {})
+    # What the Remove nodes panel offers: each node's roles, where it runs and whether it counts towards the quorum.
+    roles = {name: {"roles": sorted(n.effective_roles), "master_eligible": n.is_master_eligible,
+                    "holds_data": n.holds_data, "host": placement.get(name)} for name, n in members.items()}
     blocker = _removal_blocker(db, cluster)
     return {
         "managed": True,
@@ -277,6 +292,7 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         # What the cluster is now and whether a change can be planned: each data node's disk, from the recorded state
         "data_disks": data_disks,
         "sizes": sizes,
+        "node_roles": roles,
         "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered
@@ -379,7 +395,7 @@ class _Handlers:
     def handlers(self) -> dict[str, Callable[[], None]]:
         return {"render": self.render, "init": self.init, "plan": self.plan,
                 "approval": self.approval, "apply": self.apply, "configure": self.configure,
-                "restart": self.restart}
+                "restart": self.restart, "drain": self.drain}
 
     # -- helpers --
 
@@ -458,7 +474,10 @@ class _Handlers:
         self._preflight()  # before anything is planned: a plan only reads, so it cannot see lost write rights
         ws = existing_workspace(self.root, self.cluster_id)
         outcome = self.runner.plan(ws, self._env(), destroy=self.kind == DESTROY)
-        problems = check_plan_safety(outcome.summary, self.plan_kind)
+        if self._removing():
+            problems = self._removal_problems(outcome.summary)
+        else:
+            problems = check_plan_safety(outcome.summary, self.plan_kind)
         if self.kind == DESTROY:
             problems += self._outside_the_create(outcome.summary)
         if problems:
@@ -473,6 +492,23 @@ class _Handlers:
         self.db.commit()
         log(self.db, op.id, f"plan {stored.approval_digest}: {outcome.summary.adds} to add, "
                             f"{outcome.summary.updates} to change, {outcome.summary.deletes} to destroy")
+
+    def _removing(self) -> list[str]:
+        """The nodes this operation removes, or [] when it is not a removal."""
+        change = (self.op.params.get("change") or {}) if self.kind == UPDATE else {}
+        return list(change.get("removed") or []) if change.get("kind") == "remove_nodes" else []
+
+    def _already_removed(self) -> bool:
+        """True when an earlier apply of this operation destroyed every machine it names: the result is kept across a
+        retry, and none of them is in the state it recorded. Then the plan has nothing to delete, which is right."""
+        result = self.op.result or {}
+        left = {node_of(a) for a in result.get("resources_in_state") or []}
+        return bool(result.get("ok")) and not (set(self._removing()) & left)
+
+    def _removal_problems(self, summary) -> list[str]:
+        if summary.is_empty and self._already_removed():
+            return []
+        return check_removal_plan(summary, frozenset(self._removing()))
 
     def _outside_the_create(self, summary) -> list[str]:
         """A cleanup may only delete what ECM recorded in this cluster's state: what its create recorded, and what any
@@ -511,6 +547,7 @@ class _Handlers:
         if self._nothing_to_do():
             log(self.db, op.id, "nothing to apply")
             self._adopt_params()  # Terraform already matches what was asked for
+            self._forget_removed()
             return
         if op.dry_run or not op.approved_digest:
             raise ApplyRefused("apply needs an approved plan")
@@ -533,6 +570,7 @@ class _Handlers:
             self._forget_cluster()
         if outcome.ok and self.kind == UPDATE:
             self._adopt_params()
+            self._forget_removed()
         if not outcome.ok:
             raise ApplyFailed(f"{outcome.error}. Nothing was destroyed; {len(outcome.resources_in_state)} "
                               "resource(s) are in state. Retry re-plans and needs a new approval")
@@ -656,6 +694,63 @@ class _Handlers:
             raise RestartFailed(f"{outcome.error or 'the rolling restart failed'}. {resumes}")
         log(self.db, self.op.id, "every node runs at its new size and the cluster is green")
 
+    def _removal_request(self, kind: str) -> AnsibleRequest:
+        """The request for the drain or the check after it. The state and addresses are what REMAINS; the names of the
+        nodes going are in `removing`. It needs ECM's API key and the cluster's CA to ask the cluster."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        api_key = self._credential(self._names()[2])
+        if api_key is None or not cluster.tls_ca_pem:
+            raise DrainFailed("ECM has no API key or CA certificate for this cluster, so it cannot ask the cluster to "
+                              "move the data off the nodes. Nothing was destroyed")
+        profile = NetworkProfile.model_validate(params["profile"])
+        return AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind=kind, bootstrapped_at=cluster.bootstrapped_at,
+            search_domain=profile.search_domain, removing=self._removing(),
+            es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=cluster.tls_ca_pem)
+
+    def drain(self) -> None:
+        """Have Elasticsearch move every shard off the nodes being removed, while they still run (playbooks/
+        remove_nodes.yml, phase drain). Nothing is destroyed here; if the nodes cannot be emptied the playbook cancels the
+        shutdowns and stops. A node that is already gone is skipped, so a retry after the apply passes this step."""
+        log(self.db, self.op.id, f"asking Elasticsearch to move the data off {', '.join(self._removing())}")
+        try:
+            outcome = self.ansible.run(self._removal_request("remove_drain"))
+        except AnsibleError as e:
+            raise DrainFailed(f"{e}. Nothing was destroyed") from e
+        if not outcome.ok:
+            raise DrainFailed(f"{outcome.error or 'the nodes could not be emptied'}. Nothing was destroyed; Retry plans "
+                              "the removal again and needs a new approval")
+        log(self.db, self.op.id, "the nodes hold no shards, so they can be destroyed")
+
+    def _removal_check(self) -> None:
+        """After Terraform destroyed the machines: the cluster must be green with the nodes that remain (playbooks/
+        remove_nodes.yml, phase after), and the leftover shutdown records are cleared."""
+        kept = "The machines are gone; retry runs the check again"
+        try:
+            outcome = self.ansible.run(self._removal_request("remove_check"))
+        except (AnsibleError, DrainFailed) as e:
+            raise ConfigureFailed(f"{e}. {kept}") from e
+        if not outcome.ok:
+            raise ConfigureFailed(f"{outcome.error or 'the cluster is not green without the removed nodes'}. {kept}")
+        log(self.db, self.op.id, "the cluster is green with the nodes that remain")
+
+    def _forget_removed(self) -> None:
+        """Drop the stored rows of the machines and nodes this removal destroyed, rather than waiting for the next sync,
+        so the inventory does not show a machine that is gone. A row is matched on connection, VMID and name together, so
+        a different VM that reuses a VMID is never touched; if a machine somehow still exists the next sync adds it back."""
+        change = (self.op.params.get("change") or {}) if self.kind == UPDATE else {}
+        if change.get("kind") != "remove_nodes":
+            return
+        conn_id = self.op.params.get("proxmox_connection_id")
+        names = list(change.get("removed") or [])
+        gone = sum(self.db.execute(delete(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(info["vm_id"]),
+                                                    Vm.name == name)).rowcount
+                   for name, info in (change.get("nodes") or {}).items())
+        self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id, EsNode.name.in_(names)))
+        self.db.commit()
+        log(self.db, self.op.id, f"{', '.join(names)} removed from the inventory ({gone} machine{'s' if gone != 1 else ''})")
+
     def _add_nodes(self) -> None:
         """Configure and start only the nodes this change added, then check that they joined and the cluster is green
         (playbooks/add_node.yml). The existing nodes are not touched. It needs ECM's API key (to ask the cluster) and
@@ -685,8 +780,12 @@ class _Handlers:
 
     def configure(self) -> None:
         if self.kind == UPDATE:
-            if (self.op.params.get("change") or {}).get("kind") == "add_node":
+            kind = (self.op.params.get("change") or {}).get("kind")
+            if kind == "add_node":
                 self._add_nodes()
+            elif kind == "remove_nodes":
+                self._converge()            # the remaining nodes' seed lists lose the removed ones; nothing restarts
+                self._removal_check()
             else:
                 self._converge()
             return

@@ -1,0 +1,50 @@
+---
+- name: Wait for the cluster to be green with the nodes that remain
+  ansible.builtin.uri:
+    url: >-
+      {{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_cluster/health?wait_for_status=green&timeout=5s
+    headers: "{{ es_dr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 408]
+    return_content: true
+  register: es_dr_health
+  until: >-
+    es_dr_health.status == 200 and not (es_dr_health.json.timed_out | default(false))
+    and es_dr_health.json.number_of_nodes | int == es_expected_nodes | int
+  retries: "{{ (es_dr_health_wait | int / es_dr_poll | int) | round(0, 'ceil') | int }}"
+  delay: "{{ es_dr_poll }}"
+  ignore_errors: true
+
+- name: Stop if the cluster is not green with the nodes that remain
+  ansible.builtin.fail:
+    msg: >-
+      The machines were removed, but the cluster was not green with the {{ es_expected_nodes }} nodes that remain
+      (last seen: {{ es_dr_health.json.status | default('no answer') }},
+      {{ es_dr_health.json.number_of_nodes | default('unknown') }} nodes). Retry checks again.
+  when: >-
+    es_dr_health is failed or es_dr_health.status | default(0) != 200
+    or es_dr_health.json.timed_out | default(true)
+    or es_dr_health.json.number_of_nodes | int != es_expected_nodes | int
+
+- name: Read the shutdown records the cluster still holds
+  ansible.builtin.uri:
+    url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes/shutdown"
+    headers: "{{ es_dr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_dr_records
+  failed_when: false
+
+# A record of a node that is no longer in the cluster is left over from the drain. Only those are cleared, never one for a
+# node that is still a member.
+- name: Clear the records of nodes that are gone
+  ansible.builtin.uri:
+    url: "{{ es_dr_scheme }}://{{ es_dr_contact }}:{{ es_dr_http_port }}/_nodes/{{ item }}/shutdown"
+    method: DELETE
+    headers: "{{ es_dr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 404]
+  loop: >-
+    {{ (es_dr_records.json.nodes | default([]) if es_dr_records.status | default(0) == 200 else [])
+       | map(attribute='node_id') | difference(es_dr_known_ids) | list }}
+  failed_when: false

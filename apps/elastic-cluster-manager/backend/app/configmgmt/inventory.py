@@ -25,7 +25,7 @@ from typing import Literal
 from app.desired.models import DesiredState
 from app.desired.roles import OMIT, discovery_settings, render_node_roles
 
-OperationKind = Literal["create", "converge", "restart", "add_node"]
+OperationKind = Literal["create", "converge", "restart", "add_node", "remove_drain", "remove_check"]
 
 _SSH_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./-]+$")  # absolute, nothing a shell or ssh option could misread
@@ -52,6 +52,9 @@ class InventoryInput:
     placement: dict[str, str] | None = None
     # Adding nodes: which of the nodes are the new ones. Only they are prepared, given a certificate and started.
     new_nodes: list[str] | None = None
+    # Removing nodes: the ones going. They are not in `state`, which is what remains; the playbooks run on the worker and
+    # ask the cluster about them by name.
+    removing: list[str] | None = None
 
 
 def _check(inp: InventoryInput) -> None:
@@ -82,6 +85,16 @@ def _check(inp: InventoryInput) -> None:
             raise InventoryError("a cluster cannot be made of only new nodes: use a create")
         if not any(n.is_electable and n.name not in inp.new_nodes for n in inp.state.nodes):
             raise InventoryError("the cluster has no existing node that can sign the new nodes' certificates")
+    if inp.operation_kind in ("remove_drain", "remove_check"):
+        if inp.bootstrapped_at is None:
+            raise InventoryError("nodes are removed from a cluster that has bootstrapped")
+        if not inp.removing:
+            raise InventoryError("removing nodes needs the names of the nodes that are going")
+        still = sorted(set(inp.removing) & {n.name for n in inp.state.nodes})
+        if still:
+            raise InventoryError(f"the nodes being removed must not be in the state that remains: {', '.join(still)}")
+        if len(inp.state.nodes) < 2:
+            raise InventoryError("a cluster cannot be removed down to a single node")
     if inp.operation_kind == "create" and inp.bootstrapped_at is not None:
         raise InventoryError("this cluster has already bootstrapped; a create would re-render "
                              "cluster.initial_master_nodes and could split it. Use converge.")
@@ -136,6 +149,8 @@ def render_inventory(inp: InventoryInput) -> dict:
     }
     if "cluster.initial_master_nodes" in discovery:
         cluster_vars["es_initial_master_nodes"] = discovery["cluster.initial_master_nodes"]
+    if inp.removing:
+        cluster_vars["es_removing"] = sorted(inp.removing)
     if inp.artifacts_dir is not None:
         cluster_vars["es_artifacts_dir"] = inp.artifacts_dir
 

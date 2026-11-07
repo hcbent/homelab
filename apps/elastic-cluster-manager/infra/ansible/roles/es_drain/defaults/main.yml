@@ -1,0 +1,7 @@
+---
+es_dr_scheme: https
+es_dr_http_port: 9200
+# How long to wait, and how often to look. Overridable, mostly for tests.
+es_dr_health_wait: 900     # seconds for green with the nodes the cluster should have
+es_dr_drain_wait: 7200     # seconds for Elasticsearch to move every shard off a node
+es_dr_poll: 10             # seconds between looks

@@ -8,6 +8,7 @@ is not verified.
 |---|---|
 | `create.yml` | Build a new cluster, once, before `bootstrapped_at` is set. |
 | `converge.yml` | Bring an existing cluster's nodes back to the desired config. Run with `--check --diff` first. Never restarts or starts a node. |
+| `remove_nodes.yml` | Run by the worker twice when nodes are removed: `es_dr_phase: drain` asks Elasticsearch to move every shard off the nodes (node shutdown API) before Terraform destroys them, and cancels and stops if it cannot; `after` waits for green without them. Needs no SSH. |
 
 | Role | Does |
 |---|---|
@@ -17,6 +18,7 @@ is not verified.
 | `es_tls` | Cluster CA and per-node certificates with `elasticsearch-certutil` |
 | `es_node` | `elasticsearch.yml`, heap, first-start keystore entry, start |
 | `es_bootstrap` | Waits for the expected nodes and health, makes an API key, hands the result to ECM |
+| `es_drain` | Drains the nodes being removed and checks the cluster afterwards (see `remove_nodes.yml`) |
 
 ## Inputs
 

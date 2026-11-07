@@ -155,3 +155,37 @@ Then tear the test cluster down; that teardown, after nodes were added and remov
 - Terraform destroys the machines, so a mistake in the plan rule is a mistake in what is deleted. The rule is the same kind of
   guard as the teardown's, and the tests above are meant to prove it.
 - Removing master-eligible nodes is the one case where Elasticsearch's own safety, not ECM's rules, decides whether the cluster stays up.
+
+## As built, and where it differs from the proposal
+
+- **The operation** is `render, init, plan, approval, drain, apply, configure` as proposed. `configure` runs the converge and then the
+  playbook's `after` phase (green with the nodes that remain, then clearing the shutdown records of nodes that are gone).
+- **The rules** are `plan_remove_nodes` in `provisioning/lifecycle.py`. The cheap rules run first (the typed cluster name, the nodes, the
+  quorum, and the shrunken state as a valid cluster), then one live read of the cluster with GET calls only (`ESClient` gained
+  `shards_sized()`, with `bytes=b`, and `master()`). A cluster ECM cannot reach is refused: a removal is never planned from the last sync alone.
+- **One refusal is looser than proposed.** A data tier role that would have no node left refuses the removal only when the node holds
+  shards; otherwise it is a warning. The first version refused it always, and the first test of it showed that a default-roles node
+  carries `data_frozen`, which nothing in a normal cluster uses, so any removal of the added nodes would have been refused for nothing.
+- **The quorum rule** is as designed: at least 3 master-eligible nodes remain, fewer than half are removed at once, and after the removal
+  no host holds more than `(masters - 1) // 2` of them. The message names the host. The elected master is allowed with a warning, and
+  "the only master" is the same refusal as too few remaining (the message says it is the only master-eligible node when that is so).
+- **What the playbook checks again before it drains** is only: the cluster is green with every node present, no shard is not started,
+  and no shard would lose its last copy. It does **not** repeat the quorum and disk rules (those are the plan's, from a read taken
+  at plan time); the shutdown reporting `STALLED` is the backstop for a disk or tier problem that appeared since. A stall, a timeout or
+  any failure cancels every shutdown it asked for (the nodes are ordinary members again) and the message says nothing was destroyed.
+  **A transient `STALLED` fails the drain too**, safely and with a retry that drains again; whether a real cluster reports one while it
+  is still working is *to confirm*.
+- **A retry after the apply** works because the plan rule accepts a plan with no changes only when this operation's own earlier apply
+  succeeded and left none of the named nodes in state, and because the drain skips a node that is already gone. Without that, the
+  rule that refuses a plan with nothing to delete would have trapped a retry.
+- **Ownership:** `foreign_machines` reads the removed nodes' VMIDs from the change (they are no longer in the parameters), so the check
+  covers exactly the machines being destroyed; `removed_machines` stops `created_machines` counting a machine a removal's apply destroyed.
+  The removed machines' rows leave the Proxmox inventory and the cluster's node list when the apply succeeds, without waiting for a sync.
+- **The UI:** a "Remove nodes" panel on the cluster page (nodes with roles, host and a mark for those that count towards the quorum; the
+  cluster name is typed in a confirmation), and on the operation page a table of the nodes with the data to move, a danger-coloured
+  "Approve and remove", and a failure message that says whether anything was destroyed.
+- **Not built:** moving the voting exclusions API into the playbook (not needed while fewer than half go), a check that a removed node
+  was the elected master after the fact, and the live run below.
+- **Unverified on a real cluster:** all of it. In particular the shapes of `GET /_nodes/<id>/shutdown` and `GET /_nodes/shutdown`, that the
+  API key may call them, that Elasticsearch re-forms the voting configuration by itself when masters leave, how long a drain takes, that
+  Terraform's destroy stops a drained machine cleanly and leaves no orphaned volume, and that clearing a departed node's shutdown record works.

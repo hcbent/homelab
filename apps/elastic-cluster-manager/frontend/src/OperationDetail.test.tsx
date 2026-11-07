@@ -223,6 +223,58 @@ test("a finished add says only the new nodes were touched, and a failed one says
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
+const REMOVAL = { kind: "remove_nodes", warnings: ["lab-d-07 is the elected master, so a new master is elected when it goes (a few seconds)"],
+  nodes: {
+    "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: "data, ingest", cores: 4, ram_mb: 8192, data_disk_gb: 100,
+      shards: 3, data_bytes: 5 * 1024 ** 3 },
+    "lab-d-08": { host: "pve2", address: "192.168.10.121", vm_id: 511, roles: "none (coordinating only)", cores: 2, ram_mb: 4096,
+      data_disk_gb: null, shards: 0, data_bytes: 0 } } };
+const REMOVE_STEPS = ["render", "init", "plan", "approval", "drain", "apply", "configure"].map((name, seq) => ({
+  seq, name, status: seq < 3 ? "done" : seq === 3 ? "waiting" : "pending", detail: null }));
+
+test("a removal plan lists the nodes it destroys with the data that must move, and asks to approve and remove", async () => {
+  mockFetch(table({ "GET /api/operations/rm": [200, op({ id: "rm", kind: "tf.update", cluster_id: "c1", steps: REMOVE_STEPS,
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 0, updates: 0, deletes: 2,
+      configure: "remove 2 nodes (lab-d-07, lab-d-08)" } }, change: REMOVAL })] }));
+  render(<OperationDetail id="rm" />);
+  expect(await screen.findByText("The nodes this removes", { selector: "h4" })).toBeInTheDocument();
+  expect(screen.getByText("Move the data off the nodes")).toBeInTheDocument();             // the new step, in plain words
+  const row = screen.getByText("lab-d-07").closest("tr")!;
+  expect(within(row).getByText("pve1")).toBeInTheDocument();
+  expect(within(row).getByText("3 shards, 5.0 GB")).toBeInTheDocument();
+  expect(within(screen.getByText("lab-d-08").closest("tr")!).getByText("none")).toBeInTheDocument();
+  expect(screen.getByText(/lab-d-07 is the elected master/)).toBeInTheDocument();
+  expect(screen.getByText("Destroy 2 virtual machines")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve and remove" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(within(dialog).getByText(/Elasticsearch moves the data off the nodes first. Then destroy 2 virtual machines/)).toBeInTheDocument();
+});
+
+test("a removal that failed at the drain says nothing was destroyed, and a later failure says the machines are gone", async () => {
+  const drainFailed = REMOVE_STEPS.map((s) => ({ ...s, status: s.name === "drain" ? "failed" : s.seq < 4 ? "done" : "pending" }));
+  const configureFailed = REMOVE_STEPS.map((s) => ({ ...s, status: s.name === "configure" ? "failed" : s.seq < 6 ? "done" : "pending" }));
+  mockFetch(table({
+    "GET /api/operations/d": [200, op({ id: "d", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      steps: drainFailed, error: "Elasticsearch could not empty every node", change: REMOVAL })],
+    "GET /api/operations/c": [200, op({ id: "c", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      steps: configureFailed, error: "the cluster was not green", change: REMOVAL })] }));
+  const { unmount } = render(<OperationDetail id="d" />);
+  expect(await screen.findByText(/Nothing was destroyed: the data is moved off the nodes first/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  unmount();
+  render(<OperationDetail id="c" />);
+  expect(await screen.findByText(/Once the machines were destroyed they stay gone/)).toBeInTheDocument();
+});
+
+test("a finished removal says the data was moved, the machines destroyed and the cluster is green", async () => {
+  mockFetch(table({ "GET /api/operations/ok": [200, op({ id: "ok", kind: "tf.update", state: "succeeded", cluster_id: "c1",
+    plan: null, change: REMOVAL })] }));
+  render(<OperationDetail id="ok" />);
+  expect(await screen.findByText("The nodes are removed")).toBeInTheDocument();
+  expect(screen.getByText(/moved the data off them, Terraform destroyed their machines/)).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

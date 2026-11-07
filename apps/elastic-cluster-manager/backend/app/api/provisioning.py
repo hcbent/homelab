@@ -18,9 +18,11 @@ from app.provisioning import create as plan_create
 from app.provisioning.lifecycle import (
     AddNodes,
     ExpandDisk,
+    RemoveNodes,
     ResizeNodes,
     plan_add_nodes,
     plan_expand_disk,
+    plan_remove_nodes,
     plan_resize,
 )
 from app.provisioning.operation import OperationRefused, remove_cluster, start_update
@@ -93,14 +95,14 @@ def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
         raise HTTPException(409, str(e)) from e
 
 
-async def _plan_change(db: Session, cluster_id: str, user: User, make_params) -> dict:
+async def _plan_change(db: Session, cluster_id: str, user: User, make_params, *, reads_cluster: bool = False) -> dict:
     """Plan a change to a built cluster from its current state and enqueue the job. Nothing changes until the plan
-    is approved on its operation page."""
+    is approved on its operation page. A plan that has to read the cluster over the network runs off the event loop."""
     cluster = db.get(Cluster, cluster_id)
     if cluster is None:
         raise HTTPException(404, "cluster not found")
     try:
-        params = make_params(db, cluster)
+        params = await run_in_threadpool(make_params, db, cluster) if reads_cluster else make_params(db, cluster)
         op = start_update(db, cluster_id=cluster.id, params=params, actor=user.username)
     except (OperationRefused, operations.OperationConflict) as e:
         raise HTTPException(409, str(e)) from e
@@ -137,6 +139,16 @@ async def add_nodes(cluster_id: str, body: AddNodes, db: Session = Depends(get_d
     """Plan adding `count` nodes of one kind: names, hosts, addresses and VMIDs are chosen and shown on the plan. This
     only makes a plan; nothing changes until it is approved on its operation page."""
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_add_nodes(d, c, body))
+
+
+@router.post("/{cluster_id}/remove-nodes", status_code=202)
+async def remove_nodes(cluster_id: str, body: RemoveNodes, db: Session = Depends(get_db),
+                       user: User = Depends(auth.current_user)):
+    """Plan removing nodes. ECM first reads the cluster and refuses anything that could lose data or the quorum (too few
+    master-eligible nodes, too little disk left, the last copy of a shard), with the reason. This only makes a plan; nothing
+    changes until it is approved on its operation page, and then the data is moved off the nodes before their machines are
+    destroyed. The cluster name must be typed in `confirm_name`."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_remove_nodes(d, c, body), reads_cluster=True)
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

@@ -46,6 +46,23 @@ def created_machines(db: Session) -> set[tuple[str, int, str]]:
         if not conn_id or not built or (op.kind == CREATE and torn_down(db, op.id)):
             continue
         out |= {(conn_id, int(vm_ids[name]), name) for name in built if name in vm_ids}
+    return out - removed_machines(db)
+
+
+def removed_machines(db: Session) -> set[tuple[str, int, str]]:
+    """(Proxmox connection, VMID, name) of every machine a change that removed nodes has destroyed. Terraform's apply
+    is what destroys them, so a removal whose apply succeeded counts even if a later step failed. They stop being ECM's
+    so a stranger's VM that is later given one of those VMIDs and names is not taken for one of ours."""
+    out: set[tuple[str, int, str]] = set()
+    for op in db.scalars(select(Operation).where(Operation.kind == UPDATE, Operation.dry_run.is_(False))).all():
+        params = op.params or {}
+        change = params.get("change") or {}
+        if change.get("kind") != "remove_nodes" or not (op.result or {}).get("ok"):
+            continue
+        gone = {m.group(1) for addr in (op.result or {}).get("resources_in_state") or [] if (m := _NODE.search(addr))}
+        conn_id = params.get("proxmox_connection_id")
+        out |= {(conn_id, int(info["vm_id"]), name) for name, info in (change.get("nodes") or {}).items()
+                if conn_id and name not in gone}
     return out
 
 
@@ -77,7 +94,12 @@ def foreign_machines(db: Session, params: dict) -> list[str]:
         mark_tf_managed(db, conn_id)
         db.flush()
     out: list[str] = []
-    for name, vmid in (params.get("vm_ids") or {}).items():
+    vm_ids = dict(params.get("vm_ids") or {})
+    change = params.get("change") or {}
+    if change.get("kind") == "remove_nodes":
+        # The nodes being removed are no longer in the parameters, but they are the machines this change touches.
+        vm_ids.update({name: info["vm_id"] for name, info in (change.get("nodes") or {}).items()})
+    for name, vmid in vm_ids.items():
         row = db.scalar(select(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(vmid)))
         if row is not None and (row.name != name or not row.tf_managed):
             out.append(f"{row.vmid} ({row.name})")
