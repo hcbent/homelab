@@ -3,6 +3,7 @@
 The fake writes a plan file whose bytes depend on what it plans, so the digests behave like the real thing:
 a different plan gives a different digest.
 """
+import contextlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -1769,3 +1770,106 @@ def test_a_resize_cannot_restart_a_cluster_ecm_holds_no_api_key_for(session, wor
     session.commit()
     with pytest.raises(tfop.RestartFailed, match="no API key or CA certificate"):
         run(session, world, update)
+
+
+# ---- what a node added later changes in what already exists ------------------------------------------------------
+
+NEW_ADDR = 'module.node["lab-b-04"].proxmox_virtual_environment_vm.node'
+
+
+def an_added_node(session, cluster, conn, state="succeeded", with_result=True, change_kind="add_node"):
+    """An add-node update's record, as a successful one leaves it: the whole state list in its result."""
+    from datetime import UTC, datetime
+    params = params_for(conn)
+    params["addresses"]["lab-b-04"] = "192.0.2.118"
+    params["vm_ids"]["lab-b-04"] = 509
+    params["change"] = {"kind": change_kind}
+    op = Operation(kind="tf.update", state=state, cluster_id=cluster.id, dry_run=False, params=params,
+                   finished_at=datetime.now(UTC),
+                   result={"resources_in_state": [*ADDRS, NEW_ADDR]} if with_result else None)
+    session.add(op)
+    session.commit()
+    return op
+
+
+def test_a_node_being_added_holds_its_address_and_vmid_like_a_create_does(session, world, cluster, conn):
+    from app.provisioning.create import _reservations
+    other = Cluster(name="lab-z", ownership="managed")
+    session.add(other)
+    session.commit()
+    an_added_node(session, cluster, conn, state="running")
+    addresses, vmids = _reservations(session, own_cluster=other.id)
+    assert "192.0.2.118" in addresses and 509 in vmids
+
+
+def test_a_removed_cluster_or_a_change_that_added_no_node_holds_nothing(session, world, cluster, conn):
+    from app.provisioning.create import _reservations
+    other = Cluster(name="lab-z", ownership="managed")
+    session.add(other)
+    session.commit()
+    resized = an_added_node(session, cluster, conn, state="succeeded", change_kind="resize")
+    detached = an_added_node(session, cluster, conn, state="running")
+    detached.cluster_id = None
+    session.commit()
+    addresses, vmids = _reservations(session, own_cluster=other.id)
+    assert "192.0.2.118" not in addresses and 509 not in vmids
+    assert resized.params["vm_ids"]["lab-b-04"] == 509                          # the data was there, and was ignored
+
+
+def test_a_teardown_may_delete_a_node_that_a_later_change_added(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    an_added_node(session, cluster, conn)
+    world.destroy_changes = [(a, "delete") for a in [*ADDRS, NEW_ADDR]]
+    assert finish_teardown(session, world, created).state == "succeeded"
+
+
+def test_a_teardown_still_refuses_to_delete_something_nobody_recorded(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    an_added_node(session, cluster, conn)
+    world.destroy_changes = [(a, "delete") for a in [*ADDRS, NEW_ADDR]] + [("proxmox_virtual_environment_vm.es01", "delete")]
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                             confirm_data_loss=True)
+    with pytest.raises(PlanRejected, match="es01.*ECM did not record making"):
+        run(session, world, teardown)
+
+
+def test_a_node_an_add_node_update_made_is_marked_as_ecms_and_stops_being_once_its_cluster_is_gone(
+        session, world, cluster, conn):
+    from app.provisioning.ownership import created_machines
+    reach_success(session, world, cluster, conn)
+    update = an_added_node(session, cluster, conn)
+    assert (conn.id, 509, "lab-b-04") in created_machines(session)
+    update.cluster_id = None                                                    # a teardown detached it
+    session.commit()
+    assert (conn.id, 509, "lab-b-04") not in created_machines(session)
+
+
+def test_an_add_node_that_applied_nothing_and_a_resize_claim_no_new_machine(session, world, cluster, conn):
+    from app.provisioning.ownership import created_machines
+    reach_success(session, world, cluster, conn)
+    an_added_node(session, cluster, conn, with_result=False)                    # failed before it made the VM
+    an_added_node(session, cluster, conn, change_kind="resize")
+    assert (conn.id, 509, "lab-b-04") not in created_machines(session)
+
+
+def test_placement_leaves_a_clusters_own_machines_out_of_what_the_hosts_carry(session, world, cluster, conn, monkeypatch):
+    from app.discovery import factory as _factory  # noqa: F401  (imported so the fixtures' patches are in place)
+    from app.models import PveNode, Vm
+    from app.provisioning import create
+    from app.provisioning.create import _placement
+    session.add(PveNode(connection_id=conn.id, name="pve1", status="online",
+                        usage={"maxcpu": 16, "cpu": 0.1, "maxmem": 64 * 1024 ** 3, "mem": 8 * 1024 ** 3}))
+    for vmid, name in ((500, "lab-b-01"), (800, "template"), (900, "someone-elses")):
+        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=vmid, name=name, status="running",
+                       is_template=name == "template", cpu_cores=4, memory_mb=8192))
+    session.commit()
+    seen = []
+    real = create.host_views_from_rows
+    monkeypatch.setattr(create, "host_views_from_rows",
+                        lambda nodes, storages, vms: (seen.append(sorted(v["memory_mb"] for v in vms)), real(nodes, storages, vms))[1])
+    template = session.scalar(select(Vm).where(Vm.name == "template"))
+    state = build_desired_state(TopologyPreset.single_node, "lab-b", "9.4.3")
+    for excluded in (frozenset(), frozenset({"lab-b-01"})):
+        with contextlib.suppress(Exception):      # placing may fail for lack of storage rows; only what was passed matters
+            _placement(session, conn, state, "tank", template, exclude_vms=excluded)
+    assert len(seen) == 2 and len(seen[0]) == len(seen[1]) + 1                  # one machine fewer was charged

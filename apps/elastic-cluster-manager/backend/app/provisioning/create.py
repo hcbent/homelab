@@ -48,7 +48,7 @@ from app.models import (
 )
 from app.network_profiles import addresses_in_use, to_domain
 from app.operations import OperationConflict
-from app.provisioning.operation import CREATE, DESTROY, OperationRefused, start_create
+from app.provisioning.operation import CREATE, DESTROY, UPDATE, OperationRefused, start_create
 from app.provisioning.vmid import VmidError, allocate_vmids
 
 # A create that succeeded keeps its addresses and VMIDs reserved this long, so they are not handed out again
@@ -264,7 +264,10 @@ def _template(db: Session, conn: ProxmoxConnection, vmid: int | None) -> Vm:
     return found[0]
 
 
-def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datastore: str, template: Vm):
+def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datastore: str, template: Vm,
+               exclude_vms: frozenset[str] = frozenset()):
+    """Place the nodes of `state`. `exclude_vms` names machines left out of what the hosts are seen to carry: when a
+    cluster's existing nodes are in `state` (pinned where they are), their machines would otherwise be charged twice."""
     nodes = [{"name": n.name, "status": n.status, "usage": n.usage}
              for n in db.scalars(select(PveNode).where(PveNode.connection_id == conn.id))]
     if not nodes:
@@ -274,7 +277,7 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
                  "avail": s.avail} for s in store_rows]
     vms = [{"pve_node": v.pve_node, "status": v.status, "is_template": v.is_template, "cpu_cores": v.cpu_cores,
             "memory_mb": v.memory_mb}
-           for v in db.scalars(select(Vm).where(Vm.connection_id == conn.id))]
+           for v in db.scalars(select(Vm).where(Vm.connection_id == conn.id)) if v.name not in exclude_vms]
     result = recommend_placement(state, host_views_from_rows(nodes, storages, vms),
                                  PlacementConfig(datastore=datastore))
     errors = [(f"{i.node}: " if i.node else "") + i.message for i in result.issues if i.severity == "error"]
@@ -301,12 +304,16 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
 def _reservations(db: Session, own_cluster: str | None) -> tuple[set[str], set[int]]:
     """Addresses and VMIDs promised to other real creates that discovery may not show yet."""
     now = datetime.now(UTC)
-    ops = db.scalars(select(Operation).where(Operation.kind.in_((CREATE, DESTROY)))).all()
+    ops = db.scalars(select(Operation).where(Operation.kind.in_((CREATE, DESTROY, UPDATE)))).all()
     cleaned = {o.parent_op_id for o in ops if o.kind == DESTROY and o.state == "succeeded"}
     addresses: set[str] = set()
     vmids: set[int] = set()
     for op in ops:
-        if op.kind != CREATE or op.dry_run or op.cluster_id == own_cluster:
+        # A node being added to a cluster holds its address and VMID the way a create does, until discovery shows it.
+        adds_node = op.kind == UPDATE and (op.params.get("change") or {}).get("kind") == "add_node"
+        if adds_node and op.cluster_id is None:
+            continue                                            # its cluster was removed, so it holds nothing
+        if not (op.kind == CREATE or adds_node) or op.dry_run or op.cluster_id == own_cluster:
             continue
         finished = _aware(op.finished_at)
         holds = op.id not in cleaned and (  # a create that was torn down holds nothing, however recent

@@ -17,6 +17,7 @@ from app.models import Operation, Vm
 
 CREATE = "tf.create"
 DESTROY = "tf.destroy"
+UPDATE = "tf.update"
 _NODE = re.compile(r'module\.node\["([^"]+)"\]')
 
 
@@ -31,13 +32,18 @@ def created_machines(db: Session) -> set[tuple[str, int, str]]:
     down. Only machines named in the create's recorded state count, so a create that failed part-way claims just
     the VMs it actually made."""
     out: set[tuple[str, int, str]] = set()
-    creates = db.scalars(select(Operation).where(Operation.kind == CREATE, Operation.dry_run.is_(False))).all()
+    creates = db.scalars(select(Operation).where(Operation.kind.in_((CREATE, UPDATE)),
+                                                 Operation.dry_run.is_(False))).all()
     for op in creates:
         params = op.params or {}
+        # Only a change that added nodes makes machines, and once its cluster is gone (a teardown detaches the
+        # operation) it makes none; a resize or a disk change names the same machines the create already did.
+        if op.kind == UPDATE and ((params.get("change") or {}).get("kind") != "add_node" or op.cluster_id is None):
+            continue
         conn_id, vm_ids = params.get("proxmox_connection_id"), params.get("vm_ids") or {}
         built = {m.group(1) for addr in (op.result or {}).get("resources_in_state") or []
                  if (m := _NODE.search(addr))}
-        if not conn_id or not built or torn_down(db, op.id):
+        if not conn_id or not built or (op.kind == CREATE and torn_down(db, op.id)):
             continue
         out |= {(conn_id, int(vm_ids[name]), name) for name in built if name in vm_ids}
     return out

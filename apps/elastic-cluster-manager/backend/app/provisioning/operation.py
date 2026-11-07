@@ -473,10 +473,17 @@ class _Handlers:
                             f"{outcome.summary.updates} to change, {outcome.summary.deletes} to destroy")
 
     def _outside_the_create(self, summary) -> list[str]:
-        """A cleanup may only delete what the create it belongs to recorded in state."""
+        """A cleanup may only delete what ECM recorded in this cluster's state: what its create recorded, and what any
+        later change to it (a node added) recorded when it applied. Each apply records the whole state list, so the
+        newest one covers the older ones; both are read so a failed later apply cannot narrow it."""
         parent = self.db.get(Operation, self.op.parent_op_id or "")
         mine = set((parent.result or {}).get("resources_in_state") or []) if parent else set()
-        return [f"cleanup would delete {c.address}, which that create did not make"
+        if parent is not None and parent.cluster_id:
+            later = self.db.scalars(select(Operation).where(
+                Operation.cluster_id == parent.cluster_id, Operation.kind == UPDATE, Operation.dry_run.is_(False))).all()
+            for op in later:
+                mine |= set((op.result or {}).get("resources_in_state") or [])
+        return [f"cleanup would delete {c.address}, which ECM did not record making"
                 for c in summary.changes if c.action == "delete" and c.address not in mine]
 
     def _nothing_to_do(self) -> bool:
