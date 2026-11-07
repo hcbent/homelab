@@ -1,6 +1,7 @@
 ---
 os_base_packages:
   - ca-certificates
+  - cloud-guest-utils  # growpart, which grows the data disk's partition after the disk is enlarged
   - curl
   - gnupg
   - python3-debian  # needed by ansible.builtin.deb822_repository

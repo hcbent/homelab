@@ -82,6 +82,9 @@ class Cluster(Base):
     # Set when a managed cluster's first bootstrap finished. cluster.initial_master_nodes is rendered only while
     # this is empty, and once it is set the create's configure phase is skipped.
     bootstrapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The parameters (state, placement, addresses, VM ids, profile, template) of the last create or update that
+    # Terraform applied: what the cluster is meant to be now. Lifecycle changes start from this.
+    desired: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ProxmoxConnection(Base):

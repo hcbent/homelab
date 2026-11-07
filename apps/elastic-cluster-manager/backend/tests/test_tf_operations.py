@@ -1407,3 +1407,199 @@ def test_dry_runs_for_the_same_new_name_never_pile_up_clusters(session, world, c
         assert run(session, world, begin(session, stub, conn, dry_run=True)).state == "succeeded"
     assert session.scalars(select(Cluster)).all() == []
     assert len(session.scalars(select(Operation).where(Operation.dry_run.is_(True))).all()) == 3
+
+
+# ---- the desired state a cluster has now -----------------------------------------------------------------------
+
+def test_a_create_that_bootstraps_records_its_parameters_as_the_clusters_desired_state(
+        session, world, cluster, conn):
+    assert cluster.desired is None
+    created = reach_success(session, world, cluster, conn)
+    session.refresh(cluster)
+    assert cluster.desired == created.params
+    cluster.desired["state"]["nodes"][0]["data_disk_gb"] = 999            # a later change must not rewrite history
+    assert created.params["state"]["nodes"][0]["data_disk_gb"] != 999
+
+
+def test_a_create_that_did_not_bootstrap_leaves_no_desired_state(session, world, cluster, conn):
+    world.ansible_error = "the ansible-playbook binary was not found"
+    op = run(session, world, begin(session, cluster, conn))
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    with pytest.raises(tfop.ConfigureFailed):
+        run(session, world, op)
+    session.refresh(cluster)
+    assert cluster.desired is None
+
+
+def test_a_teardown_starts_from_the_desired_state_not_from_the_creates_old_parameters(
+        session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    session.refresh(cluster)
+    changed = {**cluster.desired, "pool_id": "a-changed-pool"}
+    cluster.desired = changed
+    session.commit()
+    teardown = start_cleanup(session, create_op_id=created.id, confirm_name="lab-b", actor="admin",
+                             confirm_data_loss=True)
+    assert teardown.params["pool_id"] == "a-changed-pool" and created.params.get("pool_id") != "a-changed-pool"
+
+
+# ---- tf.update: changing a cluster that is built --------------------------------------------------------------
+
+def an_update(session, world, cluster, size=200):
+    """A grown-disk update of a built cluster, planned and waiting for approval."""
+    from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+    from app.provisioning.operation import start_update
+    session.refresh(cluster)
+    params = plan_expand_disk(session, cluster, ExpandDisk(data_disk_gb=size))
+    world.create_changes = [(a, "update") for a in ADDRS]                    # Terraform changes each disk in place
+    return run(session, world, start_update(session, cluster_id=cluster.id, params=params, actor="admin"))
+
+
+def test_an_update_plans_waits_for_approval_applies_and_converges_without_a_restart(
+        session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = an_update(session, world, cluster)
+    assert update.kind == "tf.update" and update.state == "pending_approval"
+    assert update.plan_summary["updates"] == 3 and update.plan_summary["adds"] == 0
+    assert "grow the data disk" in update.plan_summary["configure"]
+    assert world.calls.count("apply") == 1                                   # only the create's apply so far
+
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    update = run(session, world, update)
+
+    assert update.state == "succeeded" and world.calls.count("apply") == 2
+    request = world.ansible_requests[-1]
+    assert request.kind == "converge" and request.check is False and request.bootstrapped_at is not None
+    assert {n.data_disk_gb for n in request.state.nodes} == {200}            # the converge sees the new size
+    assert request.ca_cert_pem and request.elastic_password is None          # the cluster's CA, no password
+    session.refresh(cluster)
+    assert {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]} == {200}
+    assert "change" not in cluster.desired                                   # a description, not state
+    event = session.scalars(select(AuditEvent).where(AuditEvent.action == "operation.start")
+                            .order_by(AuditEvent.id.desc())).first()
+    assert event.details["kind"] == "tf.update" and event.details["change"]["kind"] == "expand_disk"
+
+
+def test_an_update_that_would_delete_or_replace_anything_is_rejected_and_changes_nothing(
+        session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    session.refresh(cluster)
+    before = {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]}
+    from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+    from app.provisioning.operation import start_update
+    params = plan_expand_disk(session, cluster, ExpandDisk(data_disk_gb=200))
+    world.create_changes = [(ADDRS[0], "update"), (ADDRS[1], "replace")]     # a disk that forces a new VM
+    update = start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+    with pytest.raises(PlanRejected, match="must not touch existing resources.*replace"):
+        run(session, world, update)
+    assert update.state == "failed" and update.plan_digest is None
+    assert world.calls.count("apply") == 1
+    session.refresh(cluster)
+    assert {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]} == before
+
+
+def test_a_failed_converge_keeps_what_terraform_changed_and_a_retry_runs_it_again(session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = an_update(session, world, cluster)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    world.ansible_error = "the ansible-playbook binary was not found"
+    with pytest.raises(tfop.ConfigureFailed, match="What Terraform changed is kept"):
+        run(session, world, update)
+    session.refresh(cluster)
+    assert {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]} == {200}   # Terraform has it, so it is the state
+
+    world.ansible_error = None
+    world.create_changes = []                                                # the retry's plan sees nothing left to do
+    operations.retry_operation(session, update.id)
+    update = run(session, world, update)
+    assert update.state == "succeeded" and world.calls.count("apply") == 2           # not applied a second time
+    assert [r.kind for r in world.ansible_requests] == ["create", "converge", "converge"]
+
+
+def test_an_update_whose_plan_is_empty_skips_approval_and_still_converges(session, world, cluster, conn):
+    """A disk someone already grew by hand: Terraform matches, but the filesystem may still need growing."""
+    reach_success(session, world, cluster, conn)
+    from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+    from app.provisioning.operation import start_update
+    params = plan_expand_disk(session, cluster, ExpandDisk(data_disk_gb=200))
+    world.create_changes = []
+    update = run(session, world, start_update(session, cluster_id=cluster.id, params=params, actor="admin"))
+    assert update.state == "succeeded" and world.calls.count("apply") == 1
+    assert world.ansible_requests[-1].kind == "converge"
+    session.refresh(cluster)
+    assert {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]} == {200}
+
+
+def test_an_update_is_refused_on_a_cluster_that_is_not_built_or_has_foreign_machines(session, world, cluster, conn):
+    from app.models import Vm
+    from app.provisioning.operation import start_update
+    params = params_for(conn)
+    with pytest.raises(OperationRefused, match="not finished being built"):
+        start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+    reach_success(session, world, cluster, conn)
+    first_vmid = int(next(iter(params["vm_ids"].values())))
+    session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=first_vmid, name="someone-elses", status="running"))
+    session.commit()
+    with pytest.raises(OperationRefused, match="only touches machines ECM created.*someone-elses"):
+        start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+
+
+def test_the_destroy_after_an_update_still_removes_everything(session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    update = an_update(session, world, cluster)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    assert run(session, world, update).state == "succeeded"
+    cluster_id = cluster.id
+    assert finish_teardown(session, world, created).state == "succeeded"
+    assert session.get(Cluster, cluster_id) is None
+
+
+def test_the_expand_disk_endpoint_makes_a_plan_for_approval_and_enqueues_it(logged_in, session, world, cluster, conn):
+    from procrastinate import testing
+
+    from app import jobs
+    reach_success(session, world, cluster, conn)
+    with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
+        r = logged_in.post(f"/api/clusters/{cluster.id}/expand-disk", json={"data_disk_gb": 200}, headers=H)
+        assert r.status_code == 202 and len(q.connector.jobs) == 1
+    body = r.json()
+    assert set(body["change"]["nodes"]) == {"lab-b-01", "lab-b-02", "lab-b-03"}
+    detail = logged_in.get(f"/api/operations/{body['operation_id']}").json()
+    assert detail["kind"] == "tf.update" and detail["cluster_id"] == cluster.id and detail["dry_run"] is False
+    session.refresh(cluster)
+    assert {n["data_disk_gb"] for n in cluster.desired["state"]["nodes"]} == {100}   # nothing changes before approval
+
+
+@pytest.mark.parametrize("body,status,text", [
+    ({"data_disk_gb": 50}, 409, "cannot be shrunk"),
+    ({"data_disk_gb": 100}, 409, "already 100 GB"),
+    ({"data_disk_gb": 200, "nodes": ["nope"]}, 409, "no node named nope"),
+    ({"data_disk_gb": 5}, 422, None),
+    ({"data_disk_gb": 200, "extra": 1}, 422, None),
+])
+def test_the_expand_disk_endpoint_refuses_a_bad_request_with_the_reason(
+        logged_in, session, world, cluster, conn, body, status, text):
+    reach_success(session, world, cluster, conn)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/expand-disk", json=body, headers=H)
+    assert r.status_code == status
+    if text:
+        assert text in r.json()["detail"]
+    assert session.scalars(select(Operation).where(Operation.kind == "tf.update")).all() == []
+
+
+def test_the_expand_disk_endpoint_needs_a_login_the_csrf_header_and_a_known_cluster(
+        logged_in, client, session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    path = f"/api/clusters/{cluster.id}/expand-disk"
+    assert logged_in.post("/api/clusters/nope/expand-disk", json={"data_disk_gb": 200}, headers=H).status_code == 404
+    assert logged_in.post(path, json={"data_disk_gb": 200}).status_code in (400, 403)      # no CSRF header
+    client.cookies.clear()
+    assert client.post(path, json={"data_disk_gb": 200}, headers=H).status_code == 401
+
+
+def test_the_expand_disk_endpoint_refuses_a_cluster_with_an_operation_running(logged_in, session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    update = an_update(session, world, cluster)                           # planned and waiting: it is active
+    assert update.state == "pending_approval"
+    r = logged_in.post(f"/api/clusters/{cluster.id}/expand-disk", json={"data_disk_gb": 300}, headers=H)
+    assert r.status_code == 409 and "already has an active operation" in r.json()["detail"]

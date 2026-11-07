@@ -13,9 +13,10 @@ from app.desired import (
     available_versions,
     check_target_version,
 )
-from app.models import User
+from app.models import Cluster, User
 from app.provisioning import create as plan_create
-from app.provisioning.operation import OperationRefused, remove_cluster
+from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+from app.provisioning.operation import OperationRefused, remove_cluster, start_update
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
                    dependencies=[Depends(auth.require_csrf_header)])
@@ -83,6 +84,29 @@ def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
         return remove_cluster(db, cluster_id=cluster_id, confirm_name=body.confirm_name, actor=user.username)
     except OperationRefused as e:
         raise HTTPException(409, str(e)) from e
+
+
+@router.post("/{cluster_id}/expand-disk", status_code=202)
+async def expand_disk(cluster_id: str, body: ExpandDisk, db: Session = Depends(get_db),
+                      user: User = Depends(auth.current_user)):
+    """Plan growing the data disk of some nodes (or all that have one), and the filesystem on it. This only makes a
+    plan; nothing changes until it is approved on its operation page. A disk is only ever grown."""
+    cluster = db.get(Cluster, cluster_id)
+    if cluster is None:
+        raise HTTPException(404, "cluster not found")
+    try:
+        params = plan_expand_disk(db, cluster, body)
+        op = start_update(db, cluster_id=cluster.id, params=params, actor=user.username)
+    except (OperationRefused, operations.OperationConflict) as e:
+        raise HTTPException(409, str(e)) from e
+    from app.jobs import tf_run
+    try:
+        await tf_run.defer_async(operation_id=op.id)
+    except Exception as e:
+        operations.fail_operation(db, op.id, f"Could not enqueue job: {e}")
+        audit.record(db, user.username, "operation.enqueue_failed", "operation", op.id, trigger="update")
+        raise HTTPException(503, "Could not enqueue job") from e
+    return {"operation_id": op.id, "change": params["change"]}
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

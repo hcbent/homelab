@@ -1,7 +1,9 @@
 ---
 # Partition, format and mount the data disk. Formatting happens only on a disk that is completely blank.
 # Anything else that is not exactly "one GPT partition holding the expected filesystem" is refused, because
-# guessing wrong here destroys data. Growing the filesystem after Terraform enlarges the disk is a later step.
+# guessing wrong here destroys data. After Terraform enlarges the disk, the same disk (and only a disk that is
+# already exactly that) has its partition and then its filesystem grown to fill it, online, with no restart. Nothing
+# here can shrink anything: growpart and the filesystem tools only grow.
 - name: Prepare the data disk
   when: data_disk_size_gb | int > 0
   block:
@@ -17,6 +19,14 @@
         path: "{{ data_disk_real.stdout | trim }}"
       register: data_disk_stat
       failed_when: not (data_disk_stat.stat.exists and data_disk_stat.stat.isblk)
+
+    # A disk Terraform has just enlarged is not always seen at once by the guest. Asking is harmless, so it is done
+    # every time; if the controller has no such file, the size check below says the new size is not visible.
+    - name: Ask the kernel to re-read the size of the data disk
+      ansible.builtin.shell: >-
+        echo 1 > /sys/class/block/$(basename {{ data_disk_real.stdout | trim }})/device/rescan
+      changed_when: false
+      failed_when: false
 
     - name: Inspect the data disk
       ansible.builtin.command: lsblk --list --json --bytes --output NAME,PATH,TYPE,SIZE,FSTYPE,PTTYPE,MOUNTPOINTS {{ data_disk_real.stdout | trim }}
@@ -40,7 +50,8 @@
         that: data_disk_top.size | int >= (data_disk_size_gb | int - data_disk_size_slack_gib | int) * 1024 * 1024 * 1024
         fail_msg: >-
           {{ data_disk_real.stdout | trim }} is {{ (data_disk_top.size | int / 1073741824) | round(1) }} GiB but the
-          cluster wants {{ data_disk_size_gb }} GiB. This may be the wrong disk.
+          cluster wants {{ data_disk_size_gb }} GiB. This may be the wrong disk, or the VM has not seen a disk that
+          was just enlarged (restarting the VM makes it see it).
 
     - name: Classify the data disk
       ansible.builtin.set_fact:
@@ -141,3 +152,33 @@
         opts: "{{ data_disk_mount_options }}"
         state: mounted
       when: data_disk_partition != ''
+
+    # Growing. Only for a disk that is already "one GPT partition holding the expected filesystem" (data_disk_ready),
+    # so a disk this role does not understand is never touched. On a disk it has just formatted there is nothing to
+    # grow. The filesystem is grown on every run for such a disk, because resize2fs and xfs_growfs do nothing when
+    # the filesystem is already full, and a run that grew the partition but failed before the filesystem would
+    # otherwise leave it short for good.
+    - name: Work out whether the partition is smaller than the disk
+      ansible.builtin.set_fact:
+        data_disk_growable: >-
+          {{ (data_disk_top.size | int - data_disk_children[0].size | int) > data_disk_grow_threshold_mib | int * 1048576 }}
+      when: data_disk_ready | bool
+
+    - name: Grow the partition into the rest of the disk
+      ansible.builtin.command: growpart {{ data_disk_real.stdout | trim }} 1
+      register: data_disk_growpart
+      changed_when: data_disk_growpart.rc == 0
+      failed_when: data_disk_growpart.rc not in [0, 1]   # 1 is growpart's NOCHANGE
+      when: data_disk_ready | bool and data_disk_growable | bool
+
+    - name: Grow the ext4 filesystem to fill the partition
+      ansible.builtin.command: resize2fs {{ data_disk_partition }}
+      register: data_disk_resize2fs
+      changed_when: "'Nothing to do' not in data_disk_resize2fs.stdout"
+      when: data_disk_ready | bool and data_disk_fstype == 'ext4'
+
+    - name: Grow the xfs filesystem to fill the partition
+      ansible.builtin.command: xfs_growfs {{ data_disk_mount }}
+      register: data_disk_xfs_growfs
+      changed_when: "'data blocks changed' in data_disk_xfs_growfs.stdout"
+      when: data_disk_ready | bool and data_disk_fstype == 'xfs'

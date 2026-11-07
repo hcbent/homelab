@@ -7,5 +7,8 @@ data_disk_fstype: ext4
 data_disk_mount_options: noatime
 # Accept a disk up to this much smaller than the requested size, for rounding.
 data_disk_size_slack_gib: 1
+# The partition counts as short of the disk only when more than this much is left over (the GPT backup header and
+# alignment take about a MiB), so a disk that is already full is left alone.
+data_disk_grow_threshold_mib: 64
 # Nodes with no data disk (coordinating-only) skip the role. es_data_disk_gb comes from the inventory.
 data_disk_size_gb: "{{ es_data_disk_gb | default(0) }}"

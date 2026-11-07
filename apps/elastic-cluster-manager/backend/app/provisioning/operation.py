@@ -22,6 +22,7 @@ it up, or tearing down a create that succeeded, is a separate tf.destroy operati
 typing the cluster name, that has its own plan and its own approval, and that may only delete resources the
 create recorded in state.
 """
+import copy
 import json
 import secrets
 from collections.abc import Callable, Mapping
@@ -50,11 +51,13 @@ from app.provisioning.workspace import existing_workspace, open_workspace, remov
 
 CREATE = "tf.create"
 DESTROY = "tf.destroy"
+UPDATE = "tf.update"
 PHASES = ["render", "init", "plan", "approval", "apply"]
 CREATE_PHASES = [*PHASES, "configure"]  # a real create also builds the cluster on the machines it made
 DRY_RUN_PHASES = ["render", "init", "plan"]  # a dry run has no approval or apply step to run
 # The kind the plan safety rules and the stored plan use.
-PLAN_KIND = {CREATE: "create", DESTROY: "destroy"}
+UPDATE_PHASES = [*PHASES, "configure"]  # a change to a built cluster ends with a converge of its nodes
+PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
 AnsibleFactory = Callable[[Callable[[str], None]], AnsibleRunner]
@@ -146,6 +149,25 @@ def start_create(db: Session, *, cluster_id: str, params: dict, actor: str, dry_
     return op
 
 
+def start_update(db: Session, *, cluster_id: str, params: dict, actor: str) -> Operation:
+    """Create the operation that changes a built cluster to the state in `params` (see lifecycle.py).
+
+    The parameters are the cluster's current desired state with the change made. Terraform may create or change
+    resources for this, never delete or replace them (see plan.py), the plan needs its own approval, and when
+    Terraform has applied it the cluster's desired state becomes these parameters. The caller enqueues the job.
+    """
+    cluster = _managed_cluster(db, cluster_id)
+    if cluster.bootstrapped_at is None:
+        raise OperationRefused("this cluster has not finished being built, so there is nothing to change yet")
+    _check_params(db, cluster.id, params)
+    foreign = foreign_machines(db, params)
+    if foreign:
+        raise OperationRefused("a change only touches machines ECM created, and these are not: " + ", ".join(foreign))
+    op = create_operation(db, UPDATE, UPDATE_PHASES, cluster_id=cluster.id, params=params, actor=actor)
+    audit.record(db, actor, "operation.start", "operation", op.id, kind=UPDATE, change=params.get("change"))
+    return op
+
+
 def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: str,
                   confirm_data_loss: bool = False) -> Operation:
     """Create the destroy operation that removes what a create made: the partial result of one that failed, or
@@ -184,8 +206,8 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
     if foreign:
         raise OperationRefused("a teardown only destroys machines ECM created, and these are not: "
                                + ", ".join(foreign))
-    op = create_operation(db, DESTROY, PHASES, cluster_id=cluster.id, params=parent.params, actor=actor,
-                          parent_op_id=parent.id)
+    op = create_operation(db, DESTROY, PHASES, cluster_id=cluster.id, params=cluster.desired or parent.params,
+                          actor=actor, parent_op_id=parent.id)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=DESTROY, parent=parent.id,
                  parent_state=parent.state, resources=len(left), bootstrapped=cluster.bootstrapped_at is not None,
                  data_loss_confirmed=bool(confirm_data_loss))
@@ -462,6 +484,7 @@ class _Handlers:
         op = self._fresh()
         if self._nothing_to_do():
             log(self.db, op.id, "nothing to apply")
+            self._adopt_params()  # Terraform already matches what was asked for
             return
         if op.dry_run or not op.approved_digest:
             raise ApplyRefused("apply needs an approved plan")
@@ -469,7 +492,7 @@ class _Handlers:
         stored = ws.verify_for_apply(self.plan_kind)  # raises StalePlan if anything changed since the plan
         if stored.approval_digest != op.approved_digest:
             raise ApplyRefused("the plan on disk is not the one that was approved; plan again")
-        if self.kind == DESTROY:
+        if self.kind in (DESTROY, UPDATE):
             foreign = foreign_machines(self.db, op.params)
             if foreign:
                 raise ApplyRefused("a teardown only destroys machines ECM created, and these are not: "
@@ -482,6 +505,8 @@ class _Handlers:
         ws.discard_plan()  # the plan is spent: an approval covers one apply, never a second
         if outcome.ok and self.kind == DESTROY and not outcome.resources_in_state:
             self._forget_cluster()
+        if outcome.ok and self.kind == UPDATE:
+            self._adopt_params()
         if not outcome.ok:
             raise ApplyFailed(f"{outcome.error}. Nothing was destroyed; {len(outcome.resources_in_state)} "
                               "resource(s) are in state. Retry re-plans and needs a new approval")
@@ -494,6 +519,8 @@ class _Handlers:
 
     def _configure_description(self) -> str:
         """What a create will do to the machines. Part of the approved digest. Empty when nothing is configured."""
+        if self.kind == UPDATE:
+            return str((self.op.params.get("change") or {}).get("describe") or "")
         if self.kind != CREATE:
             return ""
         state = self._state()
@@ -542,7 +569,41 @@ class _Handlers:
         self.db.commit()
         log(self.db, self.op.id, "the cluster CA was stored (encrypted)")
 
+    def _adopt_params(self) -> None:
+        """Terraform now has what this update asked for, so that is the cluster's desired state, even if the
+        converge that follows fails: the next change must start from what is really there."""
+        if self.kind != UPDATE:
+            return
+        cluster = self.db.get(Cluster, self.cluster_id)
+        cluster.desired = {k: copy.deepcopy(v) for k, v in self.op.params.items() if k != "change"}
+        self.db.commit()
+
+    def _converge(self) -> None:
+        """Bring the nodes in line with the change Terraform made. A converge never restarts a node."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        profile = NetworkProfile.model_validate(params["profile"])
+        ca_cert, ca_key = self._stored_ca(cluster)
+        request = AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind="converge",
+            bootstrapped_at=cluster.bootstrapped_at, search_domain=profile.search_domain,
+            ca_cert_pem=ca_cert, ca_key_pem=ca_key)
+        log(self.db, self.op.id, f"configuring: {self._configure_description()}")
+        kept = "What Terraform changed is kept; retry runs the converge again"
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise ConfigureFailed(f"{e}. {kept}") from e
+        if outcome.new_ca is not None:
+            self._store_ca(cluster, outcome.new_ca)
+        if not outcome.ok:
+            raise ConfigureFailed(f"{outcome.error or 'the converge failed'}. {kept}")
+        log(self.db, self.op.id, "the change is applied on every node")
+
     def configure(self) -> None:
+        if self.kind == UPDATE:
+            self._converge()
+            return
         cluster = self.db.get(Cluster, self.cluster_id)
         if cluster.bootstrapped_at is not None:
             log(self.db, self.op.id, "the cluster has already bootstrapped; nothing to configure")
@@ -574,6 +635,7 @@ class _Handlers:
         cluster.endpoint_urls = [f"https://{params['addresses'][n.name]}:{ES_HTTP_PORT}" for n in state.nodes]
         cluster.tls_verify = True
         cluster.bootstrapped_at = datetime.now(UTC)
+        cluster.desired = copy.deepcopy(params)
         elastic = self._credential(self._names()[0])
         if elastic is not None:
             self.db.delete(elastic)  # used once, to bootstrap; ECM reaches the cluster with the API key from now on
@@ -592,7 +654,7 @@ class _Handlers:
         cluster = self.db.get(Cluster, self.cluster_id)
         cluster.bootstrapped_at = cluster.es_cluster_uuid = cluster.credential_id = None
         cluster.tls_ca_pem = cluster.endpoint_urls = cluster.health_status = cluster.es_version = None
-        cluster.snapshot = cluster.last_sync_at = cluster.last_sync_error = None
+        cluster.snapshot = cluster.last_sync_at = cluster.last_sync_error = cluster.desired = None
         self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id))
         gone = self._forget_machines()
         self.db.flush()
