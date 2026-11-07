@@ -190,7 +190,8 @@ export function OperationDetail({ id }: { id: string }) {
 
       {op.state === "succeeded" && op.kind === "tf.update" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
-          <p>It is applied on every node.{" "}
+          <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
+            every few minutes; press Sync now there to see them at once.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && done && op.cluster_id && (

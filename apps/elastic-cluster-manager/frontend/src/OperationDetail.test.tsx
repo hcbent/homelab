@@ -166,6 +166,7 @@ test("a finished change says so and links to the cluster; a failed one says what
       error: "ansible-playbook failed" })] }));
   const { unmount } = render(<OperationDetail id="ok" />);
   expect(await screen.findByText("The change is applied")).toBeInTheDocument();
+  expect(screen.getByText(/come from the last sync/)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Open the cluster" })).toHaveAttribute("href", "#/clusters/c1");
   unmount();
   render(<OperationDetail id="bad" />);
