@@ -28,7 +28,8 @@ Also run live on 2026-11-06: a seven-node `lab-d` (three dedicated masters, thre
 node) built through the wizard after its dry run, with Terraform limited to two operations at a time because ten
 at once timed out on Proxmox's storage lock; and a build whose configure step failed on one node, then finished
 green on the same machines when it was retried. Tearing that cluster down from its page removed it from the list
-by itself (the operator's report).
+by itself (the operator's report). On a three-node test cluster, the *Grow data disks* panel took the data disks from
+100 to 150 GB, and Elasticsearch then reported the larger filesystems.
 
 Built and tested with fakes, **not yet confirmed on the real infrastructure**: marking and checking which
 VMs ECM created (`tf_managed`), the installable-version filter, the master quorum rule that refuses a placement,
@@ -40,7 +41,7 @@ details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.
 | Phase | Scope |
 |---|---|
 | Rest of 4 | A live pass over the unverified items above, per-node overrides and a custom topology in the wizard, a custom Proxmox CA for Terraform |
-| 5 Lifecycle | **Started:** growing data disks is built and tested with fakes, and has not run on a real cluster. Not started: adding or removing a node, resizing CPU and RAM, recovery |
+| 5 Lifecycle | **Started:** growing data disks is built and has run on a real test cluster (100 to 150 GB). Not started: adding or removing a node, resizing CPU and RAM, recovery |
 | 6 Kibana | Optional Kibana at create time and later, with TLS and a Caddy example |
 | 7 Adoption | Bring a discovered cluster under management, only through a zero-diff import |
 | 8 Upgrades and hardening | Rolling upgrades (the upgrade-path rules exist, the procedure does not), drift detection, the full doc set |
