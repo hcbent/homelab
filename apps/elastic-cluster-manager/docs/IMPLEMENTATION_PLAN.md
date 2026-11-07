@@ -23,6 +23,14 @@ Desired-state schema and validation, version catalog (artifacts API), topology p
 
 ## Phase 5 — Lifecycle
 Add or remove node, resize, disk expansion, destroy, recovery workflows.
+
+Status as of 2026-11-06: **destroy is done** (the teardown: typed name, `tf_managed` check, audit event). The rest is built in slices on one shared foundation, a `tf.update` operation that changes an existing cluster through the same plan, approval, apply and Ansible converge path as a create. Each slice is committed and tested on its own; none is run on infra until its slice says so.
+1. **Foundation and disk expansion.** Record each cluster's current desired state; add `tf.update` (Terraform may create or change, never delete or replace); grow a data disk, then the partition and filesystem, with no restart. Refuses a shrink, a size that is not larger, a node with no data disk and a datastore without room. *In progress.*
+2. **Resize CPU and RAM.** A rolling change one node at a time with a health gate between nodes; heap recomputed. *Planned.*
+3. **Add a node.** The next name, role and size, placed by the same rules as a create (the master quorum rule included), joined with the cluster's own CA. *Planned.*
+4. **Remove a node.** Refused on quorum loss, on too little disk left and on the last copy of a primary shard; otherwise the node shutdown API, then Terraform. Needs Elasticsearch write calls, which discovery's read-only clients do not make. *Planned.*
+5. **Recovery workflows.** What these are is still to be decided with the operator (candidates: restart one node, re-run a converge, rebuild a node whose VM is lost). *Planned.*
+Each slice also needs its UI on the cluster page.
 - **Accept:** removal is refused in tested scenarios (quorum loss, insufficient disk, only copy of a shard). Disk shrink is refused. Destroy refuses any VM with `tf_managed=false` and requires typed confirmation, and writes an audit event.
 
 ## Phase 6 — Kibana
