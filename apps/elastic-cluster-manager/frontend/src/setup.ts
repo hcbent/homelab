@@ -28,3 +28,11 @@ if (typeof window.matchMedia !== "function") {
     Object.defineProperty(window, "localStorage", { value: memory, configurable: true });
   }
 }
+
+// jsdom has no canvas. EUI's multi-select (EuiComboBox) measures the width of each selected pill with one, so it gets a
+// stand-in that reports a fixed width per character. Nothing here draws.
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = (() => ({
+    font: "", measureText: (text: string) => ({ width: text.length * 7 }),
+  })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+}

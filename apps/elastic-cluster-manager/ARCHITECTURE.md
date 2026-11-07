@@ -110,7 +110,7 @@ role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-
 
 ## 7. Lifecycle procedures (`es/`)
 
-**Status: PLANNED, with some pieces built.** Disk growth is built and has run on infra once (section 6); resize (Terraform changes CPU and RAM, then a playbook restarts the nodes one at a time) is built and has run on infra once (a three-node cluster, CPU and RAM); adding and removing a node and recovery are not. What exists: the upgrade-path rules in
+**Status: PLANNED, with some pieces built.** Disk growth is built and has run on infra once (section 6); resize (Terraform changes CPU and RAM, then a playbook restarts the nodes one at a time) is built and has run on infra once (a three-node cluster, CPU and RAM); adding nodes is built and tested offline, not yet run on infra; removing a node and recovery are not. What exists: the upgrade-path rules in
 `desired/versions.py` (`check_upgrade`: refuses downgrades, same-version upgrades and skipped majors, and enforces the
 latest-minor rule), which no operation calls yet; and placement (below).
 

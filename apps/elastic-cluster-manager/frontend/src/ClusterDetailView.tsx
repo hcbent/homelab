@@ -6,6 +6,7 @@ import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "reac
 import { api, ApiError, ClusterDetail, NodeRow } from "./api";
 import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
 import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
+import { AddNodes } from "./AddNodes";
 import { GrowDisks } from "./GrowDisks";
 import { Resize } from "./Resize";
 import { ago, bytes, storedNumber } from "./format";
@@ -206,6 +207,7 @@ export function ClusterDetailView({ id }: { id: string }) {
         {tab === "Operations" && <ClusterOperations clusterId={c.id} />}
       </EuiPanel>
 
+      <AddNodes cluster={c} />
       <Resize cluster={c} />
       <GrowDisks cluster={c} />
       <ClusterLifecycle cluster={c} />

@@ -1,6 +1,6 @@
 import {
-  EuiBadge, EuiButton, EuiButtonEmpty, EuiCallOut, EuiDescriptionList, EuiHealth, EuiLink, EuiLoadingSpinner,
-  EuiPanel, EuiProgress,
+  EuiBadge, EuiBasicTable, EuiBasicTableColumn, EuiButton, EuiButtonEmpty, EuiCallOut, EuiDescriptionList, EuiHealth,
+  EuiLink, EuiLoadingSpinner, EuiPanel, EuiProgress,
 } from "@elastic/eui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, OperationDetail as Detail, PlanSummary } from "./api";
@@ -51,6 +51,33 @@ export function terraformText(kind: string, s: PlanSummary | null): string {
 function configured(result: Detail["result"]) {
   const c = result?.configured as { cluster_uuid?: string; status?: string; number_of_nodes?: number } | undefined;
   return c && typeof c === "object" ? c : null;
+}
+
+interface AddedNode {
+  name: string; host: string; address: string; vm_id: number; roles: string; cores: number; ram_mb: number;
+  data_disk_gb: number | null;
+}
+
+/** Where each node an add-nodes change would make goes, with anything the placement wants the operator to know. */
+function AddedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
+  const nodes = Object.entries((change.nodes ?? {}) as Record<string, Omit<AddedNode, "name">>)
+    .map(([name, n]) => ({ name, ...n }));
+  const columns: EuiBasicTableColumn<AddedNode>[] = [
+    { name: "New node", render: (n: AddedNode) => <span className="ecm-mono">{n.name}</span> },
+    { name: "Proxmox host", render: (n: AddedNode) => <span className="ecm-mono">{n.host}</span> },
+    { name: "Address", render: (n: AddedNode) => <span className="ecm-mono">{n.address}</span> },
+    { field: "vm_id", name: "VM ID" },
+    { field: "roles", name: "Roles" },
+    { name: "Size", render: (n: AddedNode) => `${n.cores} cores, ${n.ram_mb / 1024} GiB${n.data_disk_gb ? `, ${n.data_disk_gb} GB data` : ""}` },
+  ];
+  return (
+    <div className="ecm-stack-lg">
+      <h4 className="ecm-label">Where each new node goes</h4>
+      <EuiBasicTable<AddedNode> tableCaption="Where each new node goes" items={nodes} columns={columns} rowHeader="name" />
+      {(change.warnings ?? []).map((w) => (
+        <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
+    </div>
+  );
 }
 
 /** One operation: its steps, the plan and its digest, the actions that apply, the result and the log. */
@@ -148,6 +175,7 @@ export function OperationDetail({ id }: { id: string }) {
               : []),
             { title: "Plan digest", description: <span className="ecm-mono ecm-small ecm-clip">{op.plan.digest}</span> },
           ]} />
+          {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
           {op.dry_run && (
             <EuiCallOut size="s" color="primary" iconType="info" className="ecm-gap"
               title="This was a dry run: nothing was created, and it cannot be approved.">
@@ -170,7 +198,9 @@ export function OperationDetail({ id }: { id: string }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
           {!op.dry_run && op.kind === "tf.update" && (
-            <p>What Terraform already changed is kept{op.change?.kind === "resize"
+            <p>What Terraform already changed is kept{op.change?.kind === "add_node"
+              ? ", so the new machines exist. Retry configures them again, which is safe to repeat"
+              : op.change?.kind === "resize"
               ? ", and so is every node already restarted. Retry plans again and carries on with the nodes not yet at their new size"
               : ". Retry plans again and runs the rest"}.</p>)}
           {!op.dry_run && op.kind === "tf.create" && (
@@ -196,7 +226,13 @@ export function OperationDetail({ id }: { id: string }) {
             green.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
-      {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind !== "resize" && (
+      {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "add_node" && (
+        <EuiCallOut color="success" iconType="check" title="The new nodes joined the cluster">
+          <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && op.kind === "tf.update"
+        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
             every few minutes; press Sync now there to see them at once.{" "}

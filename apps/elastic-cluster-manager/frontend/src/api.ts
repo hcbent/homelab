@@ -49,7 +49,7 @@ export interface OperationDetail extends Operation {
   result: Record<string, unknown> | null;
   steps: OperationStep[]; logs: OperationLogLine[];
   /** What a change to a built cluster asked for, with a plain description. */
-  change?: { kind: string; describe?: string; nodes?: Record<string, unknown> } | null;
+  change?: { kind: string; describe?: string; nodes?: Record<string, unknown>; warnings?: string[]; added?: string[] } | null;
 }
 
 export type Preset = "single_node" | "three_node" | "dedicated_masters";

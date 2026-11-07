@@ -192,6 +192,37 @@ test("a failed resize says every node already restarted stays restarted", async 
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
+test("an add-nodes plan shows where each new node goes and any placement warning", async () => {
+  mockFetch(table({ "GET /api/operations/ad": [200, op({ id: "ad", kind: "tf.update", cluster_id: "c1",
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 2, updates: 3, deletes: 0, configure: "add 2 nodes (lab-d-07, lab-d-08)" } },
+    change: { kind: "add_node", warnings: ["6 master-eligible nodes is an even number"], nodes: {
+      "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: "ml", cores: 8, ram_mb: 16384, data_disk_gb: null },
+      "lab-d-08": { host: "pve2", address: "192.168.10.121", vm_id: 511, roles: "ml", cores: 8, ram_mb: 16384, data_disk_gb: null } } } })] }));
+  render(<OperationDetail id="ad" />);
+  expect(await screen.findByText("Where each new node goes", { selector: "h4" })).toBeInTheDocument();
+  const row = screen.getByText("lab-d-07").closest("tr")!;
+  expect(within(row).getByText("pve1")).toBeInTheDocument();
+  expect(within(row).getByText("192.168.10.120")).toBeInTheDocument();
+  expect(within(row).getByText("8 cores, 16 GiB")).toBeInTheDocument();                // no data disk, so none is shown
+  expect(screen.getByText("6 master-eligible nodes is an even number")).toBeInTheDocument();
+});
+
+test("a finished add says only the new nodes were touched, and a failed one says the machines exist", async () => {
+  mockFetch(table({
+    "GET /api/operations/ok": [200, op({ id: "ok", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null,
+      change: { kind: "add_node" } })],
+    "GET /api/operations/bad": [200, op({ id: "bad", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      error: "The new nodes did not all join: lab-d-07", change: { kind: "add_node" } })] }));
+  const { unmount } = render(<OperationDetail id="ok" />);
+  expect(await screen.findByText("The new nodes joined the cluster")).toBeInTheDocument();
+  expect(screen.getByText(/The existing nodes were not touched/)).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+  unmount();
+  render(<OperationDetail id="bad" />);
+  expect(await screen.findByText(/so the new machines exist. Retry configures them again, which is safe to repeat/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

@@ -1,6 +1,6 @@
 # Adding a node: proposed design (Phase 5, slice 3)
 
-**Status: PROPOSED on 2026-11-07. Nothing described here is built.** It is written for the operator to review first, because
+**Status: BUILT on 2026-11-07 with the operator's changes below, and tested offline; it has not been run on a real cluster.** It was written for the operator to review first, because
 adding a node changes a live cluster's membership. Items marked *to confirm* have not been checked against this project's
 Proxmox, provider or Elasticsearch.
 
@@ -89,3 +89,32 @@ Abandoning a node that will not join is the remove-node slice's job (or a teardo
 - Rebalancing after a join adds load to a cluster that may already be busy.
 - Adding a master-eligible node changes the quorum arithmetic; the rule and the warning are the guard, and they are only as good
   as the placement ECM knows about.
+
+## As built, and where it differs from the proposal
+
+**The operator's answers (2026-11-07):** (1) roles are chosen with a **multi-select dropdown**, not a fixed list; (2) a master-eligible
+addition is allowed under the quorum rule with a warning for an even count; (3) success means the node joined and the cluster is
+green, not that shards finished rebalancing; (4) **several nodes of one kind can be added at once** (up to 10), one kind per operation.
+
+- **Roles** are one of three modes: Elasticsearch's default roles (every role but `voting_only`), coordinating only (no roles), or a
+  chosen set from the 12 valid roles in a multi-select. Sizes left empty are copied from an existing node of the same kind; a data disk
+  is offered only when a chosen role holds data.
+- **Names** are the next numbers after the highest used, tracked in a `node_counter` that only goes up, so a number is not reused.
+- **The master quorum rule bites on a three-host lab.** With three masters on three hosts, adding **one** more master-eligible node
+  (including a default-roles node) is refused wherever it goes: four masters allow one per host, so four hosts are needed. Adding **two**
+  at once (five masters, at most two per host) is accepted, and so is any number of non-master nodes. The refusal names the host and says why,
+  and the panel explains it before you plan.
+- **Pre-checks** use the last sync (the cluster was green, and ECM saw every node); the playbook checks again from the worker before it
+  starts anything, and stops without starting a node if the cluster is not green with all its existing nodes.
+- **Only the new nodes are touched.** `add_node.yml` waits for their first boot, prepares them, issues their certificates with the stored CA
+  (existing certificates are left alone), writes their configuration and starts only them (`es_start_node`), then checks from the worker
+  that they joined and the cluster is green. Existing nodes are neither configured nor restarted; their seed lists catch up at the next
+  converge.
+- **The four fixes** to what exists were made first (reservations, teardown safety, ownership marking, placement without double counting),
+  each with tests.
+- **The plan page** shows a table of where each new node goes (host, address, VM ID, roles, size) and any placement warning.
+- **Not built:** a count across mixed kinds, waiting for rebalancing, and removing a node that fails to join (the remove-node slice).
+- **Unverified on a real cluster:** all of it. In particular the plays that run on the new machine over SSH (first boot, packages, the
+  certificate, the first start) reuse roles a create exercises but have not run for a node joining a live cluster; that Elasticsearch adds
+  a new master-eligible node to the voting configuration by itself; that `GET _cluster/health` and `_nodes/os` give what the join check reads
+  (the check stops with a message if not); and the clone and boot of the new VM while the cluster is busy.

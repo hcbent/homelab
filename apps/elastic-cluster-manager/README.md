@@ -41,7 +41,7 @@ details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.
 | Phase | Scope |
 |---|---|
 | Rest of 4 | A live pass over the unverified items above, per-node overrides and a custom topology in the wizard, a custom Proxmox CA for Terraform |
-| 5 Lifecycle | **Started:** growing data disks has run on a real test cluster (100 to 150 GB). *Resize nodes* plans a new CPU and RAM size, has Terraform apply it, and restarts the nodes one at a time (masters last, waiting for green between nodes); run once on a real three-node test cluster (CPU and RAM, 2026-11-07). Not started: adding or removing a node, recovery |
+| 5 Lifecycle | **Started:** growing data disks has run on a real test cluster (100 to 150 GB). *Resize nodes* plans a new CPU and RAM size, has Terraform apply it, and restarts the nodes one at a time (masters last, waiting for green between nodes); run once on a real three-node test cluster (CPU and RAM, 2026-11-07). *Add nodes* adds one or more nodes of one kind with roles you choose, built and tested offline and not yet run on a real cluster. Not started: removing a node, recovery |
 | 6 Kibana | Optional Kibana at create time and later, with TLS and a Caddy example |
 | 7 Adoption | Bring a discovered cluster under management, only through a zero-diff import |
 | 8 Upgrades and hardening | Rolling upgrades (the upgrade-path rules exist, the procedure does not), drift detection, the full doc set |
@@ -57,7 +57,8 @@ See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for each phase's 
    and opens its operation page.
 3. On the operation page, check the plan and its digest, then **Approve and build**. The steps, the plan and the
    redacted log update as it runs. A failed build keeps its machines and can be retried.
-4. On a managed cluster's page, **Resize nodes** plans new cores and RAM; after you approve it, ECM restarts the nodes
+4. On a managed cluster's page, **Add nodes** plans new nodes (names, hosts and addresses are chosen for you and shown on the
+   plan); after you approve it, only the new nodes are configured and started. **Resize nodes** plans new cores and RAM; after you approve it, ECM restarts the nodes
    one at a time, each briefly out of the cluster. **Grow data disks** plans a larger data disk for some or all data nodes (a disk can only
    be grown, never shrunk); you approve the plan on its operation page, and ECM grows the disk, the partition and the
    filesystem without a restart. **Tear down cluster** plans a destroy of the machines ECM made (you type the cluster
