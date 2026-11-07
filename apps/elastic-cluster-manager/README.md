@@ -24,11 +24,16 @@ Verified on the lab (Proxmox on `pve1` to `pve3`, ECM on `infra`):
   on the cluster page (the first `lab-d`, whose machines were destroyed). That teardown left ECM's record of the
   cluster in the list; a later change, below, makes a teardown remove it.
 
-Built and tested with fakes, **not yet used on the real infrastructure**: a teardown that also removes ECM's
-record of the cluster, marking and checking which VMs ECM created (`tf_managed`), dry runs that leave nothing
-behind, the installable-version filter, the master quorum rule that refuses a placement, and the two warnings
-about a Terraform token that reaches beyond its pool. The details and the honest limits of each are in
-[docs/DECISIONS.md](docs/DECISIONS.md).
+Also run live on 2026-11-06: a seven-node `lab-d` (three dedicated masters, three data nodes, one coordinating
+node) built through the wizard after its dry run, with Terraform limited to two operations at a time because ten
+at once timed out on Proxmox's storage lock; and a build whose configure step failed on one node, then finished
+green on the same machines when it was retried.
+
+Built and tested with fakes, **not yet confirmed on the real infrastructure**: that a teardown also removes ECM's
+record of the cluster (a teardown ran, and the name could be created again afterwards), marking and checking which
+VMs ECM created (`tf_managed`), the installable-version filter, the master quorum rule that refuses a placement,
+a retry after a failed *apply*, and the two warnings about a Terraform token that reaches beyond its pool. The
+details and the honest limits of each are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## What is planned, not built
 

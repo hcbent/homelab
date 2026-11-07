@@ -82,7 +82,7 @@ Adoption is a wizard with a mandatory dry-run:
 - Defence in depth: after every apply or import, the worker also stores an encrypted state snapshot row (`tf_state_snapshots`). **PLANNED**; no such table exists.
 - Operation types are distinct job kinds. **BUILT:** `tf.create` and `tf.destroy`. **PLANNED:** `tf.update`, `tf.import`. Each runs `render, init, plan`, stores the plan file and a JSON summary, waits for approval of that plan's digest, then applies that exact saved plan (a create then runs a `configure` step with Ansible). A dry run stops after the plan and cannot be approved.
 - `-lock-timeout` is set on plan and apply (**BUILT**). A force-unlock action in the UI is **PLANNED**.
-- A failed apply never triggers automatic destroy. Partial state is retained, the logs and the plan are stored, and the operation page offers Retry, which re-plans and needs a new approval (**BUILT**; a retry after a failed apply has only run against fakes).
+- A failed apply never triggers automatic destroy. Partial state is retained, the logs and the plan are stored, and the operation page offers Retry, which re-plans and needs a new approval (**BUILT**; a retry after a failed *configure* has run live and finished a green cluster, while a retry after a failed *apply* has only run against fakes).
 
 ## 5. Jobs and locking
 
@@ -98,7 +98,7 @@ Adoption is a wizard with a mandatory dry-run:
 
 **Status: LIVE for create.** Clean-room roles, idempotent, with no action dispatcher. **Built:** `os_base`, `data_disk`, `es_package`, `es_tls`,
 `es_node` and `es_bootstrap`, with the playbooks `create.yml` and `converge.yml` (`infra/ansible/README.md`). **PLANNED:** the `kibana`
-role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-d` clusters.
+role (Phase 6). `create.yml` has built the three-node `lab-b`, `lab-c` and `lab-d` clusters and a seven-node `lab-d` (three masters, three data nodes, one coordinating node). It does not yet survive a node's SSH dropping while cloud-init is still running; a retry finishes the job.
 
 - Inventory is generated from the DB into a temp directory (mode 0700) for each run, and deleted afterwards.
 - `node.roles` is **omitted** when the node's role mode is `default`. It is `[]` for coordinating-only, and it is an explicit list only in `custom` mode.
