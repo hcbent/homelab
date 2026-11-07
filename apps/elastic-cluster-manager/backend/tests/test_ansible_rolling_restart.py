@@ -44,6 +44,7 @@ class FakeCluster:
         self.up = {n: True for n in names}
         self.elected = elected
         self.allocation = None
+        self.hide_memory = False                                 # the stats API does not report memory
         self.never_back: set[str] = set()                        # restarted, and never rejoins
         self.task_fails: set[str] = set()                        # Proxmox reports the restart failed
         self.rejoin_polls = 0                                    # looks at _nodes/os before a restarted node is back
@@ -81,8 +82,16 @@ class FakeCluster:
                     self.size[name] = self.desired[name]
                     self._yellow_for = self.green_after
                     self.events.append(("up", name))
+            # Node info: the processors, and no memory (as on a real cluster).
             return {"nodes": {f"id-{n}": {"name": n, "os": {"available_processors": self.size[n][0],
-                                                              "mem": {"total_in_bytes": int(self.size[n][1] * 0.97 * 1048576)}}}
+                                                              "allocated_processors": self.size[n][0]}}
+                              for n in self.names if self.up[n]}}
+
+    def nodes_stats_os(self):
+        with self.lock:
+            mem = {} if self.hide_memory else {"mem": {"total_in_bytes": 0}}
+            return {"nodes": {f"id-{n}": {"name": n, "os": ({"mem": {"total_in_bytes": int(self.size[n][1] * 0.97 * 1048576)}}
+                                                            if not self.hide_memory else mem)}
                               for n in self.names if self.up[n]}}
 
     def reboot(self, host, vmid):
@@ -136,6 +145,8 @@ def make_handler(cluster: FakeCluster):
                 return self._send(status, body)
             if url.path == "/_nodes/os":
                 return self._send(200, cluster.nodes_os())
+            if url.path == "/_nodes/stats/os":
+                return self._send(200, cluster.nodes_stats_os())
             if url.path == "/_cat/master":
                 return self._send(200, [{"node": cluster.elected}])
             if url.path.startswith("/api2/json/nodes/") and url.path.endswith("/status"):
@@ -316,3 +327,44 @@ def test_the_playbook_passes_a_syntax_check(tmp_path):
                              "playbooks/rolling_restart.yml"], cwd=ANSIBLE_DIR, capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_a_change_to_ram_alone_decides_what_is_restarted_and_is_checked_after_the_restart(tmp_path):
+    """Memory is read from the node stats, and a node whose cores already match is still restarted for its RAM."""
+    fake, run = build(tmp_path)
+    for name in fake.names:
+        fake.size[name] = (fake.desired[name][0], 4096)                      # the right cores, too little RAM
+    for name in ("lab-x-05", "lab-x-04", "lab-x-01", "lab-x-03"):
+        fake.size[name] = fake.desired[name]                                  # all done but one
+    result = run()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [e[1] for e in reboots(fake)] == ["lab-x-02"]
+    assert fake.size["lab-x-02"] == fake.desired["lab-x-02"]
+
+
+def test_a_node_whose_ram_is_above_its_target_is_restarted_too(tmp_path):
+    fake, run = build(tmp_path)
+    for name in fake.names:
+        fake.size[name] = fake.desired[name]
+    fake.size["lab-x-05"] = (fake.desired["lab-x-05"][0], 32768)             # the target was lowered
+    result = run()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [e[1] for e in reboots(fake)] == ["lab-x-05"]
+
+
+def test_when_elasticsearch_does_not_report_memory_nothing_is_changed_and_the_field_is_named(tmp_path):
+    fake, run = build(tmp_path)
+    fake.hide_memory = True
+    result = run()
+    assert result.returncode != 0
+    assert "Before anything was changed" in result.stdout and "os.mem.total_in_bytes in GET _nodes/stats/os" in result.stdout
+    assert reboots(fake) == [] and not any(e[0] in ("allocation", "flush") for e in fake.events)
+
+
+def test_when_the_elected_master_cannot_be_found_nothing_is_changed(tmp_path):
+    fake, run = build(tmp_path)
+    fake.elected = "somebody-else"
+    result = run()
+    assert result.returncode != 0
+    assert "who the elected master is" in result.stdout and "somebody-else" in result.stdout
+    assert reboots(fake) == [] and not any(e[0] in ("allocation", "flush") for e in fake.events)

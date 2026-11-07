@@ -20,7 +20,6 @@
     and es_rr_health.json.number_of_nodes | int == es_expected_nodes | int
   retries: "{{ (es_rr_health_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
   delay: "{{ es_rr_poll }}"
-  no_log: true
   ignore_errors: true
 
 - name: Stop if the cluster did not get there

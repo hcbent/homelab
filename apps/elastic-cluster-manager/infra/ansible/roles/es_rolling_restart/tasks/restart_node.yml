@@ -23,7 +23,6 @@
         body:
           persistent:
             cluster.routing.allocation.enable: primaries
-      no_log: true
 
     - name: Remember that allocation is restricted
       ansible.builtin.set_fact:
@@ -36,7 +35,6 @@
         headers: "{{ es_rr_headers }}"
         ca_path: "{{ es_ca_file }}"
       failed_when: false
-      no_log: true
 
     - name: Ask Proxmox to restart {{ es_rr_name }}'s VM, which applies its new size
       ansible.builtin.uri:
@@ -48,7 +46,6 @@
         ca_path: "{{ pve_ca_file | default(omit) }}"
         return_content: true
       register: es_rr_reboot
-      no_log: true
 
     - name: Wait for Proxmox to finish restarting it
       ansible.builtin.uri:
@@ -63,7 +60,6 @@
       until: es_rr_task.json.data.status | default('') == 'stopped'
       retries: "{{ (es_rr_pve_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
       delay: "{{ es_rr_poll }}"
-      no_log: true
 
     - name: Stop if Proxmox reports the restart failed
       ansible.builtin.fail:
@@ -85,7 +81,24 @@
          == es_rr_node.es_desired_cores | int)
       retries: "{{ (es_rr_rejoin_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
       delay: "{{ es_rr_poll }}"
-      no_log: true
+
+    - name: Check that {{ es_rr_name }} reports its new memory too
+      ansible.builtin.uri:
+        url: "{{ es_rr_scheme }}://{{ es_rr_ask }}:{{ es_rr_http_port }}/_nodes/stats/os"
+        headers: "{{ es_rr_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        return_content: true
+        status_code: [200, 503]
+      register: es_rr_mem
+      vars:
+        es_rr_seen: "{{ es_rr_mem.json.nodes.values() | selectattr('name', 'equalto', es_rr_name) | list }}"
+        es_rr_have_mb: "{{ ((es_rr_seen[0].os.mem.total_in_bytes | int) / 1048576) if es_rr_seen | length == 1 else 0 }}"
+      until: >-
+        es_rr_mem.status == 200 and (es_rr_seen | length) == 1
+        and es_rr_have_mb | float <= es_rr_node.es_desired_ram_mb | int
+        and es_rr_have_mb | float >= (es_rr_node.es_desired_ram_mb | int) * (es_rr_ram_tolerance | float)
+      retries: "{{ (es_rr_rejoin_wait | int / es_rr_poll | int) | round(0, 'ceil') | int }}"
+      delay: "{{ es_rr_poll }}"
 
     - name: Wait for every primary to be active again (yellow or better) with every node present
       ansible.builtin.include_tasks: gate.yml
@@ -103,7 +116,6 @@
         body:
           persistent:
             cluster.routing.allocation.enable: null
-      no_log: true
 
     - name: Remember that allocation is allowed again
       ansible.builtin.set_fact:
@@ -124,7 +136,6 @@
         return_content: true
       register: es_rr_after
       failed_when: false
-      no_log: true
       when: es_rr_allocation_changed | bool
 
     - name: Allow shard allocation again if every node is present
@@ -139,7 +150,6 @@
             cluster.routing.allocation.enable: null
       register: es_rr_restored
       failed_when: false
-      no_log: true
       when:
         - es_rr_allocation_changed | bool
         - es_rr_after.json.number_of_nodes | default(0) | int == es_expected_nodes | int
