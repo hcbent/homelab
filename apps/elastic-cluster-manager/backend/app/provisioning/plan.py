@@ -4,6 +4,7 @@ The rules mirror ARCHITECTURE sections 4 and 7 and the Phase 7 adoption rule: an
 kind allows. A create never deletes or replaces anything. An update never deletes or replaces unless the user
 explicitly allowed it. A destroy only deletes. An adoption import must show no change at all.
 """
+import re
 from dataclasses import dataclass, field
 
 CREATE, UPDATE, DELETE, NOOP, READ = "create", "update", "delete", "no-op", "read"
@@ -71,6 +72,41 @@ def summarize_plan(plan_json: dict) -> PlanSummary:
         for rc in plan_json.get("resource_changes", [])
     ]
     return PlanSummary(sorted(changes, key=lambda c: c.address))
+
+
+_NODE_INSTANCE = re.compile(r'^module\.node\["([^"]+)"\](?:\.|$)')
+
+
+def node_of(address: str) -> str | None:
+    """The node a resource belongs to: the instance name in `module.node["name"]`, matched exactly so `name-1` is
+    never mistaken for `name-10`. None for anything that is not inside a node's module."""
+    m = _NODE_INSTANCE.match(address)
+    return m.group(1) if m else None
+
+
+def check_removal_plan(summary: PlanSummary, removing: frozenset[str]) -> list[str]:
+    """Why a plan to remove these nodes must not be applied. Empty means it deletes exactly the machines asked for.
+
+    It may delete resources of the named nodes and change (never create or replace) anything else, and it must delete
+    every named node: a plan that leaves one out would, once approved, drop the node from the cluster's record while its
+    machine still ran."""
+    problems: list[str] = []
+    deleted: set[str] = set()
+    for c in summary.changes:
+        if c.action in (NOOP, READ):
+            continue
+        node = node_of(c.address)
+        if c.action == DELETE and node in removing:
+            deleted.add(node)
+        elif c.action == UPDATE:
+            continue
+        else:
+            verb = {"replace": "would replace (destroy and recreate)", "delete": "would delete",
+                    "create": "would create"}.get(c.action, f"would {c.action}")
+            problems.append(f"removing nodes must only delete the machines asked for, but the plan {verb} {c.address}")
+    for name in sorted(removing - deleted):
+        problems.append(f"the plan does not delete {name}, so approving it would not remove that machine")
+    return problems
 
 
 def check_plan_safety(summary: PlanSummary, operation_kind: str) -> list[str]:

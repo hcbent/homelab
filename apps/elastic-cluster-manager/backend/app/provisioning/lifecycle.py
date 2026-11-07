@@ -17,6 +17,8 @@ from app.config import get_settings
 from app.desired import AllocationError, TopologyPreset, allocate_addresses, warnings
 from app.desired.models import DATA_ROLES, VALID_ROLES, DesiredState, NodeSpec, RolesMode
 from app.desired.network import NetworkProfile
+from app.discovery import factory
+from app.discovery.http import DiscoveryError
 from app.models import Cluster, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
 from app.network_profiles import addresses_in_use
 from app.provisioning.create import (
@@ -360,3 +362,251 @@ def plan_add_nodes(db: Session, cluster: Cluster, request: AddNodes) -> dict:
                      "configures and starts only the new nodes and checks they joined and the cluster is green"),
     }
     return params
+
+
+# -- removing nodes (docs/DESIGN_REMOVE_NODE.md) ------------------------------------------------------------------
+
+LOW_WATERMARK = 0.85            # Elasticsearch's default; used when the cluster's own setting cannot be read
+_TIERS = ("data_content", "data_hot", "data_warm", "data_cold", "data_frozen")
+_SOFT_ROLES = ("ml", "ingest", "transform", "remote_cluster_client")   # losing the last one is a warning, not a refusal
+_SHOWN = 5                      # how many shards or indices a refusal names before it says "and N more"
+
+
+class RemoveNodes(BaseModel):
+    """Remove these nodes. The cluster name is typed as a confirmation, as for a teardown: the machines and their data
+    disks are destroyed and that cannot be undone."""
+
+    model_config = ConfigDict(extra="forbid")
+    nodes: list[str] = Field(min_length=1, max_length=20)
+    confirm_name: str = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "RemoveNodes":
+        if len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("the same node is listed twice")
+        return self
+
+
+def _some(items: list[str]) -> str:
+    return ", ".join(items[:_SHOWN]) + (f" and {len(items) - _SHOWN} more" if len(items) > _SHOWN else "")
+
+
+def _read_cluster(db: Session, cluster: Cluster, client=None) -> dict:
+    """What the cluster reports right now, with GET requests only. Refuses if ECM cannot reach it: a removal is never
+    planned from the last sync alone, because shards move between syncs."""
+    def read(c) -> dict:
+        return {"health": c.health(), "nodes": c.nodes().get("nodes", {}), "stats": c.nodes_stats().get("nodes", {}),
+                "shards": c.shards_sized(), "settings": c.settings(), "master": c.master()}
+    if client is not None:
+        return read(client)
+    if not cluster.credential_id or not cluster.endpoint_urls:
+        raise OperationRefused("ECM has no way to reach this cluster, so it cannot check that a node can be removed")
+    last: Exception | None = None
+    for url in cluster.endpoint_urls:
+        try:
+            return read(factory.es_client(db, cluster, url))
+        except DiscoveryError as exc:
+            last = exc
+    raise OperationRefused(f"ECM could not read the cluster to check the removal ({last}); try again when it answers")
+
+
+def _low_watermark(settings: dict) -> tuple[float, str | None]:
+    """The disk low watermark as a share of a disk, and a note when it could not be read. A percentage or a ratio is
+    understood; a size in bytes is not, and then the default is used and the plan says so."""
+    key = "cluster.routing.allocation.disk.watermark.low"
+    raw = (settings.get("transient", {}) or {}).get(key) or (settings.get("persistent", {}) or {}).get(key)
+    if raw is None:
+        return LOW_WATERMARK, None
+    text = str(raw).strip()
+    try:
+        value = float(text[:-1]) / 100 if text.endswith("%") else float(text)
+        if 0 < value <= 1:
+            return value, None
+    except ValueError:
+        pass
+    return LOW_WATERMARK, (f"the cluster's low disk watermark is set to {raw!r}, which ECM cannot read as a share of a "
+                           f"disk, so the check used {LOW_WATERMARK:.0%}")
+
+
+def _master_spread_problem(remaining: list[NodeSpec], placement: dict[str, str]) -> str | None:
+    """The reverse of the add-node rule: after masters leave, no host may hold more than the cluster can lose with it."""
+    masters = [n for n in remaining if n.is_master_eligible]
+    survivable = (len(masters) - 1) // 2
+    per_host: dict[str, int] = defaultdict(int)
+    for n in masters:
+        per_host[placement.get(n.name, "")] += 1
+    worst = max(per_host.items(), key=lambda kv: kv[1], default=("", 0))
+    if worst[1] > survivable:
+        return (f"{worst[0]} would hold {worst[1]} of the {len(masters)} master-eligible nodes that remain, and a "
+                f"cluster of {len(masters)} survives losing at most {survivable} at once, so losing that host would "
+                "break the quorum. Spread them over more hosts first, or remove a different set")
+    return None
+
+
+def _quorum_problems(state: DesiredState, removing: list[NodeSpec], placement: dict[str, str]) -> list[str]:
+    names = {n.name for n in removing}
+    remaining = [n for n in state.nodes if n.name not in names]
+    masters_now = state.master_eligible_nodes
+    gone = [n for n in removing if n.is_master_eligible]
+    problems: list[str] = []
+    if len(remaining) < 2:
+        problems.append("this would leave a single node, and a cluster cannot be turned into a single-node cluster "
+                        "while it runs")
+        return problems
+    left = len(masters_now) - len(gone)
+    if gone and left < 3:
+        what = ("it is the only master-eligible node" if len(masters_now) <= 1 else
+                f"only {left} master-eligible node{'s' if left != 1 else ''} would remain")
+        problems.append(f"removing {_some([n.name for n in gone])} would break the quorum: {what}, and a cluster "
+                        "needs at least 3 to survive losing one")
+    elif gone and len(gone) * 2 >= len(masters_now):
+        problems.append(f"removing {len(gone)} of the {len(masters_now)} master-eligible nodes at once is refused: "
+                        "Elasticsearch can only take fewer than half of them out together")
+    elif gone:
+        spread = _master_spread_problem(remaining, placement)
+        if spread:
+            problems.append(spread)
+    return problems
+
+
+def plan_remove_nodes(db: Session, cluster: Cluster, request: RemoveNodes, client=None) -> dict:
+    """The parameters with these nodes taken out, after refusing anything that could lose data or the quorum.
+
+    The rules that need no cluster read come first (the name, the nodes, the quorum), then a live read of the cluster
+    (green, every node present, where each shard copy is, how full each disk is) decides the rest. `client` is for
+    tests; in use it is built from the cluster's stored key and endpoints. Nothing is changed here."""
+    params = current_desired(cluster)
+    if request.confirm_name != cluster.name:
+        raise OperationRefused("type the cluster name exactly to confirm the removal")
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster; there is no node to remove from it")
+    by_name = {n.name: n for n in state.nodes}
+    unknown = sorted(set(request.nodes) - set(by_name))
+    if unknown:
+        raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
+    removing = [by_name[n] for n in sorted(request.nodes)]
+    removing_names = {n.name for n in removing}
+    remaining = [n for n in state.nodes if n.name not in removing_names]
+
+    problems = _quorum_problems(state, removing, params.get("placement", {}))
+    if not problems:
+        try:
+            DesiredState(name=state.name, version=state.version, topology_preset=TopologyPreset.custom,
+                         nodes=remaining, network_profile=state.network_profile)
+        except ValidationError as exc:
+            problems = [e["msg"].removeprefix("Value error, ") for e in exc.errors()]
+    if problems:
+        raise OperationRefused("; ".join(problems))
+
+    view = _read_cluster(db, cluster, client)
+    notes, per_node = _check_live(state, removing, remaining, view)
+    # The placement, addresses and VMIDs of the removed machines leave the record; the plan page and the ownership
+    # check read them from the change, which is the only place they are kept.
+    numbered = [int(m.group(1)) for n in state.nodes if (m := re.match(rf"^{re.escape(state.name)}-(\d+)$", n.name))]
+    params["state"] = DesiredState(
+        name=state.name, version=state.version, topology_preset=TopologyPreset.custom, nodes=remaining,
+        network_profile=state.network_profile).model_dump(mode="json")
+    detail = {}
+    for n in removing:
+        detail[n.name] = {"host": params["placement"].get(n.name), "address": params["addresses"].get(n.name),
+                          "vm_id": int(params["vm_ids"][n.name]), "roles": ", ".join(sorted(n.effective_roles)) or
+                          "none (coordinating only)", "cores": n.cores, "ram_mb": n.ram_mb,
+                          "data_disk_gb": n.data_disk_gb, **per_node.get(n.name, {"shards": 0, "data_bytes": 0})}
+    for table in ("placement", "addresses", "vm_ids"):
+        params[table] = {k: v for k, v in params[table].items() if k not in removing_names}
+    params["node_counter"] = max([int(params.get("node_counter", 0)), *numbered])
+    names = [n.name for n in removing]
+    params["change"] = {
+        "kind": "remove_nodes", "removed": names, "warnings": notes, "nodes": detail,
+        "describe": (f"remove {len(names)} node{'s' if len(names) != 1 else ''} ({', '.join(names)}): "
+                     "Elasticsearch moves their shards to the other nodes, then Terraform destroys the machines and "
+                     "their disks, then ECM checks the cluster is green with the nodes that remain"),
+    }
+    return params
+
+
+def _check_live(state: DesiredState, removing: list[NodeSpec], remaining: list[NodeSpec],
+                view: dict) -> tuple[list[str], dict[str, dict]]:
+    """The rules that need the cluster as it is now. Returns the warnings and, per removed node, the shards and bytes it
+    holds; raises OperationRefused listing every problem found."""
+    names = {n.name for n in removing}
+    health, live = view["health"], view["nodes"]
+    problems: list[str] = []
+    if health.get("status") != "green":
+        problems.append(f"the cluster is {health.get('status')}; it must be green before a node is removed")
+    present = {info.get("name"): nid for nid, info in live.items()}
+    if health.get("number_of_nodes") != len(state.nodes) or set(present) != {n.name for n in state.nodes}:
+        problems.append(f"the cluster has {health.get('number_of_nodes')} nodes and ECM expects {len(state.nodes)}; "
+                        "every node must be present before one is removed")
+    if problems:
+        raise OperationRefused("; ".join(problems))
+
+    roles = {info["name"]: set(info.get("roles", [])) for info in live.values()}
+    stats = {live[nid]["name"]: ((st.get("fs") or {}).get("total") or {}) for nid, st in view["stats"].items() if nid in live}
+    shards = view["shards"]
+    notes: list[str] = []
+
+    stuck = [f"{s['index']}[{s['shard']}]" for s in shards if s.get("state") != "STARTED"]
+    if stuck:
+        problems.append(f"{len(stuck)} shard cop{'ies are' if len(stuck) != 1 else 'y is'} not started "
+                        f"({_some(stuck)}); a node is removed only from a cluster with every shard in place")
+
+    copies: dict[tuple, list[str]] = defaultdict(list)
+    per_node: dict[str, dict] = {n: {"shards": 0, "data_bytes": 0} for n in names}
+    for s in shards:
+        if s.get("state") == "STARTED" and s.get("node"):
+            copies[(s["index"], s["shard"])].append(s["node"])
+        if s.get("node") in per_node:
+            per_node[s["node"]]["shards"] += 1
+            per_node[s["node"]]["data_bytes"] += int(s.get("store") or 0)
+
+    only_copy = sorted(f"{i}[{sh}]" for (i, sh), where in copies.items() if set(where) <= names)
+    if only_copy:
+        problems.append(f"the only copy of {len(only_copy)} shard{'s' if len(only_copy) != 1 else ''} is on a node being "
+                        f"removed ({_some(only_copy)}); add a replica to each of those indices first, or keep the node")
+
+    data_left = [n for n in remaining if roles.get(n.name, set()) & DATA_ROLES]
+    crowded = sorted({i for (i, _), where in copies.items() if len(where) > len(data_left)})
+    if crowded:
+        problems.append(f"{_some(crowded)} keep more copies of each shard than the {len(data_left)} data "
+                        f"node{'s' if len(data_left) != 1 else ''} that would remain, so the cluster would stay yellow")
+
+    left_roles = set().union(*(roles.get(n.name, set()) for n in remaining)) if remaining else set()
+
+    def covered(role: str) -> bool:
+        return role in left_roles or (role in _TIERS and role != "data_frozen" and "data" in left_roles)
+    for n in removing:
+        lost = sorted(r for r in roles.get(n.name, set()) & DATA_ROLES if not covered(r))
+        if lost and per_node[n.name]["shards"]:
+            problems.append(f"{n.name} is the last node with the {', '.join(lost)} role and holds shards, which would "
+                            "have no node of that tier to go to")
+        elif lost:       # holds nothing, so nothing is stranded; a default-role node always has the tiers no one uses
+            notes.append(f"no node with the {', '.join(lost)} role would remain")
+    for role in _SOFT_ROLES:
+        if any(role in roles.get(n.name, set()) for n in removing) and role not in left_roles:
+            notes.append(f"no node with the {role} role would remain")
+
+    low, note = _low_watermark(view["settings"])
+    if note:
+        notes.append(note)
+    def used(name: str) -> int:
+        t = stats.get(name, {})
+        return int(t.get("total_in_bytes", 0)) - int(t.get("available_in_bytes", 0))
+    moving = sum(used(n.name) for n in removing if roles.get(n.name, set()) & DATA_ROLES)
+    room = sum(int(stats.get(n.name, {}).get("total_in_bytes", 0)) for n in data_left)
+    already = sum(used(n.name) for n in data_left)
+    if room and already + moving > low * room:
+        gib = 1024 ** 3
+        problems.append(f"the data nodes that would remain have {already / gib:.1f} GiB used of {room / gib:.1f} GiB, "
+                        f"and the {moving / gib:.1f} GiB on the removed nodes would take them to "
+                        f"{(already + moving) / room:.0%}, past the {low:.0%} low disk watermark")
+    elif not room and moving:
+        problems.append("ECM could not read the disk size of the data nodes that would remain")
+
+    if problems:
+        raise OperationRefused("; ".join(problems))
+    elected = ((view["master"] or [{}])[0]).get("node")
+    if elected in names:
+        notes.append(f"{elected} is the elected master, so a new master is elected when it goes (a few seconds)")
+    return notes, per_node

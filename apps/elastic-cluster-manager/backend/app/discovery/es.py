@@ -37,6 +37,14 @@ class ESClient:
     def settings(self):
         return self._get("/_cluster/settings?flat_settings=true", "cluster settings")
 
+    def shards_sized(self):
+        """Every shard copy with its size in bytes, for working out where data would go if a node left."""
+        return self._get("/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store",
+                         "shard list with sizes")
+
+    def master(self):
+        return self._get("/_cat/master?format=json&h=node", "elected master")
+
 
 @dataclass
 class NodeInfo:

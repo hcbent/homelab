@@ -105,6 +105,10 @@ or host in plain words.
 
 ## Decisions for the operator
 
+**The operator's answers (2026-11-07): all five proposals accepted.** On (5), the elected master may be removed "as long as it's not the only
+master": the plan refuses it when it is the cluster's only master-eligible node, which the quorum rule (at least 3 must remain)
+already covers, and the message says so in those words.
+
 1. **Only copy of a shard.** *Proposed:* refuse, with no override in this slice, as the acceptance criteria say. The cost is that a cluster
    with zero-replica indices cannot lose a node through ECM even though the shutdown API would copy the data first. The alternative is
    to allow it after a typed acknowledgement that the node holds the only copy.
