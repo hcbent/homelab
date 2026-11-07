@@ -1,6 +1,6 @@
 import {
   EuiBadge, EuiButton, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiEmptyPrompt, EuiHealth, EuiLink,
-  EuiLoadingSpinner, EuiProgress,
+  EuiLoadingSpinner, EuiProgress, EuiSwitch,
 } from "@elastic/eui";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, Operation } from "./api";
@@ -52,6 +52,7 @@ export function Operations() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [showDry, setShowDry] = useState(false);
   const load = useCallback(() => {
     api<Operation[]>("/api/operations").then((o) => { setOps(o); setLoadError(null); })
       .catch((e) => setLoadError(e instanceof ApiError ? e.message : String(e)));
@@ -70,7 +71,10 @@ export function Operations() {
     load();
   }
 
-  const list = ops ?? [];
+  const all = ops ?? [];
+  const dryCount = all.filter((o) => o.dry_run).length;
+  // Dry runs are how the wizard checks a plan; they would bury the operations that changed something.
+  const list = showDry ? all : all.filter((o) => !o.dry_run);
   const idx = Math.max(0, list.findIndex((o) => o.id === picked));
   const current = list[idx];
   const prev = list[idx - 1];
@@ -88,6 +92,8 @@ export function Operations() {
         <h2 id="ops-title" className="ecm-h2">Operation log</h2>
         <p className="ecm-lede ecm-lede--small">Each ECM job reports its state and phase here. Secrets are redacted.</p>
         <EuiButton onClick={runDemo}>Run demo job</EuiButton>
+        {dryCount > 0 && (
+          <EuiSwitch label={`Show dry runs (${dryCount})`} checked={showDry} onChange={(e) => setShowDry(e.target.checked)} />)}
       </header>
       {(loadError || runError) && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title={loadError ? "Could not load operations" : "Could not start the job"}>
@@ -97,7 +103,9 @@ export function Operations() {
       {ops === null && !loadError && <p role="status"><EuiLoadingSpinner size="m" /> Loading operations…</p>}
       {ops !== null && list.length === 0 && (
         <EuiEmptyPrompt iconType="clock" titleSize="s" title={<h3>No operations yet</h3>}
-          body={<p>Jobs started from ECM appear here with their state and phase.</p>} />)}
+          body={<p>{all.length > 0
+            ? `Only dry runs so far (${dryCount}). Turn on "Show dry runs" to see them.`
+            : "Jobs started from ECM appear here with their state and phase."}</p>} />)}
       {current && (
         <div className="ecm-ops__rail">
           <div className="ecm-ops__side ecm-ops__side--prev">{side(prev, "Newer")}</div>

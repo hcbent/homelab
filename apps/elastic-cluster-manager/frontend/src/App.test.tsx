@@ -347,3 +347,26 @@ test("the infrastructure VM table marks only the machines ECM created", async ()
   expect(within(mine).getByText("ECM")).toBeInTheDocument();
   expect(within(theirs).queryByText("ECM")).not.toBeInTheDocument();
 });
+
+test("operations hide dry runs until asked, and say when only dry runs exist", async () => {
+  window.location.hash = "#/operations";
+  const op = (id: string, kind: string, dry_run: boolean) =>
+    ({ id, kind, state: "succeeded", phase: null, elapsed_seconds: 1, error: null, dry_run });
+  const real = op("real", "tf.create", false);
+  mockFetch((url) => url.endsWith("/me") ? ME : [200, [op("dry1", "tf.plan-a", true), real, op("dry2", "tf.plan-b", true)]]);
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: /tf.create/ })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: /tf.plan-a/ })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("switch", { name: "Show dry runs (2)" }));
+  expect(await screen.findByRole("heading", { name: /tf.plan-a/ })).toBeInTheDocument();     // newest first
+  expect(screen.getByRole("button", { name: /Older: tf.create/ })).toBeInTheDocument();
+});
+
+test("when every operation is a dry run, the page says so instead of showing an empty log", async () => {
+  window.location.hash = "#/operations";
+  mockFetch((url) => url.endsWith("/me") ? ME : [200, [
+    { id: "d1", kind: "tf.create", state: "succeeded", phase: null, elapsed_seconds: 1, error: null, dry_run: true }]]);
+  render(<App />);
+  expect(await screen.findByText("No operations yet")).toBeInTheDocument();
+  expect(screen.getByText(/Only dry runs so far \(1\)/)).toBeInTheDocument();
+});

@@ -104,6 +104,15 @@ test("a failed operation shows its error, keeps the machines in view, and retrie
     && (i as RequestInit).method === "POST")).toBe(true));
 });
 
+test("a failed dry run offers no retry, because a dry run starts clean each time", async () => {
+  mockFetch(table({ "GET /api/operations/dry": [200, op({ id: "dry", state: "failed", dry_run: true, cluster_id: null,
+    error: "terraform init failed", plan: null })] }));
+  render(<OperationDetail id="dry" />);
+  expect(await screen.findByText("This operation failed")).toBeInTheDocument();
+  expect(screen.getByText(/A dry run is not retried/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+});
+
 test("approving a teardown is destructive and needs the start of the digest typed", async () => {
   const fn = mockFetch(table({
     "GET /api/operations/op2": [200, op({ id: "op2", kind: "tf.destroy",
@@ -185,6 +194,7 @@ test("the operations list links each operation to its detail and marks dry runs"
     { id: "op1", kind: "tf.create", state: "succeeded", phase: null, elapsed_seconds: 12, error: null, dry_run: true,
       cluster_id: "c1", parent_op_id: null }]] }));
   render(<Operations />);
+  await userEvent.click(await screen.findByRole("switch", { name: "Show dry runs (1)" }));   // hidden until asked for
   expect(await screen.findByRole("link", { name: "Open details" })).toHaveAttribute("href", "#/operations/op1");
   expect(screen.getByText("dry run")).toBeInTheDocument();
 });

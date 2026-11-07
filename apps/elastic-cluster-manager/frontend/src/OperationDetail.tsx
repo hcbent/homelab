@@ -173,7 +173,9 @@ export function OperationDetail({ id }: { id: string }) {
               {op.cluster_id
                 ? <><EuiLink href={`#/clusters/${op.cluster_id}`}>open the cluster</EuiLink> and choose Tear down cluster.</>
                 : <>run <span className="ecm-mono">scripts/ecm_cli.py cleanup {op.id} &lt;cluster name&gt;</span>.</>}</p>)}
-          <EuiButton size="s" isDisabled={busy} onClick={() => act("retry")}>Retry</EuiButton>
+          {op.dry_run
+            ? <p>A dry run is not retried. Go back to the wizard and plan again; that starts clean.</p>
+            : <EuiButton size="s" isDisabled={busy} onClick={() => act("retry")}>Retry</EuiButton>}
         </EuiCallOut>)}
 
       {op.state === "succeeded" && op.kind === "tf.destroy" && (
