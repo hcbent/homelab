@@ -1,6 +1,6 @@
 # Resizing CPU and RAM: proposed design, revision 2 (Phase 5, slice 2)
 
-**Status: BUILT on 2026-11-07 as described here and tested offline with real Ansible against a fake Elasticsearch and Proxmox; the Terraform step has run live for CPU (the probe), and the rolling restart has not run on a real cluster.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
+**Status: BUILT on 2026-11-07 as described here, tested offline with real Ansible against a fake Elasticsearch and Proxmox, and run live once to completion on a three-node test cluster (CPU and RAM) after one fix.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
 applies the changes, then an Ansible playbook does the rolling restart**, masters last, the cluster back to green between
 nodes, and shard allocation restricted while a node is down. It replaces revision 1, which had ECM applying Terraform one VM at
 a time. Items marked *to confirm* are assumptions that nothing has checked on this project's Proxmox, provider or cluster.
