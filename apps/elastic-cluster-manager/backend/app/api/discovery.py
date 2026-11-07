@@ -22,6 +22,7 @@ from app.models import (
     User,
     Vm,
 )
+from app.provisioning.operation import cluster_lifecycle
 
 router = APIRouter(prefix="/api", tags=["discovery"],
                    dependencies=[Depends(auth.require_csrf_header)])
@@ -284,6 +285,7 @@ def cluster_detail(cluster_id: str, db: Session = Depends(get_db), _: User = Dep
                           "settings": snap.get("settings")},
         "proxmox": {"vms": [_vm(vms[n.vm_id], {n.vm_id: (c.id, n.link_confidence)})
                             for n in nodes if n.vm_id in vms]},
+        "lifecycle": cluster_lifecycle(db, c),
         "desired": {"managed": c.ownership in ("managed", "adopted"),
                     "note": "Not managed: this application holds no desired state for it yet."
                     if c.ownership == "discovered" else None},

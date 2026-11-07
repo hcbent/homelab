@@ -163,8 +163,7 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
         raise OperationRefused("this cluster has been bootstrapped: Elasticsearch is installed on its machines and "
                                "any data in it is destroyed with them. Confirm that you accept the data loss "
                                "to continue")
-    if db.scalar(select(Operation.id).where(Operation.parent_op_id == parent.id, Operation.kind == DESTROY,
-                                            Operation.state == "succeeded")):
+    if _torn_down(db, parent.id):
         raise OperationRefused("this create has already been cleaned up")
     left = (parent.result or {}).get("resources_in_state") or []
     if not left:
@@ -178,6 +177,58 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
     return op
 
 
+def _torn_down(db: Session, create_op_id: str) -> bool:
+    return bool(db.scalar(select(Operation.id).where(Operation.parent_op_id == create_op_id,
+                                                     Operation.kind == DESTROY, Operation.state == "succeeded")))
+
+
+def _removal_blocker(db: Session, cluster: Cluster) -> str | None:
+    """Why the record of this managed cluster cannot be removed yet, or None when nothing of it is left."""
+    if cluster.bootstrapped_at is not None:
+        return "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"
+    ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)).all()
+    if any(o.state in ACTIVE_STATES for o in ops):
+        return "an operation is still running on this cluster; wait for it to finish"
+    node_names: set[str] = set()
+    for op in ops:
+        if op.kind != CREATE or op.dry_run:
+            continue
+        node_names |= {n["name"] for n in (op.params.get("state") or {}).get("nodes", [])}
+        built = (op.result or {}).get("resources_in_state") or []
+        if built and not _torn_down(db, op.id):
+            return ("a create of this cluster built machines that have not been torn down through "
+                    f"ECM (operation {op.id}); clean it up first")
+    still_there = sorted(node_names & {n for (n,) in db.execute(select(Vm.name)) if n})
+    if still_there:
+        return f"VMs named {', '.join(still_there)} still exist in Proxmox; remove them first"
+    return None
+
+
+def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
+    """What can be done to a cluster now, for the UI. It reads the same rules start_cleanup and remove_cluster
+    enforce, so the page does not offer what the API would refuse; those two still check for themselves.
+
+    `teardown_of` is the create operation a teardown would clean up: the newest real create that finished with
+    machines in Terraform state and has not been torn down. `nodes` names the machines it would destroy.
+    """
+    if cluster.ownership != "managed":
+        return {"managed": False}
+    ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)
+                     .order_by(Operation.created_at.desc())).all()
+    busy = next((o for o in ops if o.state in ACTIVE_STATES), None)
+    target = next((o for o in ops if o.kind == CREATE and not o.dry_run and o.state in ("failed", "succeeded")
+                   and (o.result or {}).get("resources_in_state") and not _torn_down(db, o.id)), None)
+    names = [n["name"] for n in ((target.params or {}).get("state") or {}).get("nodes", [])] if target else []
+    return {
+        "managed": True,
+        "busy_operation_id": busy.id if busy else None,
+        "teardown_of": target.id if target and not busy else None,
+        "nodes": names if target and not busy else [],
+        "bootstrapped": cluster.bootstrapped_at is not None,
+        "can_remove": _removal_blocker(db, cluster) is None,
+    }
+
+
 def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: str) -> dict:
     """Remove the record of a managed cluster whose machines are gone, so it stops cluttering the list.
 
@@ -189,25 +240,9 @@ def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: st
     cluster = _managed_cluster(db, cluster_id)
     if confirm_name != cluster.name:
         raise OperationRefused("type the cluster name exactly to confirm the removal")
-    if cluster.bootstrapped_at is not None:
-        raise OperationRefused("this cluster has bootstrapped: tear its machines down first (cleanup), then remove it")
-    ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)).all()
-    if any(o.state in ACTIVE_STATES for o in ops):
-        raise OperationRefused("an operation is still running on this cluster; wait for it to finish")
-    node_names: set[str] = set()
-    for op in ops:
-        if op.kind != CREATE or op.dry_run:
-            continue
-        node_names |= {n["name"] for n in (op.params.get("state") or {}).get("nodes", [])}
-        built = (op.result or {}).get("resources_in_state") or []
-        torn_down = db.scalar(select(Operation.id).where(Operation.parent_op_id == op.id, Operation.kind == DESTROY,
-                                                         Operation.state == "succeeded"))
-        if built and not torn_down:
-            raise OperationRefused("a create of this cluster built machines that have not been torn down through "
-                                   f"ECM (operation {op.id}); clean it up first")
-    still_there = sorted(node_names & {n for (n,) in db.execute(select(Vm.name)) if n})
-    if still_there:
-        raise OperationRefused(f"VMs named {', '.join(still_there)} still exist in Proxmox; remove them first")
+    blocker = _removal_blocker(db, cluster)
+    if blocker:
+        raise OperationRefused(blocker)
 
     suffix = cluster.id
     detached = db.execute(update(Operation).where(Operation.cluster_id == cluster.id)

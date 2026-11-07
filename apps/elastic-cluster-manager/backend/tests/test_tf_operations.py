@@ -1054,3 +1054,76 @@ def test_the_remove_endpoint_refuses_with_the_reason_and_removes_when_nothing_is
     assert r.status_code == 200 and r.json()["name"] == "lab-b"
     assert logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "lab-b"},
                           headers=H).status_code == 409                       # already gone
+
+
+# ---- what the cluster page may offer ----------------------------------------------------------------------
+
+def lifecycle(session, cluster):
+    from app.provisioning.operation import cluster_lifecycle
+    session.refresh(cluster)
+    return cluster_lifecycle(session, cluster)
+
+
+def test_a_discovered_cluster_has_no_lifecycle(session):
+    found = Cluster(name="found", ownership="discovered")
+    session.add(found)
+    session.commit()
+    from app.provisioning.operation import cluster_lifecycle
+    assert cluster_lifecycle(session, found) == {"managed": False}
+
+
+def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_and_the_data_loss(
+        session, world, cluster, conn):
+    created = reach_success(session, world, cluster, conn)
+    got = lifecycle(session, cluster)
+    assert got == {"managed": True, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
+                   "bootstrapped": True, "can_remove": False}
+
+
+def test_while_an_operation_runs_nothing_is_offered_and_it_is_named(session, world, cluster, conn):
+    planned = begin(session, cluster, conn)                     # planned, waiting to run
+    got = lifecycle(session, cluster)
+    assert got["busy_operation_id"] == planned.id and got["teardown_of"] is None and got["nodes"] == []
+    assert got["can_remove"] is False
+
+
+def test_after_a_teardown_only_the_removal_is_offered(session, world, cluster, conn):
+    torn_down(session, world, cluster, conn)
+    got = lifecycle(session, cluster)
+    assert got["teardown_of"] is None and got["nodes"] == [] and got["can_remove"] is True
+    assert got["bootstrapped"] is False and got["busy_operation_id"] is None
+
+
+def test_a_failed_create_that_left_machines_offers_a_teardown_without_a_data_loss_warning(
+        session, world, cluster, conn):
+    world.ansible_error = "the ansible-playbook binary was not found"
+    op = run(session, world, begin(session, cluster, conn))
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    with pytest.raises(tfop.ConfigureFailed):
+        run(session, world, op)                                 # the VMs exist, nothing bootstrapped
+    got = lifecycle(session, cluster)
+    assert got["teardown_of"] == op.id and got["nodes"] == NODES and got["bootstrapped"] is False
+    assert got["can_remove"] is False                           # machines exist, so it cannot be removed yet
+
+
+def test_a_cluster_that_never_built_anything_offers_only_the_removal(session, world, cluster, conn):
+    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
+    got = lifecycle(session, cluster)
+    assert got["teardown_of"] is None and got["can_remove"] is True
+
+
+def test_the_cluster_detail_carries_the_lifecycle_and_what_it_offers_is_what_the_api_accepts(
+        logged_in, session, world, cluster, conn):
+    from procrastinate import testing
+
+    from app import jobs
+    created = reach_success(session, world, cluster, conn)
+    detail = logged_in.get(f"/api/clusters/{cluster.id}").json()
+    assert detail["lifecycle"]["teardown_of"] == created.id
+    with jobs.queue.replace_connector(testing.InMemoryConnector()):
+        r = logged_in.post(f"/api/operations/{detail['lifecycle']['teardown_of']}/cleanup",
+                           json={"confirm_name": "lab-b", "confirm_data_loss": detail["lifecycle"]["bootstrapped"]},
+                           headers=H)
+    assert r.status_code == 202
+    after = logged_in.get(f"/api/clusters/{cluster.id}").json()["lifecycle"]
+    assert after["busy_operation_id"] == r.json()["id"] and after["teardown_of"] is None
