@@ -34,3 +34,15 @@ Approve buttons below it should be looked at in the same pass, since they were s
 
 Done when the heading has the same space above it as the other blocks in the panel, in dark and light mode, for an add-nodes plan with
 and without placement warnings and with and without the dry-run note.
+
+## A default-roles node lists all eleven roles
+
+**Found 2026-11-07 on infra, from the operator's screenshots of the Remove nodes panel and the node table.** A node with Elasticsearch's default
+roles is shown as `data, data_cold, data_content, data_frozen, data_hot, data_warm, ingest, master, ml, remote_cluster_client, transform` in the
+Remove nodes panel's labels and in the cluster page's node table, which wraps to three lines. For a default-roles node the recorded state says
+so (`roles_mode: default`), and the live node reports the same list, so "all roles" (or "default roles") could be shown instead, with the full
+list in a tooltip. The same list shows on the plan page's table for removed and added nodes.
+
+Done when a default-roles node reads as one short phrase in the Remove nodes panel, the node table and the plan tables, and a node with a custom set
+of roles still lists them.
+

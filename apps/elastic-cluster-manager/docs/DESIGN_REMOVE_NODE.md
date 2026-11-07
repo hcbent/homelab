@@ -189,3 +189,28 @@ Then tear the test cluster down; that teardown, after nodes were added and remov
 - **Unverified on a real cluster:** all of it. In particular the shapes of `GET /_nodes/<id>/shutdown` and `GET /_nodes/shutdown`, that the
   API key may call them, that Elasticsearch re-forms the voting configuration by itself when masters leave, how long a drain takes, that
   Terraform's destroy stops a drained machine cleanly and leaves no orphaned volume, and that clearing a departed node's shutdown record works.
+
+## First live results (2026-11-07, the operator's reports and screenshots; not yet the whole log)
+
+The seven-node `test` cluster: `test-01` to `-03` all-in-one (default roles), `-04` and `-05` `ml` + `remote_cluster_client`, `-06` and `-07`
+master-only, over `pve1` to `pve3`. What was seen, and what was not:
+
+- **A refusal, as designed.** Removing `test-07` alone was refused: "pve2 would hold 2 of the 4 master-eligible nodes that remain, and a
+  cluster of 4 survives losing at most 1 at once". The host-spread rule works on the real cluster.
+- **Two masters removed together, one of them a data node.** `test-07` (master-only) and `test-03` (all roles, so a drain with shards on it)
+  were removed in one operation. The part of the log shown is the check afterwards: the cluster was green with the 5 remaining nodes, and the
+  two Elasticsearch response shapes the playbook reads there, `GET _nodes?filter_path=nodes.*.name` and `GET _nodes/shutdown` (`nodes[].node_id`),
+  were what the playbook assumed, because it found and tried to clear the shutdown records of the two departed nodes (the task reported `ok`;
+  that the records are really gone was not checked). The converge touched only the five remaining nodes and restarted none. The cluster page then
+  showed 5 nodes, green, 2 shards on each of the two remaining data nodes and none elsewhere, and the three remaining masters on three hosts.
+- **An ML node removed** (`test-04`): inferred from its absence from the cluster page's node list and sizes, which are only changed once
+  Terraform's apply has succeeded. Its log was not seen.
+- **The last refusal, as designed.** With three masters left, removing `test-06` was refused: "only 2 master-eligible nodes would remain, and a
+  cluster needs at least 3 to survive losing one".
+- **Not yet seen:** the drain's own log (the shutdown calls' response shapes and how long a drain took, and no `STALLED` was reported as far as
+  the operator said), the Terraform apply, that Proxmox destroyed the machines and left no orphaned volumes, that the shutdown records were
+  deleted, that the voting configuration lists only the remaining masters, and the teardown of the cluster afterwards (started by the operator;
+  it is the first teardown after nodes were removed).
+- **Small thing noticed:** an all-in-one node's eleven roles are listed in full in the Remove nodes panel and on the cluster page's node table;
+  "all roles" would read better (see `docs/TODO.md`).
+
