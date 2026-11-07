@@ -56,6 +56,9 @@ services:
       # ECM_TF_STATE_URL in .env to use a separate database. Handed to Terraform as PG_CONN_STR and nowhere else.
       ECM_TF_STATE_URL: ${ECM_TF_STATE_URL:-}
       ECM_TF_STATE_SSLMODE: ${ECM_TF_STATE_SSLMODE:-disable}
+      # How many VMs Terraform clones (or destroys) at once. Proxmox serializes clones onto one storage and gives up
+      # waiting for its lock after 60 seconds, so a high number fails on a big cluster. 1 to 10; default 2.
+      ECM_TF_PARALLELISM: ${ECM_TF_PARALLELISM:-2}
       # How the worker reaches the VMs it configures (Ansible). The key is mounted below, never copied into the image.
       ECM_SSH_USER: ${ECM_SSH_USER:-bret}
       ECM_SSH_KEY_PATH: /run/ecm/ssh/github_rsa

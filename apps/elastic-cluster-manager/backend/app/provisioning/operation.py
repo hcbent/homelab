@@ -287,7 +287,8 @@ def _delete_record(db: Session, cluster: Cluster, actor: str, **why: object) -> 
 
 def default_runner(line_log: Callable[[str], None]) -> TerraformRunner:
     s = get_settings()
-    return CliTerraformRunner(binary=s.terraform_binary, plugin_dir=s.terraform_plugin_dir, log=line_log)
+    return CliTerraformRunner(binary=s.terraform_binary, plugin_dir=s.terraform_plugin_dir, log=line_log,
+                              parallelism=s.tf_parallelism)
 
 
 def default_ansible(line_log: Callable[[str], None]) -> AnsibleRunner:

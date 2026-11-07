@@ -178,3 +178,60 @@ def test_a_run_that_exceeds_its_time_limit_is_interrupted(tmp_path):
     with pytest.raises(TerraformError, match="timed out after 2s and was interrupted"):
         r.apply(ws, {})
     assert time.monotonic() - started < 30                            # nowhere near the 60 s sleep
+
+
+# ---- how many resources are applied at once ----------------------------------------------------------------
+
+def _slow_resources(tmp_path, count=4):
+    """`count` resources whose provisioners log when they start and end, so the overlap can be measured."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    log = tmp_path / "overlap.log"
+    blocks = "\n".join(f'''
+resource "terraform_data" "r{i}" {{
+  provisioner "local-exec" {{
+    command = "echo s >> {log}; sleep 0.4; echo e >> {log}"
+  }}
+}}''' for i in range(count))
+    return {"main.tf": blocks}, log
+
+
+def _most_at_once(log):
+    running = peak = 0
+    for line in log.read_text().split():
+        running += 1 if line == "s" else -1
+        peak = max(peak, running)
+    return peak
+
+
+@pytest.mark.parametrize("parallelism", [1, 2])
+def test_apply_runs_no_more_resources_at_once_than_it_is_told_to(tmp_path, parallelism):
+    """Found on infra: seven VMs cloned at once onto one Proxmox storage timed out waiting for its lock."""
+    files, log = _slow_resources(tmp_path / "files")
+    ws, (r, _) = workspace(tmp_path / "ws", files), runner(parallelism=parallelism)
+    r.init(ws, {})
+    r.plan(ws, {})
+    assert r.apply(ws, {}).ok
+    assert _most_at_once(log) == parallelism
+
+
+def test_the_runner_applies_two_at_a_time_unless_told_otherwise(tmp_path):
+    files, log = _slow_resources(tmp_path / "files")
+    ws, (r, _) = workspace(tmp_path / "ws", files), runner()
+    r.init(ws, {})
+    r.plan(ws, {})
+    assert r.apply(ws, {}).ok
+    assert _most_at_once(log) == 2
+
+
+def test_the_setting_reaches_the_runner_and_is_bounded(monkeypatch):
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app import config
+    from app.provisioning.operation import default_runner
+    assert config.Settings().tf_parallelism == 2
+    monkeypatch.setattr("app.provisioning.operation.get_settings", lambda: config.Settings(tf_parallelism=1))
+    assert default_runner(lambda line: None).parallelism == 1
+    for bad in (0, 11):
+        with _pytest.raises(ValidationError):
+            config.Settings(tf_parallelism=bad)

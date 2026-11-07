@@ -247,3 +247,8 @@ def test_compose_gives_only_the_worker_the_playbooks():
     worker = re.search(r"^  worker:\n(.*?)(?=^  \w|\Z)", COMPOSE, re.MULTILINE | re.DOTALL).group(1)
     assert re.search(r"additional_contexts:\s+ecm_ansible: \.\./infra/ansible", worker)
     assert (BACKEND.parent / "infra" / "ansible" / "playbooks" / "create.yml").is_file()
+
+
+def test_compose_passes_the_terraform_parallelism_to_the_worker_with_a_safe_default():
+    assert "ECM_TF_PARALLELISM: ${ECM_TF_PARALLELISM:-2}" in COMPOSE
+    assert "ECM_TF_PARALLELISM" in (BACKEND.parent / "deploy" / ".env.example").read_text()

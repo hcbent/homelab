@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.dburl import libpq_url
@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     terraform_binary: str = "terraform"
     terraform_plugin_dir: str | None = None
     tf_workspace_root: str = "/data/clusters"
+    # How many resources `terraform apply` creates (or destroys) at once. Terraform's own default is 10. Proxmox
+    # serializes clones onto one storage with a cluster-wide lock and gives up after 60 seconds, so seven clones
+    # at once onto the same storage failed with "cfs-lock 'storage-tank': got lock request timeout" while three
+    # at once worked. A low number is slower and does not hit that. Raise it only on storage that copes.
+    tf_parallelism: int = Field(default=2, ge=1, le=10)
     # libpq URL of the database that holds Terraform state (one schema per cluster). Handed to Terraform as
     # PG_CONN_STR and nowhere else. Empty means "use ECM's own database" (see tf_state_conninfo). If you set it,
     # percent-encode any of # / ? @ : % in the password.

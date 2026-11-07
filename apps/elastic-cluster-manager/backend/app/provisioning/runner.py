@@ -79,6 +79,7 @@ class CliTerraformRunner:
         plugin_dir: str | None = None,
         log: Callable[[str], None] | None = None,
         lock_timeout: str = "60s",
+        parallelism: int = 2,
         plan_timeout: float = 600,
         apply_timeout: float = 3600,
         interrupt_grace: float = 30,
@@ -87,6 +88,7 @@ class CliTerraformRunner:
         self.plugin_dir = plugin_dir
         self.log = log or (lambda line: None)
         self.lock_timeout = lock_timeout
+        self.parallelism = parallelism
         self.plan_timeout = plan_timeout
         self.apply_timeout = apply_timeout
         self.interrupt_grace = interrupt_grace
@@ -191,7 +193,8 @@ class CliTerraformRunner:
         """Apply the saved plan file. Never destroys anything if it fails."""
         full = self._env(ws, env)
         code, tail = self._run(
-            ["apply", "-input=false", "-no-color", f"-lock-timeout={self.lock_timeout}", PLAN_FILE],
+            ["apply", "-input=false", "-no-color", f"-lock-timeout={self.lock_timeout}",
+             f"-parallelism={self.parallelism}", PLAN_FILE],
             ws, full, self.apply_timeout)
         in_state = self._state_resources(ws, full)
         if code != 0:
