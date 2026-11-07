@@ -111,6 +111,7 @@ against a disposable target are planned (Phase 8) and will refuse to run unless 
 - [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md): the phases and their acceptance criteria
 - [docs/DECISIONS.md](docs/DECISIONS.md): the dated log of decisions, live results and corrections
 - [docs/REPO_AUDIT.md](docs/REPO_AUDIT.md): what was reused from this repository and what was not
+- [docs/TODO.md](docs/TODO.md): small known problems and follow-ups
 - [infra/ansible/README.md](infra/ansible/README.md): the Ansible roles and playbooks
 - [CLAUDE.md](CLAUDE.md): rules and conventions for working on the code
 
