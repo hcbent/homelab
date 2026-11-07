@@ -32,7 +32,7 @@ export interface User { username: string; role: string }
 export interface Operation {
   id: string; kind: string; state: string; phase: string | null;
   elapsed_seconds: number | null; error: string | null;
-  cluster_id?: string | null; dry_run?: boolean; parent_op_id?: string | null; started_at?: string | null;
+  cluster_id?: string | null; cluster_name?: string | null; dry_run?: boolean; parent_op_id?: string | null; started_at?: string | null;
 }
 
 /** What a plan will do, as the API stores it. `configure` is what happens to the machines after Terraform. */

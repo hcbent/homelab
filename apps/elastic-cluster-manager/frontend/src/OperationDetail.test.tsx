@@ -121,6 +121,19 @@ test("approving a teardown is destructive and needs the start of the digest type
   await waitFor(() => expect(posted(fn, "/api/operations/op2/approve")).toEqual([{ digest: DIGEST }]));
 });
 
+test("a finished teardown says the record is gone, or where to look when it was kept", async () => {
+  mockFetch(table({
+    "GET /api/operations/gone": [200, op({ id: "gone", kind: "tf.destroy", state: "succeeded", cluster_id: null })],
+    "GET /api/operations/kept": [200, op({ id: "kept", kind: "tf.destroy", state: "succeeded", cluster_id: "c7" })] }));
+  const { unmount } = render(<OperationDetail id="gone" />);
+  expect(await screen.findByText("The cluster is torn down")).toBeInTheDocument();
+  expect(screen.getByText(/has removed its record of the cluster; this history stays/)).toBeInTheDocument();
+  unmount();
+  render(<OperationDetail id="kept" />);
+  expect(await screen.findByText(/kept its record because something still blocks removing it/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "open the cluster" })).toHaveAttribute("href", "#/clusters/c7");
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

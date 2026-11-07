@@ -110,6 +110,7 @@ export function OperationDetail({ id }: { id: string }) {
         <div className="ecm-detail__meta">
           <EuiHealth color={STATE_COLOR[op.state] ?? "subdued"}>{stateLabel(op.state)}</EuiHealth>
           {op.dry_run && <EuiBadge color="hollow">dry run</EuiBadge>}
+          {op.cluster_name && <span className="ecm-mono ecm-small" title="Cluster">{op.cluster_name}</span>}
           <span className="ecm-small">Elapsed {duration(op.elapsed_seconds)}</span>
           <span className="ecm-mono ecm-small" title="Operation ID">{op.id}</span>
         </div>
@@ -174,6 +175,13 @@ export function OperationDetail({ id }: { id: string }) {
                 : <>run <span className="ecm-mono">scripts/ecm_cli.py cleanup {op.id} &lt;cluster name&gt;</span>.</>}</p>)}
           <EuiButton size="s" isDisabled={busy} onClick={() => act("retry")}>Retry</EuiButton>
         </EuiCallOut>)}
+
+      {op.state === "succeeded" && op.kind === "tf.destroy" && (
+        <EuiCallOut color="success" iconType="check" title="The cluster is torn down">
+          <p>The machines are destroyed.{" "}
+            {op.cluster_id
+              ? <>ECM kept its record because something still blocks removing it: <EuiLink href={`#/clusters/${op.cluster_id}`}>open the cluster</EuiLink> to see what.</>
+              : "ECM has removed its record of the cluster; this history stays."}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && done && op.cluster_id && (
         <EuiCallOut color="success" iconType="check" title="The cluster is up">

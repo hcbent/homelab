@@ -55,7 +55,8 @@ export function ClusterLifecycle({ cluster }: { cluster: ClusterDetail }) {
         <>
           <p>Tearing down plans a destroy of {nodes.length || "its"} virtual machine{nodes.length === 1 ? "" : "s"}
             {nodes.length > 0 && <>: <span className="ecm-mono">{nodes.join(", ")}</span></>}. You review the plan and
-            approve it on the next screen. Nothing is destroyed before you approve.</p>
+            approve it on the next screen. Nothing is destroyed before you approve. When it finishes, ECM also removes
+            its record of the cluster; the history of its operations is kept.</p>
           {life.bootstrapped && (
             <EuiCallOut color="warning" iconType="warning" size="s" title="Elasticsearch is running on these machines">
               <p>Any data in the cluster is destroyed with them.</p></EuiCallOut>)}
@@ -63,8 +64,8 @@ export function ClusterLifecycle({ cluster }: { cluster: ClusterDetail }) {
         </>
       ) : life.can_remove ? (
         <>
-          <p>The machines are gone. Removing ECM's record of this cluster clears it from the list. The history of
-            its operations is kept.</p>
+          <p>This cluster has no machines. Removing ECM's record of it clears it from the list. The history of its
+            operations is kept.</p>
           <div><EuiButton color="danger" onClick={() => setAsking("remove")}>Remove record</EuiButton></div>
         </>
       ) : <p className="ecm-muted">{life.remove_blocker
@@ -75,7 +76,8 @@ export function ClusterLifecycle({ cluster }: { cluster: ClusterDetail }) {
         <ConfirmAction action="Tear down" confirmText="Plan the teardown" resource={cluster.name} destructive
           onCancel={() => setAsking(null)} onConfirm={() => confirm("teardown")}>
           <p>ECM will plan a destroy of {nodes.length} virtual machine{nodes.length === 1 ? "" : "s"} and show it
-            to you. This step changes nothing yet.{life.bootstrapped ? " Data in the cluster is lost once you approve it." : ""}</p>
+            to you. This step changes nothing yet. Once you approve it and it finishes, the cluster also disappears
+            from the list.{life.bootstrapped ? " Data in the cluster is lost." : ""}</p>
         </ConfirmAction>)}
       {asking === "remove" && (
         <ConfirmAction action="Remove" resource={cluster.name} destructive onCancel={() => setAsking(null)}
