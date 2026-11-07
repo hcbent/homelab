@@ -3,7 +3,8 @@
 Phases:  render, init, plan, approval, apply, configure   (a dry run stops after plan; a destroy has no configure)
 
   * render, init and plan change nothing on Proxmox or any Elasticsearch cluster. `init` with the pg backend
-    does create the cluster's empty state schema in ECM's own state database.
+    does create the cluster's empty state schema in ECM's own state database. A dry run on a cluster made only
+    for it plans on local state instead, and is removed with that cluster and its workspace when it ends.
   * plan stores a digest that covers the operation kind, the rendered configuration and the plan file. The
     operation then pauses in `pending_approval` and the job ends; no worker is held while a person decides.
   * approval is a click on that digest (operations.approve_operation). It enqueues the same job, which resumes.
@@ -26,6 +27,7 @@ import secrets
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -44,7 +46,7 @@ from app.provisioning.ownership import torn_down as _torn_down
 from app.provisioning.plan import check_plan_safety
 from app.provisioning.render import RenderError, RenderInput, TemplateRef, render_workspace
 from app.provisioning.runner import CliTerraformRunner, TerraformError, TerraformRunner
-from app.provisioning.workspace import existing_workspace, open_workspace
+from app.provisioning.workspace import existing_workspace, open_workspace, remove_workspace
 
 CREATE = "tf.create"
 DESTROY = "tf.destroy"
@@ -87,10 +89,11 @@ class ConfigureFailed(Exception):
 
 # ---- inputs ---------------------------------------------------------------------------------------------
 
-def render_input(params: dict, cluster_id: str, endpoint: str, insecure: bool) -> RenderInput:
+def render_input(params: dict, cluster_id: str, endpoint: str, insecure: bool,
+                 state_backend: Literal["pg", "local"] = "pg") -> RenderInput:
     """Rebuild the render input from the parameters stored on the operation."""
     return RenderInput(
-        cluster_id=cluster_id,
+        cluster_id=cluster_id, state_backend=state_backend,
         state=DesiredState.model_validate(params["state"]),
         placement=params["placement"], addresses=params["addresses"], vm_ids=params["vm_ids"],
         profile=NetworkProfile.model_validate(params["profile"]),
@@ -158,6 +161,8 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
         raise OperationRefused("cleanup applies to a create operation")
     if parent.state not in ("failed", "succeeded"):
         raise OperationRefused(f"the create is {parent.state}; it can be cleaned up once it has finished")
+    if parent.dry_run:
+        raise OperationRefused("a dry run made nothing, so there is nothing to clean up")
     if parent.cluster_id is None:
         # A teardown removes the cluster's record and detaches its operations, so a create with no cluster has
         # already been cleaned up (or its cluster was removed by hand once nothing was left).
@@ -293,9 +298,34 @@ def run_operation(db: Session, op_id: str, make_runner: RunnerFactory = default_
                   root: Path | None = None, make_ansible: AnsibleFactory = default_ansible) -> None:
     """Run or resume a Terraform operation. This is the body of the `tf.run` job."""
     op = db.get(Operation, op_id)
-    handlers = _Handlers(db, op, make_runner, root or Path(get_settings().tf_workspace_root),
-                         make_ansible).handlers()
-    run_phases(db, op_id, handlers)
+    workspace_root = root or Path(get_settings().tf_workspace_root)
+    handlers = _Handlers(db, op, make_runner, workspace_root, make_ansible).handlers()
+    try:
+        run_phases(db, op_id, handlers)
+    finally:
+        if op.dry_run:
+            _drop_dry_run_stub(db, op_id, workspace_root)
+
+
+def _drop_dry_run_stub(db: Session, op_id: str, root: Path) -> None:
+    """A dry run leaves nothing behind but its own operation. Planning needs a cluster row (its id names the
+    Terraform workspace and state), and for a name ECM has not seen that row is made just for the dry run. Once
+    the dry run is over, succeeded or failed, that stub is removed, or an abandoned wizard would leave an empty
+    managed cluster in the list. A cluster with any real operation of its own is never touched, and the dry run's
+    record stays, detached, with the cluster's name in its parameters."""
+    db.expire_all()
+    op = db.get(Operation, op_id)
+    if op is None or op.cluster_id is None or op.state not in ("succeeded", "failed"):
+        return
+    cluster = db.get(Cluster, op.cluster_id)
+    if cluster is None or cluster.ownership != "managed" or cluster.bootstrapped_at is not None:
+        return
+    ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)).all()
+    if any(not o.dry_run or (o.id != op.id and o.state in ACTIVE_STATES) for o in ops):
+        return
+    cluster_id = cluster.id
+    _delete_record(db, cluster, op.created_by or "worker", reason="dry run", operation=op.id)
+    remove_workspace(root, cluster_id)
 
 
 class _Handlers:
@@ -316,7 +346,20 @@ class _Handlers:
 
     def _rendered(self) -> dict[str, str]:
         conn = _connection(self.db, self.op.params)
-        return render_workspace(render_input(self.op.params, self.cluster_id, conn.api_url, not conn.tls_verify))
+        return render_workspace(render_input(self.op.params, self.cluster_id, conn.api_url, not conn.tls_verify,
+                                             state_backend="local" if self._plans_for_a_stub() else "pg"))
+
+    def _plans_for_a_stub(self) -> bool:
+        """True for a dry run on a cluster made just for it: there is no state to read, so it plans against local
+        state and leaves no schema in the state database. Any real operation on the cluster, even a failed one,
+        may have left state, so then the dry run reads it from the database like everything else does."""
+        if not self.op.dry_run:
+            return False
+        cluster = self.db.get(Cluster, self.cluster_id)
+        if cluster is None or cluster.bootstrapped_at is not None:
+            return False
+        ops = self.db.scalars(select(Operation).where(Operation.cluster_id == self.cluster_id)).all()
+        return all(o.dry_run for o in ops)
 
     def _proxmox_token(self) -> tuple[str, str]:
         conn = _connection(self.db, self.op.params)

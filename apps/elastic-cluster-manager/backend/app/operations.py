@@ -167,6 +167,8 @@ def retry_operation(db: Session, op_id: str) -> Operation:
     op = db.get(Operation, op_id)
     if op is None or op.state != "failed":
         raise RetryRefused("only a failed operation can be retried")
+    if op.dry_run:
+        raise RetryRefused("a dry run is not retried: plan a new one, which starts clean")
     steps = db.scalars(select(OperationStep).where(OperationStep.operation_id == op_id)
                        .order_by(OperationStep.seq)).all()
     failed = next((s for s in steps if s.status != "done"), None)

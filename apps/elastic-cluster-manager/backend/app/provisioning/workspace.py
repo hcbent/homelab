@@ -7,6 +7,7 @@ That also catches a stale plan after a failed apply, which Terraform itself reje
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -157,3 +158,13 @@ def open_workspace(root: Path, cluster_id: str, rendered: dict[str, str]) -> Wor
         tmp.replace(target)
     previous.write_text(json.dumps(sorted(rendered)))
     return Workspace(base)
+
+
+def remove_workspace(root: Path, cluster_id: str) -> None:
+    """Delete <root>/<cluster_id> and everything in it. Only for the files of a dry run that planned against a
+    cluster made just for it; a cluster with real operations keeps its workspace, which holds state and plans."""
+    if not _CLUSTER_ID.match(cluster_id):
+        raise WorkspaceError("cluster_id must be 8 to 32 lowercase hex characters")
+    base, target = root.resolve(), (root / cluster_id).resolve()
+    if target.parent == base and target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)

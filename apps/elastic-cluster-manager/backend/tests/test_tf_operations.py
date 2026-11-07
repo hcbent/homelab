@@ -1043,7 +1043,6 @@ def test_a_teardown_keeps_the_record_and_says_why_when_a_machine_still_carries_a
 
 
 def test_a_cluster_that_never_built_anything_can_be_removed(session, world, cluster, conn):
-    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
     assert remove(session, cluster)["name"] == "lab-b"
 
 
@@ -1057,7 +1056,6 @@ def test_a_cluster_that_never_built_anything_can_be_removed(session, world, clus
 def test_a_removal_is_refused_while_anything_of_the_cluster_remains(session, world, cluster, conn, what, message):
     target, name = cluster, "lab-b"
     if what == "wrong name":
-        assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
         name = "nope"
     elif what == "discovered":
         target = Cluster(name="found", ownership="discovered")
@@ -1081,7 +1079,6 @@ def test_a_removal_is_refused_while_anything_of_the_cluster_remains(session, wor
 
 def test_the_remove_endpoint_refuses_with_the_reason_and_removes_when_nothing_is_left(
         logged_in, session, world, cluster, conn):
-    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"   # built nothing
     r = logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "wrong"}, headers=H)
     assert r.status_code == 409 and "type the cluster name" in r.json()["detail"]
     r = logged_in.post(f"/api/clusters/{cluster.id}/remove", json={"confirm_name": "lab-b"}, headers=H)
@@ -1142,7 +1139,6 @@ def test_while_an_operation_runs_nothing_is_offered_and_it_is_named(session, wor
 
 def test_a_cluster_that_never_built_anything_offers_the_removal_and_nothing_to_tear_down(
         session, world, cluster, conn):
-    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
     got = lifecycle(session, cluster)
     assert got["teardown_of"] is None and got["nodes"] == [] and got["can_remove"] is True
     assert got["bootstrapped"] is False and got["busy_operation_id"] is None and got["remove_blocker"] is None
@@ -1171,7 +1167,6 @@ def test_a_failed_create_that_left_machines_offers_a_teardown_without_a_data_los
 
 
 def test_a_cluster_that_never_built_anything_offers_only_the_removal(session, world, cluster, conn):
-    assert run(session, world, begin(session, cluster, conn, dry_run=True)).state == "succeeded"
     got = lifecycle(session, cluster)
     assert got["teardown_of"] is None and got["can_remove"] is True
 
@@ -1336,3 +1331,79 @@ def test_the_destroy_checks_again_just_before_it_applies(session, world, cluster
     with pytest.raises(tfop.ApplyRefused, match="only destroys machines ECM created"):
         run(session, world, teardown)
     assert world.calls.count("apply") == 1                             # only the create's apply ever ran
+
+
+# ---- a dry run leaves nothing behind but its own record ----------------------------------------------------
+
+def test_a_dry_run_removes_the_cluster_made_for_it_and_keeps_its_own_record(session, world, cluster, conn):
+    cluster_id = cluster.id
+    dry = run(session, world, begin(session, cluster, conn, dry_run=True))
+
+    assert dry.state == "succeeded" and dry.plan_digest                      # it planned, and the plan is still there
+    assert session.get(Cluster, cluster_id) is None                          # but no empty cluster is left behind
+    assert dry.cluster_id is None and dry.params["state"]["name"] == "lab-b"
+    assert not (world.root / cluster_id).exists()                            # nor its workspace files
+    event = session.scalars(select(AuditEvent).where(AuditEvent.action == "cluster.remove")).one()
+    assert event.details["reason"] == "dry run" and event.details["operation"] == dry.id
+
+
+def test_a_failed_dry_run_removes_its_cluster_too_and_cannot_be_retried(session, world, cluster, conn):
+    world.init_error = "terraform init failed: registry unreachable"
+    dry = begin(session, cluster, conn, dry_run=True)
+    cluster_id = cluster.id
+    with pytest.raises(Exception, match="init failed"):
+        run(session, world, dry)
+    session.refresh(dry)
+    assert dry.state == "failed" and session.get(Cluster, cluster_id) is None
+    with pytest.raises(operations.RetryRefused, match="a dry run is not retried"):
+        operations.retry_operation(session, dry.id)
+
+
+def test_a_dry_run_never_touches_a_cluster_that_has_real_history(session, world, cluster, conn):
+    failed = reach_failed_apply(session, world, cluster, conn)                # a real create that left machines
+    cluster_id = cluster.id
+    dry = run(session, world, begin(session, cluster, conn, dry_run=True))
+    assert dry.state == "succeeded"
+    assert session.get(Cluster, cluster_id) is not None and dry.cluster_id == cluster_id
+    assert (world.root / cluster_id).is_dir()                                 # its workspace, with state, stays
+    assert session.get(Operation, failed.id).cluster_id == cluster_id
+
+
+def test_a_dry_run_on_a_stub_plans_on_local_state_and_anything_else_on_the_database(
+        session, world, cluster, conn, monkeypatch):
+    seen = []
+    real = tfop.render_input
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("state_backend", "pg"))
+        return real(*args, **kwargs)
+    monkeypatch.setattr(tfop, "render_input", spy)
+
+    stub_dry = begin(session, cluster, conn, dry_run=True)
+    seen.clear()                              # begin() renders once to check the parameters; only the job's renders count
+    run(session, world, stub_dry)
+    assert seen and set(seen) == {"local"}    # no schema is made in the state database for it
+
+    kept = Cluster(name="lab-c", ownership="managed")
+    session.add(kept)
+    session.commit()
+    planned = begin(session, kept, conn)      # a real operation: state may exist, so the database holds it
+    seen.clear()
+    run(session, world, planned)
+    assert seen and set(seen) == {"pg"}
+
+    operations.cancel_operation(session, planned.id)
+    later_dry = begin(session, kept, conn, dry_run=True)   # a dry run on a cluster that has a real operation
+    seen.clear()
+    run(session, world, later_dry)
+    assert seen and set(seen) == {"pg"}
+
+
+def test_dry_runs_for_the_same_new_name_never_pile_up_clusters(session, world, conn):
+    for _ in range(3):
+        stub = Cluster(name="lab-b", ownership="managed")                     # as a create request makes it
+        session.add(stub)
+        session.commit()
+        assert run(session, world, begin(session, stub, conn, dry_run=True)).state == "succeeded"
+    assert session.scalars(select(Cluster)).all() == []
+    assert len(session.scalars(select(Operation).where(Operation.dry_run.is_(True))).all()) == 3
