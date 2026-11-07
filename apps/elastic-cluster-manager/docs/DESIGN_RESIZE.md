@@ -1,6 +1,6 @@
 # Resizing CPU and RAM: proposed design, revision 2 (Phase 5, slice 2)
 
-**Status: PROPOSED. Only the probe (below) is built, tested with fakes and not yet run on infra; the restart machinery is not.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
+**Status: BUILT on 2026-11-07 as described here and tested offline with real Ansible against a fake Elasticsearch and Proxmox; the Terraform step has run live for CPU (the probe), and the rolling restart has not run on a real cluster.** Revision 2 (2026-11-06) follows the operator's direction: **Terraform
 applies the changes, then an Ansible playbook does the rolling restart**, masters last, the cluster back to green between
 nodes, and shard allocation restricted while a node is down. It replaces revision 1, which had ECM applying Terraform one VM at
 a time. Items marked *to confirm* are assumptions that nothing has checked on this project's Proxmox, provider or cluster.
@@ -124,3 +124,18 @@ route, enabling CPU and memory hotplug, needs NUMA and guest support and is not 
 - Time limits (SSH back, node rejoined, green) are guesses until measured on this cluster.
 - The restarts happen while the cluster serves traffic; a busy cluster may take longer to reach green between nodes.
 - The playbook holds the Terraform token and the ES API key for the run, so both must be kept out of every log line.
+
+## As built, and where it differs from the design
+
+- **Which node needs a restart** is read from Elasticsearch's `_nodes/os` (`available_processors` against the target cores, and
+  `mem.total_in_bytes` between 90% and 100% of the target RAM), so a retry skips what is done with no record of its own. Those
+  field names are from knowledge of the API and were not checked against its documentation here.
+- **The calls** are made by the worker with the ECM API key (`Authorization: ApiKey`) and the Terraform token
+  (`PVEAPIToken=`), with `uri`; nothing connects to a node over SSH. The restart is `POST .../qemu/{vmid}/status/reboot`, then
+  polling the task it returns until it has stopped with `OK`.
+- **The pre-flight** now also needs `VM.Config.CPU`, `VM.Config.Memory` and `VM.PowerMgmt` on the pool for a resize (a disk change
+  does not), so a token without them is refused at plan time instead of failing at the first restart.
+- **The operation** is `render, init, plan, approval, apply, configure, restart` for a resize: the converge writes the new heap,
+  and the playbook restarts after it.
+- **Not handled:** an index with no replicas is unavailable while its only node restarts, and ECM does not check for such
+  indices before it starts. The flush is best-effort. The waits (900 seconds each) are guesses.
