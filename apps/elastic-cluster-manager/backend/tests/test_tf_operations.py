@@ -1056,6 +1056,29 @@ def test_the_remove_endpoint_refuses_with_the_reason_and_removes_when_nothing_is
                           headers=H).status_code == 409                       # already gone
 
 
+def test_a_teardown_drops_the_stored_proxmox_rows_of_the_machines_it_destroyed_so_the_record_can_go_at_once(
+        session, world, cluster, conn):
+    """Found on infra: after a teardown in the UI the cluster stayed listed with no way to remove it, because the
+    destroyed machines' rows stayed in the inventory until the next Proxmox sync."""
+    from app.models import Vm
+    created = reach_success(session, world, cluster, conn)
+    ids = created.params["vm_ids"]
+    first = next(iter(ids))
+    for name, vmid in ids.items():
+        # rows are unique per connection and VMID, so the first VMID's row carries a different name here, as it
+        # would if a sync had already found another VM at that id
+        session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=int(vmid),
+                       name="someone-elses" if name == first else name, status="running"))
+    session.commit()
+
+    assert finish_teardown(session, world, created).state == "succeeded"
+
+    left = sorted(n for (n,) in session.execute(select(Vm.name)))
+    assert left == ["someone-elses"]                                  # ours are gone, the other VM is untouched
+    assert lifecycle(session, cluster)["can_remove"] is True
+    assert remove(session, cluster)["name"] == "lab-b"                # no waiting for a sync
+
+
 # ---- what the cluster page may offer ----------------------------------------------------------------------
 
 def lifecycle(session, cluster):
@@ -1077,7 +1100,8 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
     created = reach_success(session, world, cluster, conn)
     got = lifecycle(session, cluster)
     assert got == {"managed": True, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
-                   "bootstrapped": True, "can_remove": False}
+                   "bootstrapped": True, "can_remove": False,
+                   "remove_blocker": "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"}
 
 
 def test_while_an_operation_runs_nothing_is_offered_and_it_is_named(session, world, cluster, conn):
@@ -1091,7 +1115,16 @@ def test_after_a_teardown_only_the_removal_is_offered(session, world, cluster, c
     torn_down(session, world, cluster, conn)
     got = lifecycle(session, cluster)
     assert got["teardown_of"] is None and got["nodes"] == [] and got["can_remove"] is True
-    assert got["bootstrapped"] is False and got["busy_operation_id"] is None
+    assert got["bootstrapped"] is False and got["busy_operation_id"] is None and got["remove_blocker"] is None
+
+
+def test_the_panel_is_told_why_a_torn_down_cluster_cannot_be_removed_yet(session, world, cluster, conn):
+    from app.models import Vm
+    torn_down(session, world, cluster, conn)
+    session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=777, name="lab-b-01", status="running"))
+    session.commit()                                            # a sync found a machine with one of its names
+    got = lifecycle(session, cluster)
+    assert got["can_remove"] is False and "lab-b-01 still exist in Proxmox" in got["remove_blocker"]
 
 
 def test_a_failed_create_that_left_machines_offers_a_teardown_without_a_data_loss_warning(

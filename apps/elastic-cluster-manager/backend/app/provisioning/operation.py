@@ -219,13 +219,16 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     target = next((o for o in ops if o.kind == CREATE and not o.dry_run and o.state in ("failed", "succeeded")
                    and (o.result or {}).get("resources_in_state") and not _torn_down(db, o.id)), None)
     names = [n["name"] for n in ((target.params or {}).get("state") or {}).get("nodes", [])] if target else []
+    blocker = _removal_blocker(db, cluster)
     return {
         "managed": True,
         "busy_operation_id": busy.id if busy else None,
         "teardown_of": target.id if target and not busy else None,
         "nodes": names if target and not busy else [],
         "bootstrapped": cluster.bootstrapped_at is not None,
-        "can_remove": _removal_blocker(db, cluster) is None,
+        "can_remove": blocker is None,
+        # why the record cannot go yet, for when nothing else is offered
+        "remove_blocker": blocker,
     }
 
 
@@ -526,10 +529,25 @@ class _Handlers:
         cluster.tls_ca_pem = cluster.endpoint_urls = cluster.health_status = cluster.es_version = None
         cluster.snapshot = cluster.last_sync_at = cluster.last_sync_error = None
         self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id))
+        gone = self._forget_machines()
         self.db.flush()
         for name in self._names():
             cred = self._credential(name)
             if cred is not None:
                 self.db.delete(cred)
         self.db.commit()
-        log(self.db, self.op.id, "the cluster's stored credentials and CA were removed with its machines")
+        log(self.db, self.op.id, "the cluster's stored credentials and CA were removed with its machines"
+            + (f", and {gone} destroyed machine{'s' if gone != 1 else ''} dropped from the Proxmox inventory" if gone else ""))
+
+    def _forget_machines(self) -> int:
+        """Drop the stored Proxmox rows of the machines this teardown destroyed. Only a Proxmox sync removes them
+        otherwise, and until it runs (every few minutes) the old names block removing the cluster's record and
+        creating the same name again. A row is matched on connection, name and VMID together, so a different VM
+        that reuses a VMID is never touched; if a machine somehow still exists, the next sync adds it back."""
+        params = self.op.params or {}
+        conn_id = params.get("proxmox_connection_id")
+        gone = 0
+        for name, vmid in (params.get("vm_ids") or {}).items():
+            gone += self.db.execute(delete(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(vmid),
+                                                     Vm.name == name)).rowcount
+        return gone
