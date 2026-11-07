@@ -29,7 +29,9 @@ Verified on 2026-11-06 (sources named):
 `POST /nodes/{node}/qemu/{vmid}/status/reboot` is the API call behind `qm reboot`; and that Proxmox reports a pending change as
 the running VM's config in a way that leaves the next `terraform plan` clean.
 
-## The probe, which comes first
+## The probe, which comes first (done for cores on 2026-11-07: the first outcome below)
+
+**Result (the operator's report, no log shown):** Terraform applied the cores change with `reboot_after_update = false` and did not fail; the operator then restarted the node and it came up on 6 cores, and the cluster returned to green. So the fallback is not needed for CPU. **Not yet known:** whether Terraform warned of a pending change, whether it left the VM running until the restart, how the operator restarted it (a Proxmox reboot, which applies pending changes, or a reboot from inside the guest, which the docs do not promise does), whether the next plan was clean, and whether a **RAM** change behaves the same way.
 
 Before any restart machinery, build only the part that plans and applies the size change with `reboot_after_update = false`
 and **no restart phase**, and run it on a disposable cluster. Either result is useful and neither restarts anything:
