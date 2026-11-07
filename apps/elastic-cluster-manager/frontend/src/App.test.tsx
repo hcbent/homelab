@@ -333,3 +333,17 @@ test("reveals leave content visible when animation or observers are unavailable"
   stop();
   host.remove();
 });
+
+test("the infrastructure VM table marks only the machines ECM created", async () => {
+  window.location.hash = "#/infrastructure";
+  const vm = (id: string, vmid: number, name: string, tf_managed: boolean) => ({
+    id, pve_node: "pve1", vmid, name, status: "running", cpu_cores: 4, memory_mb: 8192, ips: [],
+    es_cluster_id: null, es_link: null, tf_managed });
+  const infra = { ...INFRA, vms: [vm("v1", 500, "lab-d-01", true), vm("v2", 301, "fxa-01", false)] };
+  mockFetch((url) => url.endsWith("/me") ? ME : url.endsWith("/api/infrastructure") ? [200, infra] : [200, [CLUSTER]]);
+  render(<App />);
+  const mine = (await screen.findByText("500 lab-d-01")).closest("tr")!;
+  const theirs = screen.getByText("301 fxa-01").closest("tr")!;
+  expect(within(mine).getByText("ECM")).toBeInTheDocument();
+  expect(within(theirs).queryByText("ECM")).not.toBeInTheDocument();
+});

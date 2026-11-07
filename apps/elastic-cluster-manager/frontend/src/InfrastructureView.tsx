@@ -1,6 +1,6 @@
 import {
-  EuiBasicTable, EuiBasicTableColumn, EuiButton, EuiCallOut, EuiHealth, EuiIcon, EuiLink, EuiLoadingSpinner,
-  EuiPanel,
+  EuiBadge, EuiBasicTable, EuiBasicTableColumn, EuiButton, EuiCallOut, EuiHealth, EuiIcon, EuiLink,
+  EuiLoadingSpinner, EuiPanel,
 } from "@elastic/eui";
 import { CSSProperties, ReactNode, useCallback, useEffect, useState } from "react";
 import { AddConnection, ConnectionType } from "./AddConnection";
@@ -85,6 +85,8 @@ export function InfrastructureView() {
     { name: "Addresses", render: (v: Vm) => <span className="ecm-mono ecm-small">{v.ips.map((i) => i.ip).join(", ")}</span> },
     { name: "Elasticsearch", render: (v: Vm) => v.es_cluster_id
       ? <EuiLink href={`#/clusters/${v.es_cluster_id}`}>{v.es_link}</EuiLink> : "—" },
+    { name: "Created by ECM", render: (v: Vm) => v.tf_managed
+      ? <EuiBadge color="hollow" title="A create ECM ran made this machine; ECM may tear it down">ECM</EuiBadge> : "—" },
   ];
 
   return (

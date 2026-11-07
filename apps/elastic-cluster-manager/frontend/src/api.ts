@@ -103,6 +103,8 @@ export interface Vm {
   id: string; pve_node: string; vmid: number; name: string; status: string;
   cpu_cores: number | null; memory_mb: number | null; ips: { ip: string; source: string }[];
   es_cluster_id: string | null; es_link: string | null;
+  /** True for machines a create ECM ran made. Only those can be torn down. */
+  tf_managed?: boolean;
 }
 export interface Infrastructure {
   connections: { id: string; name: string; api_url: string; last_sync_at: string | null;
