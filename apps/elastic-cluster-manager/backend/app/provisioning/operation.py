@@ -156,6 +156,10 @@ def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: s
         raise OperationRefused("cleanup applies to a create operation")
     if parent.state not in ("failed", "succeeded"):
         raise OperationRefused(f"the create is {parent.state}; it can be cleaned up once it has finished")
+    if parent.cluster_id is None:
+        # A teardown removes the cluster's record and detaches its operations, so a create with no cluster has
+        # already been cleaned up (or its cluster was removed by hand once nothing was left).
+        raise OperationRefused("this create has already been cleaned up: its cluster was removed")
     cluster = _managed_cluster(db, parent.cluster_id)
     if confirm_name != cluster.name:
         raise OperationRefused("type the cluster name exactly to confirm the cleanup")
@@ -182,12 +186,16 @@ def _torn_down(db: Session, create_op_id: str) -> bool:
                                                      Operation.kind == DESTROY, Operation.state == "succeeded")))
 
 
-def _removal_blocker(db: Session, cluster: Cluster) -> str | None:
-    """Why the record of this managed cluster cannot be removed yet, or None when nothing of it is left."""
+def _removal_blocker(db: Session, cluster: Cluster, tearing_down: Operation | None = None) -> str | None:
+    """Why the record of this managed cluster cannot be removed yet, or None when nothing of it is left.
+
+    `tearing_down` is the destroy operation that is itself asking, from its last step: it is still running, but
+    for this purpose it has already torn its create down."""
     if cluster.bootstrapped_at is not None:
         return "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"
     ops = db.scalars(select(Operation).where(Operation.cluster_id == cluster.id)).all()
-    if any(o.state in ACTIVE_STATES for o in ops):
+    if any(o.state in ACTIVE_STATES and o is not tearing_down and o.id != getattr(tearing_down, "id", None)
+           for o in ops):
         return "an operation is still running on this cluster; wait for it to finish"
     node_names: set[str] = set()
     for op in ops:
@@ -195,7 +203,8 @@ def _removal_blocker(db: Session, cluster: Cluster) -> str | None:
             continue
         node_names |= {n["name"] for n in (op.params.get("state") or {}).get("nodes", [])}
         built = (op.result or {}).get("resources_in_state") or []
-        if built and not _torn_down(db, op.id):
+        if built and not _torn_down(db, op.id) and not (tearing_down is not None
+                                                       and tearing_down.parent_op_id == op.id):
             return ("a create of this cluster built machines that have not been torn down through "
                     f"ECM (operation {op.id}); clean it up first")
     still_there = sorted(node_names & {n for (n,) in db.execute(select(Vm.name)) if n})
@@ -247,6 +256,12 @@ def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: st
     if blocker:
         raise OperationRefused(blocker)
 
+    return _delete_record(db, cluster, actor)
+
+
+def _delete_record(db: Session, cluster: Cluster, actor: str, **why: object) -> dict:
+    """Delete the cluster's row, its observed nodes and its stored credentials. Its operations are kept, detached,
+    because they are the history of what ECM did. The caller has already checked nothing of it is left."""
     suffix = cluster.id
     detached = db.execute(update(Operation).where(Operation.cluster_id == cluster.id)
                           .values(cluster_id=None)).rowcount
@@ -257,7 +272,7 @@ def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: st
         [f"es-elastic-{suffix}", f"es-ca-key-{suffix}", f"es-api-key-{suffix}"])))
     name = cluster.name
     db.delete(cluster)
-    audit.record(db, actor, "cluster.remove", "cluster", suffix, name=name, operations_kept=detached)
+    audit.record(db, actor, "cluster.remove", "cluster", suffix, name=name, operations_kept=detached, **why)
     db.commit()
     return {"id": suffix, "name": name, "operations_kept": detached}
 
@@ -538,6 +553,23 @@ class _Handlers:
         self.db.commit()
         log(self.db, self.op.id, "the cluster's stored credentials and CA were removed with its machines"
             + (f", and {gone} destroyed machine{'s' if gone != 1 else ''} dropped from the Proxmox inventory" if gone else ""))
+        self._remove_record()
+
+    def _remove_record(self) -> None:
+        """Tearing a cluster down removes ECM's record of it too: with its machines gone there is nothing left for
+        the record to describe. It stays only if something still blocks it (a VM that carries one of its names), and
+        the log says what. The operations are kept, detached from the cluster, as the history."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        if cluster is None:
+            return
+        blocker = _removal_blocker(self.db, cluster, tearing_down=self._fresh())
+        if blocker:
+            log(self.db, self.op.id, f"the cluster's record was kept: {blocker}")
+            return
+        out = _delete_record(self.db, cluster, self.op.created_by or "worker", reason="teardown",
+                             operation=self.op.id)
+        log(self.db, self.op.id, f"the cluster's record was removed; its {out['operations_kept']} operations are "
+                                 "kept as history")
 
     def _forget_machines(self) -> int:
         """Drop the stored Proxmox rows of the machines this teardown destroyed. Only a Proxmox sync removes them

@@ -20,7 +20,10 @@ def _op(o: Operation) -> dict:
     return {"id": o.id, "cluster_id": o.cluster_id, "kind": o.kind, "state": o.state,
             "phase": o.phase, "error": o.error, "started_at": o.started_at,
             "finished_at": o.finished_at, "elapsed_seconds": elapsed,
-            "dry_run": o.dry_run, "parent_op_id": o.parent_op_id}
+            "dry_run": o.dry_run, "parent_op_id": o.parent_op_id,
+            # The cluster's name as the operation recorded it, so history stays readable after a teardown
+            # removes the cluster and detaches its operations.
+            "cluster_name": ((o.params or {}).get("state") or {}).get("name")}
 
 
 @router.get("")

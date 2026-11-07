@@ -9,8 +9,8 @@
     ecm_cli.py approve OPERATION_ID DIGEST    approve the plan with that digest (shows the plan first)
     ecm_cli.py retry OPERATION_ID             re-run a failed operation (a failed configure resumes; no new VMs)
     ecm_cli.py cleanup CREATE_OPERATION_ID NAME [--data-loss]
-                                              plan the teardown of a create; it then needs its own approval
-    ecm_cli.py remove NAME                    remove the record of a managed cluster whose machines are gone
+                                              plan the teardown of a create; it then needs its own approval, and removes the cluster's record when done
+    ecm_cli.py remove NAME                    remove the record of a managed cluster that has no machines (a teardown already does this)
 
 Environment:
     ECM_URL             default https://ecm.lab.thewortmans.org
@@ -113,7 +113,7 @@ def cmd_ops(client: Client, args) -> int:
     for op in operations:
         flags = "dry-run" if op["dry_run"] else ""
         parent = f"  cleans up {op['parent_op_id']}" if op.get("parent_op_id") else ""
-        print(f"{op['id']}  {op['kind']:<11} {op['state']:<17} {names.get(op['cluster_id'], '-'):<8} "
+        print(f"{op['id']}  {op['kind']:<11} {op['state']:<17} {(op.get('cluster_name') or names.get(op['cluster_id'], '-')):<8} "
               f"{flags:<8} {op['started_at'] or ''}{parent}")
     if not operations:
         print("no operations")
@@ -187,7 +187,7 @@ def cmd_retry(client: Client, args) -> int:
 def cmd_cleanup(client: Client, args) -> int:
     out = client.call("POST", f"/api/operations/{args.operation_id}/cleanup",
                       {"confirm_name": args.name, "confirm_data_loss": args.data_loss})
-    print(f"cleanup operation {out['id']} started: it plans a teardown first and destroys nothing until approved.")
+    print(f"cleanup operation {out['id']} started: it plans a teardown first and destroys nothing until approved, and removes the cluster's record once it succeeds.")
     print(f"next: {sys.argv[0]} watch {out['id']}")
     return 0
 
@@ -233,13 +233,13 @@ def build_parser() -> argparse.ArgumentParser:
     retry = sub.add_parser("retry", help="re-run a failed operation")
     retry.add_argument("operation_id")
     retry.set_defaults(run=cmd_retry)
-    cleanup = sub.add_parser("cleanup", help="plan the teardown of a create (needs its own approval)")
+    cleanup = sub.add_parser("cleanup", help="plan the teardown of a create (needs its own approval; removes the cluster's record when done)")
     cleanup.add_argument("operation_id", help="the create operation to tear down")
     cleanup.add_argument("name", help="the cluster name, typed to confirm")
     cleanup.add_argument("--data-loss", action="store_true",
                          help="accept that data in a bootstrapped cluster is destroyed with its machines")
     cleanup.set_defaults(run=cmd_cleanup)
-    remove = sub.add_parser("remove", help="remove the record of a managed cluster whose machines are gone")
+    remove = sub.add_parser("remove", help="remove the record of a managed cluster that has no machines (a teardown already does this)")
     remove.add_argument("name", help="the cluster name, which also confirms the removal")
     remove.set_defaults(run=cmd_remove)
     return parser
