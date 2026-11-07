@@ -1,0 +1,9 @@
+---
+# Ask the cluster, from the worker, whether it is healthy before nodes are added (es_join_phase: before) and whether the
+# new nodes joined it afterwards (es_join_phase: after). Needs the ECM API key and the cluster CA as extra vars.
+- name: Check the cluster around adding nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - es_join_check

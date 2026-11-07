@@ -353,3 +353,45 @@ def test_a_bad_restart_request_is_refused_before_ansible_starts(tmp_path, kw, me
 def test_credentials_do_not_appear_in_the_repr_of_a_restart_request():
     text = repr(restart_request())
     assert API_KEY not in text and PVE_SECRET not in text
+
+
+# ---- adding nodes ------------------------------------------------------------------------------------------------
+
+def add_request(**kw) -> AnsibleRequest:
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-x", "9.5.6", data_nodes=2, coordinating_nodes=1)
+    base = {"state": state, "addresses": {n.name: f"192.0.2.{10 + i}" for i, n in enumerate(state.nodes)},
+            "kind": "add_node", "bootstrapped_at": datetime(2026, 11, 6, tzinfo=UTC), "new_nodes": ["lab-x-06"],
+            "es_api_key": API_KEY, "es_ca_pem": CA_CERT, "ca_cert_pem": CA_CERT, "ca_key_pem": CA_KEY}
+    base.update(kw)
+    return AnsibleRequest(**base)
+
+
+def test_adding_nodes_marks_them_in_the_inventory_and_keeps_every_secret_in_the_private_file(tmp_path):
+    binary, record = fake(tmp_path)
+    runner(tmp_path, binary)[0].run(add_request())
+    rec = recorded(record)
+    assert rec["argv"][-1] == "playbooks/add_node.yml" and "--check" not in rec["argv"]
+    assert rec["inventory"]["all"]["children"]["es_new_nodes"] == {"hosts": {"lab-x-06": {}}}
+    extra = rec["extra"]
+    assert extra["es_api_key"] == API_KEY and extra["first_boot_hosts"] == "es_new_nodes"
+    assert extra["es_ca_cert_pem"] == CA_CERT and extra["es_ca_key_pem"] == CA_KEY     # to sign their certificates
+    assert Path(extra["es_ca_file"]).name == "es-ca.crt" and rec["extra_mode"] == "0o600"
+    everything_else = json.dumps([rec["argv"], rec["env"], rec["inventory"]])
+    for secret in (API_KEY, CA_KEY, "FakeKeyBodyLineOneOfTheCaKey0001"):
+        assert secret not in everything_else
+    assert work_dir_is_empty(tmp_path)
+
+
+@pytest.mark.parametrize("kw,message", [
+    ({"check": True}, "cannot be checked"),
+    ({"new_nodes": None}, "the names of the new nodes"),
+    ({"es_api_key": None}, "the ECM API key"),
+    ({"ca_cert_pem": None, "ca_key_pem": None, "es_ca_pem": None}, "the cluster's CA certificate"),
+    ({"ca_key_pem": None, "ca_cert_pem": None, "es_ca_pem": CA_CERT}, "the cluster's CA key"),
+])
+def test_a_bad_add_node_request_is_refused_before_ansible_starts(tmp_path, kw, message):
+    binary, record = fake(tmp_path)
+    r, _ = runner(tmp_path, binary)
+    with pytest.raises(AnsibleError, match=message):
+        r.run(add_request(**kw))
+    assert not record.exists() and work_dir_is_empty(tmp_path)

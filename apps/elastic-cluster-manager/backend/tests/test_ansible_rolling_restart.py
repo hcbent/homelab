@@ -51,6 +51,7 @@ class FakeCluster:
         self.green_after = 0                                     # looks at health, after rejoining, before green
         self.events: list[tuple] = []
         self._rebooting: dict[str, int] = {}
+        self.joining: dict[str, int] = {}                        # a started node joins after this many health looks
         self._yellow_for = 0
         self.tasks: dict[str, str] = {}
 
@@ -63,6 +64,13 @@ class FakeCluster:
 
     def health(self, wait_for_status):
         with self.lock:
+            for name in list(self.joining):
+                self.joining[name] -= 1
+                if self.joining[name] <= 0 and name not in self.never_back:
+                    del self.joining[name]
+                    self.up[name] = True
+                    self.size[name] = self.desired[name]
+                    self.events.append(("joined", name))
             status = self.status()
             if self._yellow_for > 0 and all(self.up.values()):
                 self._yellow_for -= 1

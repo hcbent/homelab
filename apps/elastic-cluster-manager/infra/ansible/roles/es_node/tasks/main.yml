@@ -91,16 +91,17 @@
     enabled: true
     daemon_reload: true
 
-# A converge never starts a node: one that is down may be down on purpose, during a rolling restart.
+# A converge never starts a node: one that is down may be down on purpose, during a rolling restart. A node that was
+# just added (es_start_node, set only for it) is not running yet, so starting it is its first start, not a restart.
 - name: Make sure the service is running
   ansible.builtin.systemd:
     name: elasticsearch
     state: started
-  when: es_allow_restart | bool
+  when: es_allow_restart | bool or es_start_node | default(false) | bool
 
 - name: Wait for the node to accept connections
   ansible.builtin.wait_for:
     host: "{{ es_node_ip }}"
     port: "{{ es_http_port }}"
     timeout: "{{ es_node_start_timeout }}"
-  when: es_allow_restart | bool
+  when: es_allow_restart | bool or es_start_node | default(false) | bool

@@ -292,3 +292,57 @@ def test_a_restart_inventory_classes_each_node_for_the_order_masters_last():
     assert {n: hosts[n]["es_restart_class"] for n in names} == {
         "lab-x-01": "master", "lab-x-02": "master", "lab-x-03": "master",
         "lab-x-04": "data", "lab-x-05": "data", "lab-x-06": "coordinating"}
+
+
+# ---- adding nodes ------------------------------------------------------------------------------------------------
+
+def _add_input(**over):
+    from datetime import UTC, datetime
+
+    from app.configmgmt import InventoryInput
+    state = build_desired_state(TopologyPreset.dedicated_masters, "lab-x", "9.5.6", data_nodes=2, coordinating_nodes=1)
+    names = [n.name for n in state.nodes]
+    base = {"state": state, "addresses": {n: f"192.0.2.{10 + i}" for i, n in enumerate(names)},
+            "operation_kind": "add_node", "bootstrapped_at": datetime(2026, 11, 6, tzinfo=UTC), "ssh_user": "bret",
+            "ssh_key_path": "/run/ecm/ssh/k", "known_hosts_path": "/tmp/kh", "new_nodes": ["lab-x-06"]}
+    base.update(over)
+    return InventoryInput(**base)
+
+
+def test_an_add_node_inventory_marks_only_the_new_nodes_to_be_started_and_groups_them():
+    from app.configmgmt import render_inventory
+    inv = render_inventory(_add_input(new_nodes=["lab-x-05", "lab-x-06"]))
+    hosts = inv["all"]["children"]["es_nodes"]["hosts"]
+    assert [n for n, h in hosts.items() if h.get("es_start_node")] == ["lab-x-05", "lab-x-06"]
+    assert inv["all"]["children"]["es_new_nodes"] == {"hosts": {"lab-x-05": {}, "lab-x-06": {}}}
+    v = inv["all"]["vars"]
+    assert v["es_operation"] == "add_node" and v["es_allow_restart"] is False and v["es_first_start"] is False
+    assert v["es_expected_nodes"] == 6 and "es_initial_master_nodes" not in v        # the total after the addition
+
+
+def test_the_certificate_signer_of_an_add_node_inventory_is_an_existing_node():
+    from app.configmgmt import render_inventory
+    state_new_first = render_inventory(_add_input(new_nodes=["lab-x-01"]))            # even if the first master is new
+    assert state_new_first["all"]["vars"]["es_ca_host"] == "lab-x-02"
+    assert list(state_new_first["all"]["children"]["es_bootstrap"]["hosts"]) == ["lab-x-02"]
+
+
+def test_other_kinds_have_no_new_nodes_group_and_no_start_flag():
+    from app.configmgmt import render_inventory
+    inv = render_inventory(_add_input(operation_kind="converge", new_nodes=None))
+    assert "es_new_nodes" not in inv["all"]["children"]
+    assert not any("es_start_node" in h for h in inv["all"]["children"]["es_nodes"]["hosts"].values())
+
+
+@pytest.mark.parametrize("over,message", [
+    ({"bootstrapped_at": None}, "has bootstrapped"),
+    ({"new_nodes": None}, "names of the new nodes"),
+    ({"new_nodes": []}, "names of the new nodes"),
+    ({"new_nodes": ["nope"]}, "names of the new nodes"),
+    ({"new_nodes": ["lab-x-01", "lab-x-02", "lab-x-03", "lab-x-04", "lab-x-05", "lab-x-06"]}, "only new nodes"),
+    ({"new_nodes": ["lab-x-01", "lab-x-02", "lab-x-03"]}, "no existing node that can sign"),
+])
+def test_a_bad_add_node_inventory_is_refused(over, message):
+    from app.configmgmt import InventoryError, render_inventory
+    with pytest.raises(InventoryError, match=message):
+        render_inventory(_add_input(**over))

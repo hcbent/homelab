@@ -1,0 +1,28 @@
+---
+# The cluster the nodes are joining must be healthy first, with every node it already has. Asked of an existing node.
+- name: Wait for the cluster to be green with all of its existing nodes
+  ansible.builtin.uri:
+    url: >-
+      {{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_cluster/health?wait_for_status=green&timeout=5s
+    headers: "{{ es_jc_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 408]
+    return_content: true
+  register: es_jc_health
+  until: >-
+    es_jc_health.status == 200 and not (es_jc_health.json.timed_out | default(false))
+    and es_jc_health.json.number_of_nodes | int == es_jc_existing_hosts | length
+  retries: "{{ (es_jc_wait | int / es_jc_poll | int) | round(0, 'ceil') | int }}"
+  delay: "{{ es_jc_poll }}"
+  ignore_errors: true
+
+- name: Stop, before any new node is started, if the cluster is not healthy
+  ansible.builtin.fail:
+    msg: >-
+      Before the new nodes were started: the cluster was not green with all {{ es_jc_existing_hosts | length }} of its
+      nodes (last seen: {{ es_jc_health.json.status | default('no answer') }},
+      {{ es_jc_health.json.number_of_nodes | default('unknown') }} nodes). Nothing was started; retry once it is green.
+  when: >-
+    es_jc_health is failed or es_jc_health.status | default(0) != 200
+    or es_jc_health.json.timed_out | default(true)
+    or es_jc_health.json.number_of_nodes | int != es_jc_existing_hosts | length

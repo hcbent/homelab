@@ -1873,3 +1873,168 @@ def test_placement_leaves_a_clusters_own_machines_out_of_what_the_hosts_carry(se
         with contextlib.suppress(Exception):      # placing may fail for lack of storage rows; only what was passed matters
             _placement(session, conn, state, "tank", template, exclude_vms=excluded)
     assert len(seen) == 2 and len(seen[0]) == len(seen[1]) + 1                  # one machine fewer was charged
+
+
+# ---- adding nodes -----------------------------------------------------------------------------------------------
+
+def with_hosts(session, conn):
+    """Three online hosts with shared storage and a template, so the new node can be placed."""
+    from app.models import PveNode, PveStorage, Vm
+    gib = 1024 ** 3
+    for host in ("pve1", "pve2", "pve3"):
+        session.add(PveNode(connection_id=conn.id, name=host, status="online",
+                            usage={"maxcpu": 40, "maxmem": 187 * gib, "mem": 10 * gib, "cpu": 0.1}))
+        session.add(PveStorage(connection_id=conn.id, node=host, name="tank", type="nfs", shared=True, active=True,
+                               total=16000 * gib, used=100 * gib, avail=15900 * gib))
+    session.add(Vm(connection_id=conn.id, pve_node="pve1", vmid=8000, name="ubuntu-25.04", status="stopped",
+                   is_template=True, disks=[{"slot": "scsi0", "storage": "tank", "size_gb": 32}]))
+    session.commit()
+
+
+def adding(session, world, cluster, conn, **request):
+    """An add-nodes update, planned and waiting for approval. Returns it and the names of the nodes it adds."""
+    from app.provisioning.lifecycle import AddNodes, plan_add_nodes
+    from app.provisioning.operation import start_update
+    session.refresh(cluster)
+    params = plan_add_nodes(session, cluster, AddNodes(**{"roles": ["data"], **request}))
+    added = params["change"]["added"]
+    new_addresses = [f'module.node["{n}"].proxmox_virtual_environment_vm.node' for n in added]
+    world.create_changes = [(a, "create") for a in new_addresses]
+    world.apply_outcome = ApplyOutcome(True, None, [*ADDRS, *new_addresses], {})
+    return run(session, world, start_update(session, cluster_id=cluster.id, params=params, actor="admin")), added
+
+
+def test_adding_a_node_creates_its_machine_then_configures_only_it_and_records_the_new_state(
+        session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    update, added = adding(session, world, cluster, conn)
+    assert added == ["lab-b-04"] and update.state == "pending_approval"
+    assert update.plan_summary["adds"] == 1 and "add 1 node (lab-b-04)" in update.plan_summary["configure"]
+    assert [name for name, _ in steps(session, update)] == ["render", "init", "plan", "approval", "apply", "configure"]
+
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    update = run(session, world, update)
+
+    assert update.state == "succeeded" and world.calls.count("apply") == 2
+    request = world.ansible_requests[-1]
+    assert request.kind == "add_node" and request.new_nodes == ["lab-b-04"] and request.check is False
+    assert len(request.state.nodes) == 4 and request.elastic_password is None
+    assert request.es_api_key == API_KEY and request.es_ca_pem == CA_CERT           # to ask the cluster
+    assert request.ca_cert_pem == CA_CERT and request.ca_key_pem == CA_KEY           # to sign the new certificate
+    session.refresh(cluster)
+    assert len(cluster.desired["state"]["nodes"]) == 4 and "lab-b-04" in cluster.desired["vm_ids"]
+    assert "change" not in cluster.desired
+    assert "the new nodes joined and the cluster is green" in logs(session, update)
+
+
+def test_a_node_added_to_a_cluster_is_marked_as_ecms_and_a_teardown_removes_it_too(session, world, cluster, conn):
+    from app.provisioning.ownership import created_machines
+    created = reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    update, _ = adding(session, world, cluster, conn)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    assert run(session, world, update).state == "succeeded"
+    new_vmid = update.params["vm_ids"]["lab-b-04"]
+    assert (conn.id, new_vmid, "lab-b-04") in created_machines(session)
+
+    world.destroy_changes = [(a, "delete") for a in world.apply_outcome.resources_in_state]
+    cluster_id = cluster.id
+    assert finish_teardown(session, world, created).state == "succeeded"
+    assert session.get(Cluster, cluster_id) is None
+    assert (conn.id, new_vmid, "lab-b-04") not in created_machines(session)
+
+
+def test_a_failed_join_keeps_the_machine_and_the_new_state_and_a_retry_runs_the_configuration_again(
+        session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    update, _ = adding(session, world, cluster, conn)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    world.ansible_error = "The new nodes did not all join: lab-b-04"
+    with pytest.raises(tfop.ConfigureFailed, match="did not all join.*The new machines are kept; retry runs"):
+        run(session, world, update)
+    session.refresh(cluster)
+    assert len(cluster.desired["state"]["nodes"]) == 4                              # the VM exists, so it is the state
+
+    world.ansible_error = None
+    world.create_changes = []
+    operations.retry_operation(session, update.id)
+    update = run(session, world, update)
+    assert update.state == "succeeded" and world.calls.count("apply") == 2           # the VM was not made again
+    assert [r.kind for r in world.ansible_requests] == ["create", "add_node", "add_node"]
+
+
+def test_adding_a_node_is_refused_at_plan_time_without_the_rights_to_make_a_vm(session, world, cluster, conn):
+    from app.provisioning.lifecycle import AddNodes, plan_add_nodes
+    from app.provisioning.operation import start_update
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    session.refresh(cluster)
+    params = plan_add_nodes(session, cluster, AddNodes(roles=["data"]))
+    world.perms["/storage/tank"].pop("Datastore.AllocateSpace")
+    update = start_update(session, cluster_id=cluster.id, params=params, actor="admin")
+    with pytest.raises(PreflightFailed, match="Datastore.AllocateSpace"):
+        run(session, world, update)
+    assert world.calls.count("apply") == 1
+
+
+def test_an_add_that_cannot_find_the_clusters_api_key_stops_before_asking_ansible(session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    update, _ = adding(session, world, cluster, conn)
+    operations.approve_operation(session, update.id, update.plan_digest, "admin")
+    for cred in session.scalars(select(Credential).where(Credential.kind == "es_api_key")):
+        session.delete(cred)
+    session.commit()
+    with pytest.raises(tfop.ConfigureFailed, match="no API key or CA for this cluster"):
+        run(session, world, update)
+    assert [r.kind for r in world.ansible_requests] == ["create"]
+
+
+def test_the_add_nodes_endpoint_plans_several_nodes_of_one_kind_and_shows_where_each_goes(
+        logged_in, session, world, cluster, conn):
+    from procrastinate import testing
+
+    from app import jobs
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    with jobs.queue.replace_connector(testing.InMemoryConnector()) as q:
+        r = logged_in.post(f"/api/clusters/{cluster.id}/add-nodes",
+                           json={"count": 2, "roles": ["ml"], "cores": 8, "ram_mb": 16384}, headers=H)
+        assert r.status_code == 202 and len(q.connector.jobs) == 1
+    detail = logged_in.get(f"/api/operations/{r.json()['operation_id']}").json()
+    nodes = detail["change"]["nodes"]
+    assert detail["change"]["kind"] == "add_node" and sorted(nodes) == ["lab-b-04", "lab-b-05"]
+    assert all(n["roles"] == "ml" and n["cores"] == 8 and n["host"] and n["address"] and n["vm_id"]
+               for n in nodes.values())
+    session.refresh(cluster)
+    assert len(cluster.desired["state"]["nodes"]) == 3                               # nothing changes before approval
+
+
+@pytest.mark.parametrize("body,status,text", [
+    ({"roles": ["nonsense"]}, 422, None),
+    ({"count": 0}, 422, None),
+    ({"roles": ["ml"], "data_disk_gb": 200}, 409, "hold no data"),
+    ({"roles": ["data"], "pve_node": "pve9"}, 409, None),
+    ({"roles": ["data"], "extra": 1}, 422, None),
+])
+def test_the_add_nodes_endpoint_refuses_a_bad_request_with_the_reason(
+        logged_in, session, world, cluster, conn, body, status, text):
+    reach_success(session, world, cluster, conn)
+    with_hosts(session, conn)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/add-nodes", json=body, headers=H)
+    assert r.status_code == status
+    if text:
+        assert text in r.json()["detail"]
+    assert session.scalars(select(Operation).where(Operation.kind == "tf.update")).all() == []
+
+
+def test_the_add_nodes_endpoint_needs_a_login_the_csrf_header_and_a_known_cluster(
+        logged_in, client, session, world, cluster, conn):
+    reach_success(session, world, cluster, conn)
+    path = f"/api/clusters/{cluster.id}/add-nodes"
+    assert logged_in.post("/api/clusters/nope/add-nodes", json={"roles": ["data"]}, headers=H).status_code == 404
+    assert logged_in.post(path, json={"roles": ["data"]}).status_code in (400, 403)
+    client.cookies.clear()
+    assert client.post(path, json={"roles": ["data"]}, headers=H).status_code == 401

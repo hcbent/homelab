@@ -13,7 +13,8 @@
 # machine answers the first time and nothing is repeated. A machine that never comes back fails here with a plain
 # message instead of as "unreachable".
 - name: Wait for the machines to accept SSH and finish their first boot
-  hosts: es_nodes
+  # A create waits for every node; adding nodes sets first_boot_hosts to the new ones only.
+  hosts: "{{ first_boot_hosts | default('es_nodes') }}"
   gather_facts: false
   vars:
     first_boot_attempts: 4        # asks of cloud-init in all

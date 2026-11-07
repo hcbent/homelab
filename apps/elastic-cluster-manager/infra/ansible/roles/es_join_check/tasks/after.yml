@@ -1,0 +1,38 @@
+---
+- name: Wait for the cluster to be green with every node, the new ones included
+  ansible.builtin.uri:
+    url: >-
+      {{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_cluster/health?wait_for_status=green&timeout=5s
+    headers: "{{ es_jc_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 408]
+    return_content: true
+  register: es_jc_health
+  until: >-
+    es_jc_health.status == 200 and not (es_jc_health.json.timed_out | default(false))
+    and es_jc_health.json.number_of_nodes | int == es_expected_nodes | int
+  retries: "{{ (es_jc_wait | int / es_jc_poll | int) | round(0, 'ceil') | int }}"
+  delay: "{{ es_jc_poll }}"
+  ignore_errors: true
+
+- name: Read which nodes the cluster has
+  ansible.builtin.uri:
+    url: "{{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_nodes/os"
+    headers: "{{ es_jc_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_jc_nodes
+  failed_when: false
+
+- name: Stop if a new node did not join
+  ansible.builtin.fail:
+    msg: >-
+      The new nodes did not all join: {{ es_jc_new | difference(es_jc_nodes.json.nodes.values() | map(attribute='name') | list
+      if es_jc_nodes.status | default(0) == 200 else []) | join(', ') or 'none were missing' }}
+      (the cluster was {{ es_jc_health.json.status | default('not answering') }} with
+      {{ es_jc_health.json.number_of_nodes | default('an unknown number of') }} of {{ es_expected_nodes }} nodes). The
+      machines are kept; retry runs the configuration again, which is safe to repeat.
+  when: >-
+    es_jc_health is failed or es_jc_health.status | default(0) != 200
+    or es_jc_health.json.timed_out | default(true)
+    or es_jc_health.json.number_of_nodes | int != es_expected_nodes | int

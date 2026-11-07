@@ -1,0 +1,5 @@
+---
+es_jc_scheme: https
+es_jc_http_port: 9200
+es_jc_wait: 900      # seconds to wait for the cluster to be green with the nodes it should have
+es_jc_poll: 10       # seconds between looks

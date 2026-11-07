@@ -15,7 +15,14 @@ from app.desired import (
 )
 from app.models import Cluster, User
 from app.provisioning import create as plan_create
-from app.provisioning.lifecycle import ExpandDisk, ResizeNodes, plan_expand_disk, plan_resize
+from app.provisioning.lifecycle import (
+    AddNodes,
+    ExpandDisk,
+    ResizeNodes,
+    plan_add_nodes,
+    plan_expand_disk,
+    plan_resize,
+)
 from app.provisioning.operation import OperationRefused, remove_cluster, start_update
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
@@ -122,6 +129,14 @@ async def resize(cluster_id: str, body: ResizeNodes, db: Session = Depends(get_d
     changes until it is approved on its operation page. Terraform changes the machines' configuration, but ECM does
     not restart them yet, so the new size takes effect when each one is restarted."""
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_resize(d, c, body))
+
+
+@router.post("/{cluster_id}/add-nodes", status_code=202)
+async def add_nodes(cluster_id: str, body: AddNodes, db: Session = Depends(get_db),
+                    user: User = Depends(auth.current_user)):
+    """Plan adding `count` nodes of one kind: names, hosts, addresses and VMIDs are chosen and shown on the plan. This
+    only makes a plan; nothing changes until it is approved on its operation page."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_add_nodes(d, c, body))
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

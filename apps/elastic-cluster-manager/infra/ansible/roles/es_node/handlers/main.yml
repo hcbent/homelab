@@ -6,7 +6,7 @@
     name: elasticsearch
     state: restarted
     daemon_reload: true
-  when: es_allow_restart | bool
+  when: es_allow_restart | bool or es_start_node | default(false) | bool
   listen: Elasticsearch configuration changed
 
 - name: Note that a restart is pending
@@ -14,5 +14,5 @@
     msg: >-
       The configuration of {{ es_node_name }} changed. It has not been restarted; the change takes effect at the
       next rolling restart.
-  when: not es_allow_restart | bool
+  when: not (es_allow_restart | bool or es_start_node | default(false) | bool)
   listen: Elasticsearch configuration changed

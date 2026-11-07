@@ -34,7 +34,7 @@ from app.desired.models import DesiredState
 
 MIN_PASSWORD_LENGTH = 20  # the same floor the es_node role enforces
 PLAYBOOKS = {"create": "playbooks/create.yml", "converge": "playbooks/converge.yml",
-             "restart": "playbooks/rolling_restart.yml"}
+             "restart": "playbooks/rolling_restart.yml", "add_node": "playbooks/add_node.yml"}
 _RECAP = re.compile(r"^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)")
 _NEEDLES = ("fatal:", "[ERROR]", "FAILED!")
 
@@ -65,6 +65,9 @@ class AnsibleRequest:
     pve_token_secret: str | None = field(default=None, repr=False)
     pve_ca_pem: str | None = None  # a custom Proxmox CA, when the connection has one
     pve_verify_tls: bool = True
+    # Adding nodes: the new ones. Uses es_api_key and es_ca_pem to check they joined, and the CA key and certificate
+    # (ca_cert_pem, ca_key_pem) to sign their certificates.
+    new_nodes: list[str] | None = None
 
 
 @dataclass
@@ -176,13 +179,14 @@ class CliAnsibleRunner:
                     bootstrapped_at=request.bootstrapped_at, ssh_user=self.ssh_user,
                     ssh_key_path=self.ssh_key_path, known_hosts_path=str(run_dir / "known_hosts"),
                     search_domain=request.search_domain, artifacts_dir=str(artifacts),
-                    vm_ids=request.vm_ids, placement=request.placement)))
+                    vm_ids=request.vm_ids, placement=request.placement, new_nodes=request.new_nodes)))
             except InventoryError as exc:
                 raise AnsibleError(str(exc)) from exc
 
             args = [self.binary, "-i", str(inventory)]
             secrets = self._secret_vars(request)
             secrets.update(self._restart_vars(request, run_dir))
+            secrets.update(self._join_vars(request, run_dir))
             if secrets:
                 extra = run_dir / "extra-vars.json"
                 _write_private(extra, json.dumps(secrets))
@@ -219,6 +223,15 @@ class CliAnsibleRunner:
                                    "characters")
         if bool(request.ca_cert_pem) != bool(request.ca_key_pem):
             raise AnsibleError("pass the cluster CA certificate and key together, or neither")
+        if request.kind == "add_node":
+            if request.check:
+                raise AnsibleError("adding nodes cannot be checked: check mode cannot simulate it")
+            missing = [name for name, value in (
+                ("the names of the new nodes", request.new_nodes), ("the ECM API key", request.es_api_key),
+                ("the cluster's CA certificate", request.es_ca_pem or request.ca_cert_pem),
+                ("the cluster's CA key, to sign the new nodes' certificates", request.ca_key_pem)) if not value]
+            if missing:
+                raise AnsibleError("adding nodes needs " + ", ".join(missing))
         if request.kind == "restart":
             if request.check:
                 raise AnsibleError("a rolling restart cannot be checked: check mode cannot simulate it")
@@ -261,6 +274,16 @@ class CliAnsibleRunner:
             _write_private(pve_ca, request.pve_ca_pem)
             out["pve_ca_file"] = str(pve_ca)
         return out
+
+    @staticmethod
+    def _join_vars(request: AnsibleRequest, run_dir: Path) -> dict[str, str]:
+        """What adding nodes needs beyond the inventory: the API key to ask the cluster whether they joined, the CA it
+        is checked against (a public file in the private run directory), and which hosts the first-boot wait covers."""
+        if request.kind != "add_node":
+            return {}
+        ca = run_dir / "es-ca.crt"
+        _write_private(ca, request.es_ca_pem or request.ca_cert_pem or "")
+        return {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "es_new_nodes"}
 
     def _env(self, run_dir: Path) -> dict[str, str]:
         env = {

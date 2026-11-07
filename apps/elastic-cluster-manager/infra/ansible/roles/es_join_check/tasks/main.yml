@@ -1,0 +1,29 @@
+---
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - es_expected_nodes is defined
+      - es_join_phase in ['before', 'after']
+      - groups['es_new_nodes'] | default([]) | length > 0
+    fail_msg: >-
+      A join check needs the ECM API key, the cluster CA, the expected node count, a phase (before or after) and the
+      names of the new nodes.
+
+- name: Work out which nodes are new and which already belong to the cluster
+  ansible.builtin.set_fact:
+    es_jc_new: "{{ groups['es_new_nodes'] | map('extract', hostvars) | map(attribute='es_node_name') | list }}"
+    es_jc_existing_hosts: >-
+      {{ groups['es_nodes'] | difference(groups['es_new_nodes']) | map('extract', hostvars) | map(attribute='ansible_host') | list }}
+    es_jc_headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+  no_log: true
+
+- name: Check before the new nodes are started
+  ansible.builtin.include_tasks: before.yml
+  when: es_join_phase == 'before'
+
+- name: Check after the new nodes are started
+  ansible.builtin.include_tasks: after.yml
+  when: es_join_phase == 'after'

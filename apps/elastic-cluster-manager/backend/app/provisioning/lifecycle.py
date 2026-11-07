@@ -5,15 +5,29 @@ being asked for, or refuses with the reason in plain words. Nothing here touches
 Elasticsearch: the parameters go to `start_update`, which plans them and waits for approval.
 """
 import copy
+import re
 from collections import defaultdict
+from types import SimpleNamespace
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.desired.models import DesiredState
-from app.models import Cluster, PveNode, PveStorage
+from app.config import get_settings
+from app.desired import AllocationError, TopologyPreset, allocate_addresses, warnings
+from app.desired.models import DATA_ROLES, VALID_ROLES, DesiredState, NodeSpec, RolesMode
+from app.desired.network import NetworkProfile
+from app.models import Cluster, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
+from app.network_profiles import addresses_in_use
+from app.provisioning.create import (
+    CreateInvalid,
+    _check_names,
+    _placement,
+    _reservations,
+    _template,
+)
 from app.provisioning.operation import OperationRefused
+from app.provisioning.vmid import VmidError, allocate_vmids
 
 GIB = 1024 ** 3
 
@@ -204,5 +218,145 @@ def plan_resize(db: Session, cluster: Cluster, request: ResizeNodes) -> dict:
         "describe": (f"give {', '.join(sorted(changes))} {' and '.join(parts)}: Terraform changes the machines' "
                      "configuration, then ECM restarts the nodes one at a time (coordinating nodes, data nodes, "
                      "then masters, the elected master last), waiting for the cluster to be green between them"),
+    }
+    return params
+
+
+class AddNodes(BaseModel):
+    """Add `count` nodes of one kind. `roles` is None for Elasticsearch's default roles (every role but voting_only), an
+    empty list for a coordinating-only node, or the roles to give them. Sizes that are not given are copied from an
+    existing node of the same kind."""
+
+    model_config = ConfigDict(extra="forbid")
+    count: int = Field(default=1, ge=1, le=10)
+    roles: list[str] | None = None
+    cores: int | None = Field(default=None, ge=1, le=64)
+    ram_mb: int | None = Field(default=None, ge=2048, le=524288)
+    os_disk_gb: int | None = Field(default=None, ge=16, le=2048)
+    data_disk_gb: int | None = Field(default=None, ge=10, le=65536)
+    pve_node: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _roles(self) -> "AddNodes":
+        if self.roles is not None:
+            bad = sorted(set(self.roles) - VALID_ROLES)
+            if bad:
+                raise ValueError("unknown Elasticsearch roles: " + ", ".join(bad))
+            if len(set(self.roles)) != len(self.roles):
+                raise ValueError("roles lists the same role twice")
+            if "voting_only" in self.roles and "master" not in self.roles:
+                raise ValueError("voting_only needs the master role")
+        return self
+
+
+def _holds_data(request: AddNodes) -> bool:
+    return request.roles is None or bool(set(request.roles) & DATA_ROLES)
+
+
+def _role_text(request: AddNodes) -> str:
+    if request.roles is None:
+        return "the default roles"
+    return ", ".join(request.roles) if request.roles else "no roles (coordinating only)"
+
+
+def _like(existing: list[NodeSpec], request: AddNodes) -> NodeSpec | None:
+    """An existing node of the same kind, to copy sizes from: the same roles if there is one, else one that also does
+    (or does not) hold data."""
+    wanted = frozenset() if request.roles == [] else (
+        None if request.roles is None else frozenset(request.roles))
+    for node in existing:
+        if wanted is not None and node.effective_roles == wanted:
+            return node
+        if wanted is None and node.roles_mode == RolesMode.default:
+            return node
+    holds = _holds_data(request)
+    return next((n for n in existing if n.holds_data == holds), None)
+
+
+def plan_add_nodes(db: Session, cluster: Cluster, request: AddNodes) -> dict:
+    """The parameters with `count` new nodes added: next names, placed with every existing node pinned where it is (so
+    the master quorum rule is checked for the whole cluster), with an address and a VMID each. Refuses a single-node
+    cluster (it cannot be grown), a cluster that was not green and complete at its last sync, a node that cannot be
+    placed or would break the quorum rule, and anything the create path would refuse."""
+    params = current_desired(cluster)
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster, started in a mode that cannot take other nodes, so "
+                               "nodes cannot be added to it")
+    if cluster.health_status not in (None, "green"):
+        raise OperationRefused(f"the cluster was {cluster.health_status} at its last sync; it must be green before a "
+                               "node is added")
+    seen = len(db.scalars(select(EsNode.id).where(EsNode.cluster_id == cluster.id)).all())
+    if seen and seen != len(state.nodes):
+        raise OperationRefused(f"ECM saw {seen} of this cluster's {len(state.nodes)} nodes at its last sync; every "
+                               "node must be present before a node is added")
+
+    like = _like(state.nodes, request)
+    holds_data = _holds_data(request)
+    cores = request.cores or (like.cores if like else 4)
+    ram_mb = request.ram_mb or (like.ram_mb if like else 8192)
+    os_disk = request.os_disk_gb or (like.os_disk_gb if like else 32)
+    data_disk = None
+    if holds_data:
+        data_disk = request.data_disk_gb or next((n.data_disk_gb for n in state.nodes if n.data_disk_gb), 100)
+    elif request.data_disk_gb:
+        raise OperationRefused("these roles hold no data, so they get no data disk; leave the data disk empty")
+
+    # Numbers only go up: a node's number is not reused, even after the node is gone.
+    numbered = [int(m.group(1)) for n in state.nodes if (m := re.match(rf"^{re.escape(state.name)}-(\d+)$", n.name))]
+    counter = max([int(params.get("node_counter", 0)), *numbered])
+    mode = (RolesMode.default if request.roles is None else
+            RolesMode.coordinating if request.roles == [] else RolesMode.custom)
+    try:
+        new_nodes = [NodeSpec(
+            name=f"{state.name}-{counter + i + 1:02d}", roles_mode=mode, roles=list(request.roles or []),
+            cores=cores, ram_mb=ram_mb, os_disk_gb=os_disk, data_disk_gb=data_disk, pve_node=request.pve_node)
+            for i in range(request.count)]
+    except ValidationError as exc:
+        raise OperationRefused("; ".join(e["msg"] for e in exc.errors())) from exc
+
+    pinned = [n.model_copy(update={"pve_node": params["placement"][n.name]}) for n in state.nodes]
+    try:
+        grown = DesiredState(name=state.name, version=state.version, topology_preset=TopologyPreset.custom,
+                             nodes=[*pinned, *new_nodes], network_profile=state.network_profile)
+    except ValidationError as exc:
+        raise OperationRefused("; ".join(e["msg"] for e in exc.errors())) from exc
+
+    conn = db.get(ProxmoxConnection, params.get("proxmox_connection_id") or "")
+    if conn is None:
+        raise OperationRefused("the Proxmox connection this cluster was built on no longer exists")
+    settings = get_settings()
+    datastore = params.get("datastore_id", settings.default_storage)
+    try:
+        _check_names(db, SimpleNamespace(nodes=new_nodes))      # only the names matter, not the cluster's rules
+        template = _template(db, conn, (params.get("template") or {}).get("vm_id"))
+        placement = _placement(db, conn, grown, datastore, template,
+                               exclude_vms=frozenset(n.name for n in state.nodes))
+        profile = NetworkProfile.model_validate(params["profile"])
+        reserved_addresses, reserved_vmids = _reservations(db, None)
+        in_use = ({a["ip"] for a in addresses_in_use(db)} | reserved_addresses | set(params["addresses"].values()))
+        addresses = allocate_addresses(profile, new_nodes, in_use)
+        used_vmids = ({v for (v,) in db.execute(select(Vm.vmid).where(Vm.connection_id == conn.id))}
+                      | reserved_vmids | {int(v) for v in params["vm_ids"].values()})
+        vm_ids = allocate_vmids([n.name for n in new_nodes], used_vmids, settings.vmid_range_start,
+                                settings.vmid_range_end)
+    except (CreateInvalid, AllocationError, VmidError) as exc:
+        raise OperationRefused(str(exc)) from exc
+
+    notes = list(warnings(grown)) + [i.message for i in placement.issues if i.severity == "warning"]
+    names = [n.name for n in new_nodes]
+    params["state"] = grown.model_dump(mode="json")
+    params["placement"] = {**params["placement"], **{n: placement.hosts[n] for n in names}}
+    params["addresses"] = {**params["addresses"], **addresses}
+    params["vm_ids"] = {**params["vm_ids"], **{n: int(v) for n, v in vm_ids.items()}}
+    params["node_counter"] = counter + request.count
+    params["change"] = {
+        "kind": "add_node", "added": names, "warnings": notes,
+        "nodes": {n.name: {"host": placement.hosts[n.name], "address": addresses[n.name], "vm_id": int(vm_ids[n.name]),
+                           "roles": _role_text(request), "cores": n.cores, "ram_mb": n.ram_mb,
+                           "data_disk_gb": n.data_disk_gb} for n in new_nodes},
+        "describe": (f"add {request.count} node{'s' if request.count != 1 else ''} ({', '.join(names)}) with "
+                     f"{_role_text(request)}: Terraform makes the machine{'s' if request.count != 1 else ''}, then ECM "
+                     "configures and starts only the new nodes and checks they joined and the cluster is green"),
     }
     return params

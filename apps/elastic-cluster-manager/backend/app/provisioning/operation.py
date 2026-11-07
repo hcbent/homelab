@@ -421,7 +421,9 @@ class _Handlers:
                                   "reachable") from e
         problems = proxmox.preflight_problems(
             perms, pool_id=params.get("pool_id", "ecm"), datastore=params.get("datastore_id", "tank"),
-            template_vmid=(params.get("template") or {}).get("vm_id"), creating=self.kind == CREATE,
+            template_vmid=(params.get("template") or {}).get("vm_id"),
+            # Adding a node clones a VM, so it needs what a create needs.
+            creating=self.kind == CREATE or (self.kind == UPDATE and (params.get("change") or {}).get("kind") == "add_node"),
             resizing=self.kind == UPDATE and (params.get("change") or {}).get("kind") == "resize")
         if problems:
             raise PreflightFailed(f"the token Terraform uses is missing rights this operation needs: "
@@ -654,9 +656,39 @@ class _Handlers:
             raise RestartFailed(f"{outcome.error or 'the rolling restart failed'}. {resumes}")
         log(self.db, self.op.id, "every node runs at its new size and the cluster is green")
 
+    def _add_nodes(self) -> None:
+        """Configure and start only the nodes this change added, then check that they joined and the cluster is green
+        (playbooks/add_node.yml). The existing nodes are not touched. It needs ECM's API key (to ask the cluster) and
+        the cluster's CA (to sign the new nodes' certificates)."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        api_key = self._credential(self._names()[2])
+        ca_cert, ca_key = self._stored_ca(cluster)
+        if api_key is None or ca_cert is None or ca_key is None:
+            raise ConfigureFailed("ECM has no API key or CA for this cluster, so it cannot sign the new nodes' "
+                                  "certificates or check that they joined. The new machines are kept")
+        profile = NetworkProfile.model_validate(params["profile"])
+        request = AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind="add_node",
+            bootstrapped_at=cluster.bootstrapped_at, search_domain=profile.search_domain,
+            new_nodes=list((params.get("change") or {}).get("added") or []),
+            es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=ca_cert, ca_cert_pem=ca_cert, ca_key_pem=ca_key)
+        log(self.db, self.op.id, f"configuring: {self._configure_description()}")
+        kept = "The new machines are kept; retry runs the configuration again, which is safe to repeat"
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise ConfigureFailed(f"{e}. {kept}") from e
+        if not outcome.ok:
+            raise ConfigureFailed(f"{outcome.error or 'adding the nodes failed'}. {kept}")
+        log(self.db, self.op.id, "the new nodes joined and the cluster is green")
+
     def configure(self) -> None:
         if self.kind == UPDATE:
-            self._converge()
+            if (self.op.params.get("change") or {}).get("kind") == "add_node":
+                self._add_nodes()
+            else:
+                self._converge()
             return
         cluster = self.db.get(Cluster, self.cluster_id)
         if cluster.bootstrapped_at is not None:

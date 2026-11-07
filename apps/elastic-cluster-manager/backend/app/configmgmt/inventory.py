@@ -25,7 +25,7 @@ from typing import Literal
 from app.desired.models import DesiredState
 from app.desired.roles import OMIT, discovery_settings, render_node_roles
 
-OperationKind = Literal["create", "converge", "restart"]
+OperationKind = Literal["create", "converge", "restart", "add_node"]
 
 _SSH_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./-]+$")  # absolute, nothing a shell or ssh option could misread
@@ -50,6 +50,8 @@ class InventoryInput:
     # A rolling restart reaches each machine through Proxmox, so it needs each node's host and VMID.
     vm_ids: dict[str, int] | None = None
     placement: dict[str, str] | None = None
+    # Adding nodes: which of the nodes are the new ones. Only they are prepared, given a certificate and started.
+    new_nodes: list[str] | None = None
 
 
 def _check(inp: InventoryInput) -> None:
@@ -70,6 +72,16 @@ def _check(inp: InventoryInput) -> None:
             gaps = sorted(n.name for n in inp.state.nodes if not mapping or n.name not in mapping)
             if gaps:
                 raise InventoryError(f"a rolling restart needs {what} for every node; missing: {', '.join(gaps)}")
+    if inp.operation_kind == "add_node":
+        if inp.bootstrapped_at is None:
+            raise InventoryError("nodes are added to a cluster that has bootstrapped")
+        known = {n.name for n in inp.state.nodes}
+        if not inp.new_nodes or set(inp.new_nodes) - known:
+            raise InventoryError("add_node needs the names of the new nodes, and each must be a node of the cluster")
+        if known <= set(inp.new_nodes):
+            raise InventoryError("a cluster cannot be made of only new nodes: use a create")
+        if not any(n.is_electable and n.name not in inp.new_nodes for n in inp.state.nodes):
+            raise InventoryError("the cluster has no existing node that can sign the new nodes' certificates")
     if inp.operation_kind == "create" and inp.bootstrapped_at is not None:
         raise InventoryError("this cluster has already bootstrapped; a create would re-render "
                              "cluster.initial_master_nodes and could split it. Use converge.")
@@ -94,7 +106,8 @@ def render_inventory(inp: InventoryInput) -> dict:
     state = inp.state
     creating_first_time = inp.operation_kind == "create" and inp.bootstrapped_at is None
 
-    electable = [n for n in state.nodes if n.is_electable]
+    new = set(inp.new_nodes or [])
+    electable = [n for n in state.nodes if n.is_electable and n.name not in new]  # an existing node signs certificates
     master_eligible = state.master_eligible_nodes
     discovery = discovery_settings(state, operation_kind=inp.operation_kind,
                                    bootstrapped_at=inp.bootstrapped_at)
@@ -143,6 +156,8 @@ def render_inventory(inp: InventoryInput) -> dict:
             host["es_node_roles"] = roles
         if node.data_disk_gb is not None:
             host["es_data_disk_gb"] = node.data_disk_gb
+        if inp.operation_kind == "add_node" and node.name in inp.new_nodes:
+            host["es_start_node"] = True        # a node that is not running yet is started; the others are left alone
         if inp.operation_kind == "restart":
             # The order a rolling restart goes in: nodes that only route requests, then data nodes, then the
             # master-eligible nodes (the elected master last of those, which only the running cluster knows).
@@ -152,15 +167,13 @@ def render_inventory(inp: InventoryInput) -> dict:
                          "es_restart_class": order})
         hosts[node.name] = host
 
-    return {
-        "all": {
-            "vars": cluster_vars,
-            "children": {
-                "es_nodes": {"hosts": hosts},
-                "es_bootstrap": {"hosts": {electable[0].name: {}}},
-            },
-        }
+    children: dict = {
+        "es_nodes": {"hosts": hosts},
+        "es_bootstrap": {"hosts": {electable[0].name: {}}},
     }
+    if new:
+        children["es_new_nodes"] = {"hosts": {name: {} for name in sorted(new)}}
+    return {"all": {"vars": cluster_vars, "children": children}}
 
 
 def inventory_json(inp: InventoryInput) -> str:
