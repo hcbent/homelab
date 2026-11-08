@@ -1,0 +1,34 @@
+---
+# Work through ECM's plan, one node at a time. es_restart_plan is a list of {name, action} in the order to go: nodes that are down
+# first (they are started, and the cluster cannot be green until they are), then the rest, masters last and the elected master
+# last of those. Extra vars: es_restart_present (the nodes that were in the cluster when it was planned, to ask about the cluster)
+# and es_restart_since (when the operation was made, as a Unix time, so a retry skips what this operation already restarted).
+- name: Check the plan
+  ansible.builtin.assert:
+    that:
+      - es_restart_plan | length > 0
+      - es_restart_present is defined and es_restart_present | length > 0
+      - es_restart_since is defined
+    fail_msg: A planned restart needs the plan, the nodes that were in the cluster when it was made, and when the operation began.
+
+- name: Say what will be done
+  ansible.builtin.debug:
+    msg: >-
+      In this order: {% for item in es_restart_plan %}{{ item.name }} ({{ item.action }}){{ ', ' if not loop.last }}{% endfor %}.
+
+- name: Go through the plan
+  ansible.builtin.include_tasks: planned_node.yml
+  loop: "{{ es_restart_plan }}"
+  loop_control:
+    loop_var: es_rr_item
+
+- name: Ask any node, now that the plan is done
+  ansible.builtin.set_fact:
+    es_rr_ask_pool: "{{ es_rr_nodes }}"
+    es_rr_name: ""
+
+- name: Wait for green with every node present, now that every node in the plan has been done
+  ansible.builtin.include_tasks: gate.yml
+  vars:
+    es_rr_status: green
+    es_rr_what: after the last node in the plan

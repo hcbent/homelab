@@ -1,0 +1,110 @@
+---
+# The restart that follows a resize: the nodes not at their target size, in order (docs/DESIGN_RESIZE.md).
+- name: Ask one node for the cluster's health, with every node present, before anything changes
+  ansible.builtin.include_tasks: gate.yml
+  vars:
+    es_rr_status: green
+    es_rr_what: before any node is restarted
+
+- name: Read how many processors each node has
+  ansible.builtin.uri:
+    url: "{{ es_rr_scheme }}://{{ es_rr_nodes[0].ansible_host }}:{{ es_rr_http_port }}/_nodes/os"
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_os
+
+# Memory is in the node stats, not the node info (the info's `os` has the processor counts but no memory).
+- name: Read how much memory each node has
+  ansible.builtin.uri:
+    url: "{{ es_rr_scheme }}://{{ es_rr_nodes[0].ansible_host }}:{{ es_rr_http_port }}/_nodes/stats/os"
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_stats
+
+- name: Read the elected master
+  ansible.builtin.uri:
+    url: "{{ es_rr_scheme }}://{{ es_rr_nodes[0].ansible_host }}:{{ es_rr_http_port }}/_cat/master?format=json"
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_master
+
+- name: Put what each node reports side by side, by node name
+  ansible.builtin.set_fact:
+    es_rr_actual: >-
+      {%- set out = {} -%}
+      {%- for node_id, info in es_rr_os.json.nodes.items() -%}
+        {%- set stats = es_rr_stats.json.nodes.get(node_id, {}) -%}
+        {%- set _ = out.update({info.name: {
+              'cores': (info.os.available_processors if info.os is defined and info.os.available_processors is defined else none),
+              'mem_bytes': (stats.os.mem.total_in_bytes if stats.os is defined and stats.os.mem is defined
+                            and stats.os.mem.total_in_bytes is defined else none)}}) -%}
+      {%- endfor -%}
+      {{ out }}
+    es_rr_elected: "{{ (es_rr_master.json | default([]) | first | default({})).node | default('') }}"
+
+# Never guess about a node: if Elasticsearch does not say what a node has, stop before anything has changed.
+- name: List anything Elasticsearch did not report
+  ansible.builtin.set_fact:
+    es_rr_missing: >-
+      {%- set out = [] -%}
+      {%- for n in es_rr_nodes -%}
+        {%- set seen = es_rr_actual.get(n.es_node_name) -%}
+        {%- if seen is none -%}
+          {%- set _ = out.append('the node ' ~ n.es_node_name ~ ' (missing from GET _nodes/os)') -%}
+        {%- else -%}
+          {%- if seen.cores is none -%}
+            {%- set _ = out.append('the processors of ' ~ n.es_node_name ~ ' (os.available_processors in GET _nodes/os)') -%}
+          {%- endif -%}
+          {%- if seen.mem_bytes is none -%}
+            {%- set _ = out.append('the memory of ' ~ n.es_node_name ~ ' (os.mem.total_in_bytes in GET _nodes/stats/os)') -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if es_rr_elected not in (es_rr_nodes | map(attribute='es_node_name') | list) -%}
+        {%- set _ = out.append('who the elected master is (GET _cat/master returned ' ~ (es_rr_elected | to_json) ~ ')') -%}
+      {%- endif -%}
+      {{ out }}
+
+- name: Stop if Elasticsearch did not report what a node has, or who the elected master is
+  ansible.builtin.fail:
+    msg: "Before anything was changed: Elasticsearch did not report {{ es_rr_missing | join('; ') }}."
+  when: es_rr_missing | length > 0
+
+- name: Put the nodes that are not at their target size in order
+  ansible.builtin.set_fact:
+    es_rr_todo: >-
+      {%- set behind = [] -%}
+      {%- for n in es_rr_nodes -%}
+        {%- set seen = es_rr_actual[n.es_node_name] -%}
+        {%- set want_ram = n.es_desired_ram_mb | int -%}
+        {%- set have_ram = (seen.mem_bytes | int) / 1048576 -%}
+        {%- if (seen.cores | int != n.es_desired_cores | int)
+               or (have_ram > want_ram) or (have_ram < want_ram * (es_rr_ram_tolerance | float)) -%}
+          {%- set _ = behind.append(n) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set ordered = [] -%}
+      {%- for cls in ['coordinating', 'data', 'master'] -%}
+        {%- for n in behind if n.es_restart_class == cls and n.es_node_name != es_rr_elected -%}
+          {%- set _ = ordered.append(n.es_node_name) -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {%- for n in behind if n.es_node_name == es_rr_elected -%}
+        {%- set _ = ordered.append(n.es_node_name) -%}
+      {%- endfor -%}
+      {{ ordered }}
+
+- name: Say what will be restarted
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Restarting, in this order: ' ~ (es_rr_todo | join(', ')) if es_rr_todo | length > 0
+         else 'Every node already runs at its target size; nothing to restart.' }}
+
+- name: Restart each node in turn
+  ansible.builtin.include_tasks: restart_node.yml
+  loop: "{{ es_rr_todo }}"
+  loop_control:
+    loop_var: es_rr_name

@@ -1,0 +1,46 @@
+---
+# One entry of the plan (es_rr_item). What is done is decided from what is true now: a node the cluster has is restarted with the
+# cluster held steady around it; a node it does not have is started if its VM is stopped and restarted if the VM is running.
+- name: Look up {{ es_rr_item.name }}
+  ansible.builtin.set_fact:
+    es_rr_name: "{{ es_rr_item.name }}"
+    es_rr_node: "{{ hostvars[es_rr_item.name] }}"
+    es_rr_allocation_changed: false
+    es_rr_ask_pool: "{{ es_restart_present | difference([es_rr_item.name]) | map('extract', hostvars) | list }}"
+
+- name: Stop if there is no node to ask about the cluster
+  ansible.builtin.fail:
+    msg: "No node other than {{ es_rr_name }} was in the cluster when this was planned, so there is no one to ask about it."
+  when: es_rr_ask_pool | length == 0
+
+- name: Ask which nodes the cluster has and for how long each has been up
+  ansible.builtin.uri:
+    url: >-
+      {{ es_rr_scheme }}://{{ es_rr_ask_pool[0].ansible_host }}:{{ es_rr_http_port }}/_nodes/stats/jvm?filter_path=nodes.*.name,nodes.*.jvm.uptime_in_millis
+    headers: "{{ es_rr_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    return_content: true
+  register: es_rr_jvm
+
+- name: Work out whether {{ es_rr_name }} is in the cluster and whether this operation already restarted it
+  ansible.builtin.set_fact:
+    es_rr_mine: "{{ es_rr_jvm.json.nodes.values() | selectattr('name', 'equalto', es_rr_name) | list }}"
+    # now() without utc is local time, which .timestamp() reads correctly; now(utc=true) is a naive UTC time, which it would read as local
+    # and be out by the machine's offset from UTC (found by a test on a machine that is not on UTC).
+    es_rr_elapsed_s: "{{ (now().timestamp() | int) - (es_restart_since | int) }}"
+- name: Say what was found
+  ansible.builtin.set_fact:
+    es_rr_in_cluster: "{{ es_rr_mine | length == 1 }}"
+    # A node that has been up for less time than this operation has existed was restarted since it began. Both are durations, so
+    # the clocks of the machines need not agree.
+    es_rr_done: >-
+      {{ es_rr_mine | length == 1 and (es_rr_mine[0].jvm.uptime_in_millis | int) / 1000 < es_rr_elapsed_s | int }}
+
+- name: Skip {{ es_rr_name }}, which has been up for less time than this operation has existed
+  ansible.builtin.debug:
+    msg: "{{ es_rr_name }} was already restarted since this operation began, so it is skipped."
+  when: es_rr_done | bool
+
+- name: Restart or start {{ es_rr_name }}
+  ansible.builtin.include_tasks: planned_run.yml
+  when: not (es_rr_done | bool)

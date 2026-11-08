@@ -9,6 +9,10 @@
 # nodes (the elected master last): wait for green with every node present, restrict shard allocation to primaries, flush,
 # restart the VM through Proxmox, wait for the node to come back at its new size, restore allocation, wait for green.
 # It stops at the first node that fails. A node already at its target size is skipped, so running it again resumes.
+#
+# With es_restart_plan (docs/DESIGN_RECOVERY.md, slice 5b) it follows ECM's plan instead: the named nodes in the order given, a node whose VM is
+# stopped started rather than restarted, and a node that has been up for less time than the operation has existed skipped.
+# Extra vars for that: es_restart_plan, es_restart_present, es_restart_since.
 - name: Restart the nodes that are not at their target size, one at a time
   hosts: localhost
   connection: local
