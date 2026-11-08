@@ -72,6 +72,13 @@ class AnsibleRequest:
     # Rebuilding lost nodes uses the same steps with the new nodes being the rebuilt ones, but the cluster is expected to be
     # yellow (it is missing them), so the health gates ask for yellow or better instead of green.
     rebuild: bool = False
+    # A restart the operator planned (slice 5b of docs/DESIGN_RECOVERY.md): the nodes to restart or start in the order to go, as
+    # {"name", "action"}; the nodes that were in the cluster when it was planned (to ask about the cluster); and when the
+    # operation was made, as a Unix time, so a retry skips what it already restarted. Without a plan the restart is the one that
+    # follows a resize: the nodes not yet at their target size.
+    restart_plan: list[dict] | None = None
+    restart_present: list[str] | None = None
+    restart_since: int | None = None
     # Removing nodes: the ones going (they are not in `state`, which is what remains). Uses es_api_key and es_ca_pem to
     # drain them and, afterwards, to check the cluster is green without them.
     removing: list[str] | None = None
@@ -261,6 +268,10 @@ class CliAnsibleRunner:
                 raise AnsibleError("a rolling restart needs " + ", ".join(missing))
             if not str(request.pve_api_url).startswith("https://"):
                 raise AnsibleError("the Proxmox API address must start with https://")
+            if request.restart_plan is not None and not (request.restart_plan and request.restart_present
+                                                         and request.restart_since):
+                raise AnsibleError("a planned restart needs the plan, the nodes that were in the cluster when it was made, "
+                                   "and when the operation began")
 
     @staticmethod
     def _secret_vars(request: AnsibleRequest) -> dict[str, str]:
@@ -290,6 +301,9 @@ class CliAnsibleRunner:
             pve_ca = run_dir / "pve-ca.crt"
             _write_private(pve_ca, request.pve_ca_pem)
             out["pve_ca_file"] = str(pve_ca)
+        if request.restart_plan is not None:
+            out.update({"es_restart_plan": request.restart_plan, "es_restart_present": request.restart_present or [],
+                        "es_restart_since": request.restart_since or 0})
         return out
 
     @staticmethod

@@ -4,8 +4,10 @@ import {
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { ids } from "./checkboxIds";
 
 const MAX_GB = 65536;
+const box = ids("grow");
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 
 /**
@@ -68,10 +70,10 @@ export function GrowDisks({ cluster }: { cluster: ClusterDetail }) {
         <>
           {names.length > 1 && (
             <EuiFormRow label="Nodes" fullWidth>
-              <EuiCheckboxGroup options={names.map((n) => ({ id: n, label: `${n} (${disks[n]} GB)` }))}
-                idToSelectedMap={Object.fromEntries(names.map((n) => [n, picked[n] ?? true]))}
+              <EuiCheckboxGroup options={names.map((n) => ({ id: box.id(n), label: `${n} (${disks[n]} GB)` }))}
+                idToSelectedMap={Object.fromEntries(names.map((n) => [box.id(n), picked[n] ?? true]))}
                 onChange={(id) => setPicked({ ...Object.fromEntries(names.map((n) => [n, picked[n] ?? true])),
-                  [id]: !(picked[id] ?? true) })} />
+                  [box.name(id)]: !(picked[box.name(id)] ?? true) })} />
             </EuiFormRow>)}
           <EuiFormRow label="New size of each chosen disk (GB)" isInvalid={touched && !!problem}
             error={touched ? problem ?? undefined : undefined}>

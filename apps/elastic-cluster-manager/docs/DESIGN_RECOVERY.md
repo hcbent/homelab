@@ -1,6 +1,6 @@
 # Recovery workflows: proposed design (Phase 5, slice 5)
 
-**Status: APPROVED on 2026-11-07 with the operator's answers below (all five proposals accepted except decision 2, where the operator chose to refuse a red cluster); slice 5a is BUILT (backend, join-check gate and UI, tested offline, not run on any cluster); 5b is not built.** The operator left the meaning of "recovery" open (the candidates were restarting a
+**Status: APPROVED on 2026-11-07 with the operator's answers below (all five proposals accepted except decision 2, where the operator chose to refuse a red cluster); slice 5a is BUILT and was run on a real cluster (see the live results below); slice 5b (restart nodes) is BUILT, tested offline, not run on any cluster.** The operator left the meaning of "recovery" open (the candidates were restarting a
 node, re-running a converge and rebuilding a node whose machine is lost), so this proposes a scope and asks for the decisions at the end.
 Items marked *to confirm* have not been checked against this project's Proxmox, provider or Elasticsearch.
 
@@ -221,4 +221,28 @@ The operator stopped `test-5a-06` (VM 505, a data node) and, with its VM still i
 - **A gap this leaves, for 5b or later:** a node whose machine exists but that will not come back (Elasticsearch will not start, the guest is broken) can be neither rebuilt (the machine exists), forgotten (same), nor removed
   (it is down). Starting or restarting (5b) fixes the usual case. For a machine that cannot be recovered, the way out today is a teardown of the whole cluster; a "remove a down node" workflow (no drain, since there is nothing
   to move, and Terraform destroys the machine and its disks) would close it, and is a decision for the operator.
+
+## As built (slice 5b): restart nodes
+
+- **An operation of its own, with no Terraform.** `es.restart`, phases `plan, approval, restart` (`provisioning/restart.py`, `start_restart` in `operation.py`, dispatched from `run_operation`). It is a separate kind so
+  that an empty Terraform plan, which skips the approval by design, can never carry a restart. The plan is made when the operator asks (`plan_restart_nodes` in `lifecycle.py`, from a live read of the cluster) and is the ordered
+  list of nodes and what is done to each; **the digest the operator approves is a hash of the cluster and that list**, so what runs is exactly what was approved, and a different plan has a different digest.
+- **The request** (`POST /api/clusters/{id}/restart-nodes`) names nodes, or none for every node. **The order** is decided in Python so it can be shown: nodes that are down first (the cluster cannot be green until they are back), then
+  coordinating-only, data and master-eligible nodes, the elected master last. **Refused:** a single-node cluster, an unknown node, no elected master, another node being down that is not in the request, a node that is not in the cluster
+  and has no machine (it is lost: Recovery), a VM ID that now belongs to another machine, a restart of a node the cluster has when it is red, and when it is yellow with nothing down to explain it. **Warned:** a node that holds the only copy of
+  a shard (those indices are unavailable while it restarts) and the elected master.
+- **The playbook** is the rolling restart with a new path (`es_restart_plan`; the old size-based path, used after a resize, is unchanged and now lives in `sized.yml`). For each node in the plan it decides **from what is true at that moment**:
+  a node the cluster has gets the full treatment (green with every node first, allocation restricted to primaries, flush, a Proxmox reboot, wait for it to rejoin, allocation allowed, green); a node it does not have is **started if its VM is
+  stopped and restarted if it runs**, after only checking that the cluster answers. A node that has been **up for less time than the operation has existed** is skipped, which is how a retry resumes without any record of its own (the
+  comparison is of two durations, so the clocks of the machines need not agree). A final gate waits for green with every node.
+- **A bug the tests found:** Ansible's `now(utc=true)` is a naive UTC time, so `.timestamp()` on it is out by the machine's offset from UTC; on a machine on EST a node looked already restarted. The playbook uses `now()`.
+- **Rights:** the pre-flight asks only for `VM.PowerMgmt` on the pool (a new `restarting` flag), and the ownership check covers only the machines in the plan, at the start and again before it runs.
+- **Not as designed: "apply pending configuration".** The design also wanted "every node with a configuration change pending". ECM does not know which nodes those are, so the panel offers **Select every node**, which restarts nodes that did not need it.
+  Detecting the pending ones is in `docs/TODO.md`.
+- **The UI:** a Restart nodes panel (every node with its roles, a note on a node that is down and what will happen to it, a lost node shown but not selectable, Select every node and Clear), and on the operation page the order table with what
+  happens to each node, the warnings, "Approve and restart", and messages that say what stays done after a failure.
+- **A bug found while testing the panel, not about restarts:** every panel that lists the nodes (Remove, Resize, Grow disks, Recovery) used the bare node name as its checkbox's DOM id, so the ids repeated across panels and a label in a later panel
+  toggled the first panel's box. Each panel now prefixes its own (`checkboxIds.ts`), and a test fails if two checkboxes on the page share an id.
+- **Unverified on a real cluster:** all of it. In particular that `GET _nodes/stats/jvm?filter_path=nodes.*.name,nodes.*.jvm.uptime_in_millis` returns what the fake does, Proxmox's `status/start` and `status/current` calls and the right they need, a
+  start of a node whose VM was stopped, and a restart of a VM that runs while its node is not in the cluster.
 

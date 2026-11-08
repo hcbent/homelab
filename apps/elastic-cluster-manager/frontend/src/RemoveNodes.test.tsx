@@ -36,23 +36,25 @@ function app(lifecycle: unknown, extra: Record<string, [number, unknown]> = {}) 
 }
 const panel = () => screen.findByRole("heading", { name: "Remove nodes" });
 const plan = () => screen.getByRole("button", { name: "Plan the removal" });
+/** The panel's own contents: the Restart panel lists the same nodes, so a page-wide label query would find both. */
+const inPanel = async () => within((await panel()).closest(".ecm-lifecycle") as HTMLElement);
 
 test("the panel says the data moves first, shows each node with its roles and host, and counts the masters", async () => {
   app(LIFE);
-  await panel();
+  const mine = await inPanel();
   expect(screen.getByText("The data is moved off a node before its machine is destroyed")).toBeInTheDocument();
   expect(screen.getByText(/The cluster has 3 master-eligible nodes: it needs at least 3/)).toBeInTheDocument();
-  expect(screen.getByLabelText("lab-d-01: master (counts towards the master quorum), on pve1")).toBeInTheDocument();
-  expect(screen.getByLabelText("lab-d-04: data, ingest, on pve1")).toBeInTheDocument();
-  expect(screen.getByLabelText("lab-d-05: coordinating only, on pve2")).toBeInTheDocument();
+  expect(mine.getByLabelText("lab-d-01: master (counts towards the master quorum), on pve1")).toBeInTheDocument();
+  expect(mine.getByLabelText("lab-d-04: data, ingest, on pve1")).toBeInTheDocument();
+  expect(mine.getByLabelText("lab-d-05: coordinating only, on pve2")).toBeInTheDocument();
   expect(plan()).toBeDisabled();                                                       // nothing is chosen yet
 });
 
 test("nothing is sent until the cluster name is typed, and then the chosen nodes and the name are posted", async () => {
   const fn = app(LIFE, { "POST /api/clusters/c1/remove-nodes": [202, { operation_id: "rm1", change: {} }] });
-  await panel();
-  await userEvent.click(screen.getByLabelText(/lab-d-05/));
-  await userEvent.click(screen.getByLabelText(/lab-d-04/));
+  const mine = await inPanel();
+  await userEvent.click(mine.getByLabelText(/lab-d-05/));
+  await userEvent.click(mine.getByLabelText(/lab-d-04/));
   await userEvent.click(plan());
   const dialog = await screen.findByRole("alertdialog");
   expect(within(dialog).getByText(/ECM will check whether lab-d-04, lab-d-05 can be removed/)).toBeInTheDocument();
@@ -67,8 +69,8 @@ test("nothing is sent until the cluster name is typed, and then the chosen nodes
 
 test("a refusal from ECM is shown with its reason and nothing navigates", async () => {
   app(LIFE, { "POST /api/clusters/c1/remove-nodes": [409, { detail: "removing lab-d-01 would break the quorum: only 2 master-eligible nodes would remain" }] });
-  await panel();
-  await userEvent.click(screen.getByLabelText(/lab-d-01/));
+  const mine = await inPanel();
+  await userEvent.click(mine.getByLabelText(/lab-d-01/));
   await userEvent.click(plan());
   const dialog = await screen.findByRole("alertdialog");
   await userEvent.type(within(dialog).getByLabelText("Type lab-d to confirm"), "lab-d");
@@ -88,7 +90,7 @@ test("while another operation runs the form is replaced by a link to it", async 
 
 test("a cluster that cannot be changed, or is not one ECM built, offers nothing to remove", async () => {
   app({ ...LIFE, can_change: false });
-  await panel();
-  expect(screen.getByText("This cluster cannot be changed right now.")).toBeInTheDocument();
-  expect(screen.queryByLabelText(/lab-d-01/)).not.toBeInTheDocument();
+  const mine = (await panel()).closest(".ecm-lifecycle") as HTMLElement;
+  expect(within(mine).getByText("This cluster cannot be changed right now.")).toBeInTheDocument();
+  expect(within(mine).queryByLabelText(/lab-d-01/)).not.toBeInTheDocument();
 });

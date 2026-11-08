@@ -10,7 +10,7 @@ import { useInterval } from "./useInterval";
 
 const TERMINAL = ["succeeded", "failed", "cancelled"];
 export const KIND: Record<string, string> = {
-  "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "tf.update": "Change cluster",
+  "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "tf.update": "Change cluster", "es.restart": "Restart nodes",
   "demo.noop": "Demo job",
 };
 const STATE_COLOR: Record<string, string> = {
@@ -25,7 +25,7 @@ const STEP_STATUS: Record<string, string> = {
 };
 const STEP_TEXT: Record<string, string> = {
   render: "Prepare the configuration", init: "Initialise Terraform", plan: "Plan the changes",
-  approval: "Wait for your approval", drain: "Move the data off the nodes", apply: "Make the changes on Proxmox", configure: "Install and start Elasticsearch",
+  approval: "Wait for your approval", restart: "Restart the nodes one at a time", drain: "Move the data off the nodes", apply: "Make the changes on Proxmox", configure: "Install and start Elasticsearch",
 };
 const MAX_LOG_LINES = 400;
 
@@ -46,6 +46,17 @@ export function terraformText(kind: string, s: PlanSummary | null): string {
   if (s.deletes) parts.push(`destroy ${s.deletes} virtual machine${s.deletes > 1 ? "s" : ""}`);
   if (!parts.length) return kind === "tf.destroy" ? "Nothing left to destroy" : "No changes";
   const text = parts.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** What a restart will do, in plain words. */
+export function restartText(s: PlanSummary | null): string {
+  const restart = s?.restart ?? 0;
+  const start = s?.start ?? 0;
+  const parts: string[] = [];
+  if (restart) parts.push(`restart ${restart} node${restart > 1 ? "s" : ""}`);
+  if (start) parts.push(`start ${start} node${start > 1 ? "s" : ""} that ${start > 1 ? "are" : "is"} down`);
+  const text = parts.join(" and ") || "No nodes";
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
@@ -129,6 +140,32 @@ function ForgottenNodes({ change }: { change: NonNullable<Detail["change"]> }) {
   );
 }
 
+interface PlannedNode {
+  name: string; position: number; action: string; host: string | null; vm_id: number; roles: string;
+}
+
+/** The order a restart will go in, and what is done to each node: restarted, or started when it is down. */
+function RestartOrder({ change }: { change: NonNullable<Detail["change"]> }) {
+  const nodes = Object.entries((change.nodes ?? {}) as Record<string, Omit<PlannedNode, "name">>)
+    .map(([name, n]) => ({ name, ...n })).sort((a, b) => a.position - b.position);
+  const columns: EuiBasicTableColumn<PlannedNode>[] = [
+    { field: "position", name: "Order" },
+    { name: "Node", render: (n: PlannedNode) => <span className="ecm-mono">{n.name}</span> },
+    { name: "What happens", render: (n: PlannedNode) => (n.action === "start" ? "Started (it is not in the cluster)" : "Restarted") },
+    { name: "Proxmox host", render: (n: PlannedNode) => <span className="ecm-mono">{n.host}</span> },
+    { field: "vm_id", name: "VM ID" },
+    { field: "roles", name: "Roles" },
+  ];
+  return (
+    <div className="ecm-stack-lg">
+      <h4 className="ecm-label">The order the nodes go in</h4>
+      <EuiBasicTable<PlannedNode> tableCaption="The order the nodes go in" items={nodes} columns={columns} rowHeader="name" />
+      {(change.warnings ?? []).map((w) => (
+        <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
+    </div>
+  );
+}
+
 /** One operation: its steps, the plan and its digest, the actions that apply, the result and the log. */
 export function OperationDetail({ id }: { id: string }) {
   const [op, setOp] = useState<Detail | null>(null);
@@ -176,6 +213,7 @@ export function OperationDetail({ id }: { id: string }) {
   const destroying = op.kind === "tf.destroy";
   const removing = op.kind === "tf.update" && op.change?.kind === "remove_nodes";
   const forgetting = op.kind === "tf.update" && op.change?.kind === "forget_nodes";
+  const restarting = op.kind === "es.restart";
   const rebuilding = op.kind === "tf.update" && op.change?.kind === "rebuild_nodes";
   const drainFailed = op.steps.some((s) => s.name === "drain" && s.status === "failed");
   const summary = op.plan?.summary ?? null;
@@ -222,7 +260,8 @@ export function OperationDetail({ id }: { id: string }) {
           aria-label="The plan">
           <h3 className="ecm-h3">The plan</h3>
           <EuiDescriptionList type="column" compressed listItems={[
-            { title: "On Proxmox", description: forgetting ? "Nothing: the machines are already gone" : terraformText(op.kind, summary) },
+            { title: restarting ? "What happens" : "On Proxmox",
+              description: restarting ? restartText(summary) : forgetting ? "Nothing: the machines are already gone" : terraformText(op.kind, summary) },
             ...(summary?.configure
               ? [{ title: "Then", description: summary.configure.charAt(0).toUpperCase() + summary.configure.slice(1) }]
               : []),
@@ -230,6 +269,7 @@ export function OperationDetail({ id }: { id: string }) {
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
           {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
+          {op.change?.kind === "restart_nodes" && <RestartOrder change={op.change} />}
           {op.change?.kind === "rebuild_nodes" && <AddedNodes change={op.change} title="The nodes this rebuilds" first="Lost node" />}
           {op.change?.kind === "forget_nodes" && <ForgottenNodes change={op.change} />}
           {op.dry_run && (
@@ -240,7 +280,7 @@ export function OperationDetail({ id }: { id: string }) {
             <div className="ecm-detail__actions">
               <EuiButton fill color={destroying || removing ? "danger" : "primary"} isDisabled={busy}
                 onClick={() => setConfirming(true)}>
-                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : forgetting ? "Approve and forget"
+                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : forgetting ? "Approve and forget" : restarting ? "Approve and restart"
                   : rebuilding ? "Approve and rebuild" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
               <EuiButtonEmpty isDisabled={busy} onClick={() => act("cancel")}>Cancel</EuiButtonEmpty>
               <span className="ecm-small">Nothing changes until you approve.</span>
@@ -254,6 +294,9 @@ export function OperationDetail({ id }: { id: string }) {
       {op.state === "failed" && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
+          {restarting && (
+            <p>Nodes already restarted stay restarted. Retry plans again and needs a new approval; it skips every node that has been restarted
+              since this operation began.</p>)}
           {!op.dry_run && op.kind === "tf.update" && (
             forgetting ? (
               <p>Nothing was destroyed, because the machines were already gone. Retry plans again and needs a new approval.</p>
@@ -295,6 +338,11 @@ export function OperationDetail({ id }: { id: string }) {
       {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "add_node" && (
         <EuiCallOut color="success" iconType="check" title="The new nodes joined the cluster">
           <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && restarting && (
+        <EuiCallOut color="success" iconType="check" title="The nodes are restarted">
+          <p>Each node in the plan was restarted (or started) in turn, with the cluster green between them.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && rebuilding && (
@@ -348,6 +396,9 @@ export function OperationDetail({ id }: { id: string }) {
           onConfirm={() => { setConfirming(false); act("approve", { digest: op.plan!.digest }); }}>
           {destroying
             ? <p>{terraformText(op.kind, summary)}. The machines and anything stored on them are gone for good.</p>
+            : restarting
+            ? <p>{restartText(summary)}. Each node is briefly out of the cluster, and ECM waits for the cluster to be green before each. This
+              approves exactly the plan with this digest.</p>
             : forgetting
             ? <p>Nothing is destroyed: the machines are already gone. ECM takes the nodes out of its record. This approves exactly
               the plan with this digest.</p>

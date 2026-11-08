@@ -99,3 +99,10 @@ first-converge drift described in `docs/DESIGN_RECOVERY.md`), and nothing restar
 Propose: run it only when a master-eligible node leaves (its address leaves the seed list), and otherwise skip the step and say so ("no remaining node's configuration refers to the removed nodes"). A removal would still run its check
 that the cluster is green without them. The alternative is to keep running it, as a deliberate reconcile. Done when a forget or removal of non-master nodes skips the converge and says why, one of a master still runs it, and tests show both.
 
+## Restart only the nodes whose configuration is waiting for a restart
+
+**Left over from slice 5b (2026-11-08).** Every converge after an add, a removal or a forget says, per node, "has not been restarted; the change takes effect at the next rolling restart", but ECM does not record which nodes that
+is, so the Restart nodes panel can only offer "Select every node", which restarts nodes that did not need it. Two ways to know: (1) have the playbook report the hosts where `Write elasticsearch.yml` (or the heap file) changed while
+`es_allow_restart` was false, and keep that list on the cluster until those nodes restart; or (2) read it from each node when the restart is planned, by asking whether the configuration file is newer than the service's start time (an SSH
+probe, since nothing else can tell). (2) needs no new state and cannot go stale; (1) needs a column and a migration. Done when the panel marks the nodes that are waiting and offers "Restart the nodes that are waiting".
+

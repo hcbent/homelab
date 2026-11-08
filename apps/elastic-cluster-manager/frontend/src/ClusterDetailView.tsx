@@ -11,6 +11,7 @@ import { GrowDisks } from "./GrowDisks";
 import { Recovery } from "./Recovery";
 import { RemoveNodes } from "./RemoveNodes";
 import { Resize } from "./Resize";
+import { RestartNodes } from "./RestartNodes";
 import { ago, bytes, storedNumber } from "./format";
 import { RefreshControl } from "./RefreshControl";
 import { useReveals } from "./reveal";
@@ -213,6 +214,7 @@ export function ClusterDetailView({ id }: { id: string }) {
       <RemoveNodes cluster={c} />
       <Recovery cluster={c} />
       <Resize cluster={c} />
+      <RestartNodes cluster={c} />
       <GrowDisks cluster={c} />
       <ClusterLifecycle cluster={c} />
     </section>

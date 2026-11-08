@@ -2,7 +2,9 @@ import { EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFormRow, EuiLink, EuiPanel 
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { ids } from "./checkboxIds";
 
+const box = ids("remove");
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 
 /**
@@ -68,9 +70,9 @@ export function RemoveNodes({ cluster }: { cluster: ClusterDetail }) {
         <>
           <EuiFormRow label="Nodes to remove" fullWidth>
             <EuiCheckboxGroup
-              options={names.map((n) => ({ id: n, label: label(n) }))}
-              idToSelectedMap={Object.fromEntries(names.map((n) => [n, !!picked[n]]))}
-              onChange={(id) => setPicked({ ...picked, [id]: !picked[id] })} />
+              options={names.map((n) => ({ id: box.id(n), label: label(n) }))}
+              idToSelectedMap={Object.fromEntries(names.map((n) => [box.id(n), !!picked[n]]))}
+              onChange={(id) => setPicked({ ...picked, [box.name(id)]: !picked[box.name(id)] })} />
           </EuiFormRow>
           <div>
             <EuiButton iconType="trash" color="danger" isDisabled={chosen.length === 0 || planning}

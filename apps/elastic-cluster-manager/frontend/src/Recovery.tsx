@@ -2,7 +2,9 @@ import { EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFormRow, EuiLink, EuiPanel,
 import { useEffect, useState } from "react";
 import { api, ApiError, ClusterDetail, Infrastructure } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { ids } from "./checkboxIds";
 
+const box = ids("recover");
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 
 /**
@@ -74,10 +76,10 @@ export function Recovery({ cluster }: { cluster: ClusterDetail }) {
         <>
           <EuiFormRow label="Lost nodes" fullWidth>
             <EuiCheckboxGroup
-              options={lost.map((n) => ({ id: n, label: n }))}
-              idToSelectedMap={Object.fromEntries(lost.map((n) => [n, picked[n] ?? true]))}
+              options={lost.map((n) => ({ id: box.id(n), label: n }))}
+              idToSelectedMap={Object.fromEntries(lost.map((n) => [box.id(n), picked[n] ?? true]))}
               onChange={(id) => setPicked({ ...Object.fromEntries(lost.map((n) => [n, picked[n] ?? true])),
-                [id]: !(picked[id] ?? true) })} />
+                [box.name(id)]: !(picked[box.name(id)] ?? true) })} />
           </EuiFormRow>
           <EuiFormRow label="Proxmox host for a rebuild" helpText="Leave on automatic: each node goes back to its old host if that is online, and ECM places it otherwise.">
             <EuiSelect options={[{ value: "", text: "Automatic" }, ...hosts.map((h) => ({ value: h, text: h }))]}

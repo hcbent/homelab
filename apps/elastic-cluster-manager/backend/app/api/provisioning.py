@@ -22,14 +22,16 @@ from app.provisioning.lifecycle import (
     RebuildNodes,
     RemoveNodes,
     ResizeNodes,
+    RestartNodes,
     plan_add_nodes,
     plan_expand_disk,
     plan_forget_nodes,
     plan_rebuild_nodes,
     plan_remove_nodes,
     plan_resize,
+    plan_restart_nodes,
 )
-from app.provisioning.operation import OperationRefused, remove_cluster, start_update
+from app.provisioning.operation import OperationRefused, remove_cluster, start_restart, start_update
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
                    dependencies=[Depends(auth.require_csrf_header)])
@@ -99,7 +101,8 @@ def remove(cluster_id: str, body: RemoveBody, db: Session = Depends(get_db),
         raise HTTPException(409, str(e)) from e
 
 
-async def _plan_change(db: Session, cluster_id: str, user: User, make_params, *, reads_cluster: bool = False) -> dict:
+async def _plan_change(db: Session, cluster_id: str, user: User, make_params, *, reads_cluster: bool = False,
+                       start=start_update) -> dict:
     """Plan a change to a built cluster from its current state and enqueue the job. Nothing changes until the plan
     is approved on its operation page. A plan that has to read the cluster over the network runs off the event loop."""
     cluster = db.get(Cluster, cluster_id)
@@ -107,7 +110,7 @@ async def _plan_change(db: Session, cluster_id: str, user: User, make_params, *,
         raise HTTPException(404, "cluster not found")
     try:
         params = await run_in_threadpool(make_params, db, cluster) if reads_cluster else make_params(db, cluster)
-        op = start_update(db, cluster_id=cluster.id, params=params, actor=user.username)
+        op = start(db, cluster_id=cluster.id, params=params, actor=user.username)
     except (OperationRefused, operations.OperationConflict) as e:
         raise HTTPException(409, str(e)) from e
     from app.jobs import tf_run
@@ -170,6 +173,16 @@ async def forget_nodes(cluster_id: str, body: ForgetNodes, db: Session = Depends
     """Plan taking lost nodes out of the cluster's record, destroying nothing. Refused for a node whose machine exists (use
     remove-nodes), a red cluster, or a removal that would break the quorum. The cluster name must be typed in `confirm_name`."""
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_forget_nodes(d, c, body), reads_cluster=True)
+
+
+@router.post("/{cluster_id}/restart-nodes", status_code=202)
+async def restart_nodes(cluster_id: str, body: RestartNodes, db: Session = Depends(get_db),
+                        user: User = Depends(auth.current_user)):
+    """Plan restarting nodes (all of them when none are named): ECM reads the cluster, decides the order (nodes that are down are
+    brought back first, then coordinating, data and master-eligible nodes, the elected master last), and refuses what cannot be done
+    safely. This only makes a plan; nothing restarts until it is approved on its operation page."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_restart_nodes(d, c, body), reads_cluster=True,
+                              start=start_restart)
 
 
 versions_router = APIRouter(prefix="/api/versions", tags=["provisioning"])

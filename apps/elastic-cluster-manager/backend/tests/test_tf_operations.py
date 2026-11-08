@@ -1137,7 +1137,7 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
                    "sizes": {n: {"cores": 4, "ram_mb": 8192} for n in NODES},
                    "node_roles": {n: {"roles": got["node_roles"][n]["roles"], "master_eligible": True, "holds_data": True,
                                       "host": f"pve{i % 3 + 1}"} for i, n in enumerate(NODES)},
-                   "node_state": {n: {"machine": False, "in_cluster": False} for n in NODES},   # nothing synced in this test
+                   "node_state": {n: {"machine": False, "in_cluster": False, "vm_status": None} for n in NODES},   # nothing synced in this test
                    "remove_blocker": "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"}
 
 

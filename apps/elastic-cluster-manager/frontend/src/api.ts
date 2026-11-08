@@ -38,6 +38,8 @@ export interface Operation {
 /** What a plan will do, as the API stores it. `configure` is what happens to the machines after Terraform. */
 export interface PlanSummary {
   adds?: number; updates?: number; deletes?: number; has_changes?: boolean; configure?: string | null;
+  /** A restart's plan: how many nodes are restarted and how many are started because they are down. */
+  restart?: number; start?: number;
 }
 export interface OperationStep { seq: number; name: string; status: string; detail: string | null }
 export interface OperationLogLine { ts: string; stream: string; line: string }
@@ -95,7 +97,7 @@ export interface Lifecycle {
   /** Each node's roles (empty for coordinating only), Proxmox host and whether it counts towards the master quorum. */
   node_roles?: Record<string, { roles: string[]; master_eligible: boolean; holds_data: boolean; host: string | null }>;
   /** What the last syncs saw of each node: whether its machine is in Proxmox (null if unknown) and whether Elasticsearch reports it. */
-  node_state?: Record<string, { machine: boolean | null; in_cluster: boolean }>;
+  node_state?: Record<string, { machine: boolean | null; in_cluster: boolean; vm_status?: string | null }>;
 }
 
 export interface ClusterDetail extends ClusterSummary {

@@ -805,3 +805,109 @@ def plan_forget_nodes(db: Session, cluster: Cluster, request: ForgetNodes, clien
                      "nodes that remain in line with it"),
     }
     return params
+
+
+# -- restarting nodes (docs/DESIGN_RECOVERY.md, slice 5b) ---------------------------------------------------------------------
+
+
+class RestartNodes(BaseModel):
+    """Restart these nodes, or every node when none are named. A node the cluster does not have is started (if its VM is stopped)
+    or restarted (if it runs) instead, and is done first."""
+
+    model_config = ConfigDict(extra="forbid")
+    nodes: list[str] | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "RestartNodes":
+        if self.nodes is not None and len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("the same node is listed twice")
+        return self
+
+
+def _restart_class(node: NodeSpec) -> int:
+    """The order a rolling restart goes in: nodes that only route requests, then data nodes, then master-eligible nodes."""
+    return 2 if node.is_master_eligible else (1 if node.effective_roles else 0)
+
+
+def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, client=None) -> dict:
+    """The parameters for a restart: which nodes, in what order, and what is done to each, after refusing what cannot be done
+    safely. The order is the rolling restart's (nodes that are down first, since the cluster cannot be green until they are back;
+    then coordinating-only, data and master-eligible nodes, the elected master last), decided here from a live read of the cluster so
+    it can be shown and approved. Nothing is changed here."""
+    params = current_desired(cluster)
+    state = DesiredState.model_validate(params["state"])
+    if state.is_single_node:
+        raise OperationRefused("this is a single-node cluster: it would be down while its machine restarts, and there is no "
+                               "replica to carry it, so ECM does not restart it")
+    by_name = {n.name: n for n in state.nodes}
+    names = sorted(request.nodes) if request.nodes is not None else sorted(by_name)
+    unknown = sorted(set(names) - set(by_name))
+    if unknown:
+        raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
+
+    view = _read_cluster(db, cluster, client)
+    elected = ((view["master"] or [{}])[0] or {}).get("node")
+    if not elected:
+        raise OperationRefused("the cluster has no elected master, so ECM cannot ask it anything. That is quorum loss, which is "
+                               "recovered by hand, not by ECM")
+    live = {info.get("name") for info in view["nodes"].values()}
+    health = view["health"].get("status")
+    other_absent = sorted(set(by_name) - set(names) - live)
+    if other_absent:
+        raise OperationRefused(f"Elasticsearch does not report {', '.join(other_absent)}, which are not in this request: include "
+                               "them (a node that is down is started or restarted first) or bring them back before restarting others")
+
+    conn_id = params.get("proxmox_connection_id")
+    actions: dict[str, str] = {}
+    for name in names:
+        if name in live:
+            actions[name] = "restart"
+            continue
+        vmid = int(params["vm_ids"][name])
+        row = db.scalar(select(Vm).where(Vm.connection_id == conn_id, Vm.vmid == vmid))
+        if row is None:
+            raise OperationRefused(f"{name} is not in the cluster and its machine (VM {vmid}) is not in Proxmox: it is lost, so it "
+                                   "is rebuilt or forgotten (the Recovery panel), not restarted")
+        if row.name != name:
+            raise OperationRefused(f"VM ID {vmid}, which was {name}'s, now belongs to a machine named {row.name}")
+        actions[name] = "start" if row.status == "stopped" else "restart"
+
+    restarting = [n for n in names if n in live]
+    down = [n for n in names if n not in live]
+    if restarting and health == "red":
+        raise OperationRefused("the cluster is red, so no node is restarted: start the nodes that are down first (a request naming "
+                               "only them), and restart the others once it is yellow or green")
+    if restarting and health != "green" and not down:
+        raise OperationRefused(f"the cluster is {health}, and a node is restarted only from a green cluster: wait for it, or find "
+                               "what is wrong first")
+
+    shards = view["shards"]
+    copies: dict[tuple, list[str]] = defaultdict(list)
+    for sh in shards:
+        if sh.get("state") == "STARTED" and sh.get("node"):
+            copies[(sh["index"], sh["shard"])].append(sh["node"])
+    notes: list[str] = []
+    for name in restarting:
+        only = sorted(f"{i}[{sh}]" for (i, sh), where in copies.items() if where == [name])
+        if only:
+            notes.append(f"{name} holds the only copy of {len(only)} shard{'s' if len(only) != 1 else ''} ({_some(only)}); "
+                         "those indices are unavailable while it restarts")
+    if elected in restarting:
+        notes.append(f"{elected} is the elected master, so it goes last and a new master is elected while it is down")
+
+    # Nodes that are down first (the cluster cannot be green until they are back), then the rolling restart's order.
+    ordered_down = sorted(down)
+    ordered_up = sorted(restarting, key=lambda n: (_restart_class(by_name[n]), n == elected, n))
+    order = [*ordered_down, *ordered_up]
+    placement = params.get("placement", {})
+    params["change"] = {
+        "kind": "restart_nodes", "order": order, "present": sorted(live), "warnings": notes,
+        "nodes": {n: {"action": actions[n], "host": placement.get(n), "vm_id": int(params["vm_ids"][n]),
+                      "roles": ", ".join(sorted(by_name[n].effective_roles)) or "none (coordinating only)",
+                      "position": i + 1} for i, n in enumerate(order)},
+        "describe": (f"restart {len(order)} node{'s' if len(order) != 1 else ''} one at a time ({', '.join(order)}): ECM waits for the "
+                     "cluster to be green before each, holds back shard allocation while a node is down, and goes masters last"
+                     + (f"; {', '.join(ordered_down)} {'is' if len(ordered_down) == 1 else 'are'} not in the cluster, so "
+                        f"{'it is' if len(ordered_down) == 1 else 'they are'} brought back first" if ordered_down else "")),
+    }
+    return params

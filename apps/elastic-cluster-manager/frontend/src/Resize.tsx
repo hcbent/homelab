@@ -4,7 +4,9 @@ import {
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { ids } from "./checkboxIds";
 
+const box = ids("resize");
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 const whole = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
 const gib = (mb: number) => `${mb / 1024} GiB`;
@@ -80,10 +82,10 @@ export function Resize({ cluster }: { cluster: ClusterDetail }) {
         <>
           <EuiFormRow label="Nodes" fullWidth>
             <EuiCheckboxGroup
-              options={names.map((n) => ({ id: n, label: `${n} (${sizes[n].cores} cores, ${gib(sizes[n].ram_mb)})` }))}
-              idToSelectedMap={Object.fromEntries(names.map((n) => [n, picked[n] ?? true]))}
+              options={names.map((n) => ({ id: box.id(n), label: `${n} (${sizes[n].cores} cores, ${gib(sizes[n].ram_mb)})` }))}
+              idToSelectedMap={Object.fromEntries(names.map((n) => [box.id(n), picked[n] ?? true]))}
               onChange={(id) => setPicked({ ...Object.fromEntries(names.map((n) => [n, picked[n] ?? true])),
-                [id]: !(picked[id] ?? true) })} />
+                [box.name(id)]: !(picked[box.name(id)] ?? true) })} />
           </EuiFormRow>
           <EuiFormRow label="Cores per node (leave empty to keep)" isInvalid={touched && !!problem}>
             <EuiFieldNumber value={cores} onBlur={() => setTouched(true)} onChange={(e) => setCores(e.target.value)} />

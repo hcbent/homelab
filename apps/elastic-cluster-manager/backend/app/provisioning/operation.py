@@ -70,6 +70,10 @@ RESIZE_PHASES = [*PHASES, "configure", "restart"]
 # Terraform destroy the machines (docs/DESIGN_REMOVE_NODE.md). The drain is after the approval, since it changes the
 # cluster, and before the apply, since a machine must be empty when it goes.
 REMOVE_PHASES = ["render", "init", "plan", "approval", "drain", "apply", "configure"]
+# Restarting nodes has no Terraform step: the plan is the list of nodes and what is done to each, and the approval is of that exact list
+# (docs/DESIGN_RECOVERY.md, slice 5b). It is its own kind so an empty Terraform plan, which skips the approval, can never carry it.
+RESTART = "es.restart"
+RESTART_NODES_PHASES = ["plan", "approval", "restart"]
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
@@ -191,6 +195,23 @@ def start_update(db: Session, *, cluster_id: str, params: dict, actor: str) -> O
     return op
 
 
+def start_restart(db: Session, *, cluster_id: str, params: dict, actor: str) -> Operation:
+    """Create the operation that restarts the nodes in `params["change"]` (see lifecycle.plan_restart_nodes). Only the machines it will
+    restart are checked for being ECM's. The caller enqueues the job."""
+    cluster = _managed_cluster(db, cluster_id)
+    if cluster.bootstrapped_at is None:
+        raise OperationRefused("this cluster has not finished being built, so there is nothing to restart yet")
+    change = params.get("change") or {}
+    mine = {"proxmox_connection_id": params.get("proxmox_connection_id"),
+            "vm_ids": {n: info["vm_id"] for n, info in (change.get("nodes") or {}).items()}}
+    foreign = foreign_machines(db, mine)
+    if foreign:
+        raise OperationRefused("a restart only touches machines ECM created, and these are not: " + ", ".join(foreign))
+    op = create_operation(db, RESTART, RESTART_NODES_PHASES, cluster_id=cluster.id, params=params, actor=actor)
+    audit.record(db, actor, "operation.start", "operation", op.id, kind=RESTART, change=change)
+    return op
+
+
 def start_cleanup(db: Session, *, create_op_id: str, confirm_name: str, actor: str,
                   confirm_data_loss: bool = False) -> Operation:
     """Create the destroy operation that removes what a create made: the partial result of one that failed, or
@@ -287,13 +308,16 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
                if cluster.desired and cluster.bootstrapped_at else {})
     # What the Remove nodes panel offers: each node's roles, where it runs and whether it counts towards the quorum.
     seen = {r.name for r in db.scalars(select(EsNode).where(EsNode.cluster_id == cluster.id))}
-    machines = {(v.vmid, v.name) for v in db.scalars(select(Vm).where(
+    machines = {(v.vmid, v.name): v.status for v in db.scalars(select(Vm).where(
         Vm.connection_id == (cluster.desired or {}).get("proxmox_connection_id")))}
     vm_ids = (cluster.desired or {}).get("vm_ids") or {}
     # What the last syncs saw of each node, for the Recovery panel: whether its machine is in Proxmox and whether
     # Elasticsearch reports it. A node with neither is lost.
     node_state = {name: {"machine": (int(vm_ids[name]), name) in machines if name in vm_ids else None,
-                         "in_cluster": name in seen} for name in members}
+                         "in_cluster": name in seen,
+                         # what Proxmox last said the machine was doing (running, stopped), when it has one
+                         "vm_status": machines.get((int(vm_ids[name]), name)) if name in vm_ids else None}
+                  for name in members}
     roles = {name: {"roles": sorted(n.effective_roles), "master_eligible": n.is_master_eligible,
                     "holds_data": n.holds_data, "host": placement.get(name)} for name, n in members.items()}
     blocker = _removal_blocker(db, cluster)
@@ -367,6 +391,12 @@ def run_operation(db: Session, op_id: str, make_runner: RunnerFactory = default_
                   root: Path | None = None, make_ansible: AnsibleFactory = default_ansible) -> None:
     """Run or resume a Terraform operation. This is the body of the `tf.run` job."""
     op = db.get(Operation, op_id)
+    if op.kind == RESTART:
+        from app.provisioning.restart import (
+            RestartHandlers,  # imported here: it needs this module whole
+        )
+        run_phases(db, op_id, RestartHandlers(db, op, make_ansible).handlers())
+        return
     workspace_root = root or Path(get_settings().tf_workspace_root)
     handlers = _Handlers(db, op, make_runner, workspace_root, make_ansible).handlers()
     try:

@@ -332,6 +332,48 @@ test("finished and failed recovery operations say what was and was not changed",
   expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
 });
 
+const RESTART_CHANGE = { kind: "restart_nodes", order: ["lab-d-04", "lab-d-05", "lab-d-01"],
+  warnings: ["lab-d-05 holds the only copy of 1 shard (solo[0]); those indices are unavailable while it restarts"],
+  nodes: {
+    "lab-d-04": { action: "start", host: "pve1", vm_id: 503, roles: "data", position: 1 },
+    "lab-d-05": { action: "restart", host: "pve2", vm_id: 504, roles: "data", position: 2 },
+    "lab-d-01": { action: "restart", host: "pve1", vm_id: 500, roles: "master", position: 3 } } };
+const RESTART_STEPS = ["plan", "approval", "restart"].map((name, seq) => ({
+  seq, name, status: seq < 1 ? "done" : seq === 1 ? "waiting" : "pending", detail: null }));
+
+test("a restart plan shows the order, what happens to each node and the warnings, and asks to approve and restart", async () => {
+  mockFetch(table({ "GET /api/operations/rs": [200, op({ id: "rs", kind: "es.restart", cluster_id: "c1", steps: RESTART_STEPS,
+    plan: { digest: DIGEST, approvable: true, summary: { restart: 2, start: 1, has_changes: true,
+      configure: "restart 3 nodes one at a time (lab-d-04, lab-d-05, lab-d-01)" } }, change: RESTART_CHANGE })] }));
+  render(<OperationDetail id="rs" />);
+  expect(await screen.findByRole("heading", { name: "Restart nodes" })).toBeInTheDocument();
+  expect(screen.getByText("The order the nodes go in", { selector: "h4" })).toBeInTheDocument();
+  expect(screen.getByText("Restart the nodes one at a time")).toBeInTheDocument();         // the step, in plain words
+  expect(screen.getByText("Restart 2 nodes and start 1 node that is down")).toBeInTheDocument();
+  const first = screen.getByText("lab-d-04").closest("tr")!;
+  expect(within(first).getByText("Started (it is not in the cluster)")).toBeInTheDocument();
+  expect(within(screen.getByText("lab-d-01").closest("tr")!).getByText("Restarted")).toBeInTheDocument();
+  expect(screen.getByText(/lab-d-05 holds the only copy of 1 shard/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve and restart" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(within(dialog).getByText(/Each node is briefly out of the cluster, and ECM waits for the cluster to be green before each/)).toBeInTheDocument();
+});
+
+test("a restart that failed says what stays done, and a finished one says the cluster is green", async () => {
+  mockFetch(table({
+    "GET /api/operations/bad": [200, op({ id: "bad", kind: "es.restart", state: "failed", cluster_id: "c1", plan: null, steps: RESTART_STEPS,
+      error: "The restart stopped at lab-d-05: the node did not come back", change: RESTART_CHANGE })],
+    "GET /api/operations/ok": [200, op({ id: "ok", kind: "es.restart", state: "succeeded", cluster_id: "c1", plan: null, steps: RESTART_STEPS,
+      change: RESTART_CHANGE })] }));
+  const { unmount } = render(<OperationDetail id="bad" />);
+  expect(await screen.findByText(/Nodes already restarted stay restarted. Retry plans again and needs a new approval/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  unmount();
+  render(<OperationDetail id="ok" />);
+  expect(await screen.findByText("The nodes are restarted")).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

@@ -233,6 +233,6 @@ def test_the_recovery_endpoints_refuse_a_bad_request_and_need_a_login(logged_in,
 
 def test_the_cluster_page_data_says_which_nodes_have_a_machine_and_are_in_the_cluster(logged_in, session, world, lost):
     state = logged_in.get(f"/api/clusters/{lost.id}").json()["lifecycle"]["node_state"]
-    assert state[LOST] == {"machine": False, "in_cluster": False}
-    assert state["lab-b-05"] == {"machine": True, "in_cluster": True}
+    assert state[LOST] == {"machine": False, "in_cluster": False, "vm_status": None}
+    assert state["lab-b-05"] == {"machine": True, "in_cluster": True, "vm_status": "running"}
     assert AnsibleError                                                  # imported for the shared fixtures' sake
