@@ -186,8 +186,12 @@ The operator deleted the VM of the master `test-5a-01` (pve1, VM 500) and rebuil
   second(s)" (the playbook's plain message did not apply to a timeout, which `failed_when` does not cover). The machine was kept. The cause of the slow cloud-init is not known (no console output was seen; the
   other rebuilt node and the original nodes on `pve2` all got through the same wait).
 - **Retry worked.** It planned again (nothing to create, since this operation's own apply had made the machine: the retry rule), ran the configure steps again, and the cluster page then showed `test-5a-01` back as
-  a master on `pve2`, VM 500, the cluster green with 6 nodes and 6 of 6 VMs linked. The operation page after the retry and the voting configuration (`GET _cluster/state/metadata?filter_path=metadata.cluster_coordination`)
-  have not been seen.
+  a master on `pve2`, VM 500, the cluster green with 6 nodes and 6 of 6 VMs linked. The operation page after the retry has not been seen.
+- **The voting configuration after the master rebuild** (`GET _cluster/state/metadata?filter_path=metadata.cluster_coordination`, the operator's output): term 2, `last_committed_config` and `last_accepted_config`
+  both the same **three** node IDs, and `voting_config_exclusions` empty. Three entries for three master-eligible nodes, nothing pending and nothing excluded, is what a cluster that took the rebuilt master in by itself
+  looks like, so the *to confirm* item (a rebuilt master-eligible node, same name and new node ID, joining the voting configuration) holds on this cluster. The three IDs were **not mapped to node names**; matching
+  them to `GET _cat/nodes?v&h=id,name,node.role&full_id=true` would rule out a stale entry for the old `test-5a-01` beyond doubt. Term 2 means one election since the cluster formed, consistent with the old
+  master having been the elected one.
 - **Changed because of it:** the first-boot wait now handles a cloud-init that is still running after its time (`first_boot_cloud_init_wait`, 900 seconds): it is not asked again (that would wait the same
   time again), `cloud-init status --long` and the end of `/var/log/cloud-init-output.log` are put in the log, and the failure says plainly that cloud-init was still running and that Retry is safe.
 
