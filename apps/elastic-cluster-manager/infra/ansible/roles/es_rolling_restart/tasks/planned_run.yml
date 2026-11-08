@@ -1,8 +1,11 @@
 ---
 # Restart or start one node. es_rr_in_cluster says whether the cluster has it now.
+- name: Find the host {{ es_rr_name }}'s VM is on
+  ansible.builtin.include_tasks: locate_vm.yml
+
 - name: Read the state of {{ es_rr_name }}'s VM in Proxmox
   ansible.builtin.uri:
-    url: "{{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/current"
+    url: "{{ pve_api_url }}/api2/json/nodes/{{ es_rr_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/current"
     headers:
       Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
     validate_certs: "{{ pve_verify_tls | bool }}"
@@ -61,7 +64,7 @@
     - name: Ask Proxmox to {{ 'start' if es_rr_vm_stopped | bool else 'restart' }} {{ es_rr_name }}'s VM
       ansible.builtin.uri:
         url: >-
-          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/{{ 'start' if es_rr_vm_stopped | bool else 'reboot' }}
+          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/{{ 'start' if es_rr_vm_stopped | bool else 'reboot' }}
         method: POST
         headers:
           Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
@@ -73,7 +76,7 @@
     - name: Wait for Proxmox to finish
       ansible.builtin.uri:
         url: >-
-          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/tasks/{{ es_rr_reboot.json.data | urlencode }}/status
+          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_pve_node }}/tasks/{{ es_rr_reboot.json.data | urlencode }}/status
         headers:
           Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
         validate_certs: "{{ pve_verify_tls | bool }}"

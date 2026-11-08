@@ -250,12 +250,14 @@ def preflight_problems(perms: dict, *, pool_id: str, datastore: str, template_vm
     problems: list[str] = []
     if restarting:
         # Restarting or starting a node only powers its VM off and on, so that is the one right it needs.
-        if not has_privilege(perms, f"/pool/{pool_id}", "VM.PowerMgmt"):
-            problems.append(f"no VM.PowerMgmt on /pool/{pool_id}, which restarting or starting a VM in it needs")
+        # VM.Audit lets it ask the cluster which host each VM is on now, which a VM that was moved needs.
+        for privilege in ("VM.PowerMgmt", "VM.Audit"):
+            if not has_privilege(perms, f"/pool/{pool_id}", privilege):
+                problems.append(f"no {privilege} on /pool/{pool_id}, which restarting or starting a VM in it needs")
         return problems
     if resizing:
         # Changing a VM's CPU or memory, and the restart that applies it, are done on the VMs in the pool.
-        for privilege in ("VM.Config.CPU", "VM.Config.Memory", "VM.PowerMgmt"):
+        for privilege in ("VM.Config.CPU", "VM.Config.Memory", "VM.PowerMgmt", "VM.Audit"):
             if not has_privilege(perms, f"/pool/{pool_id}", privilege):
                 problems.append(f"no {privilege} on /pool/{pool_id}, which a resize needs on the VMs in it")
     if not has_privilege(perms, f"/pool/{pool_id}", "VM.Allocate"):

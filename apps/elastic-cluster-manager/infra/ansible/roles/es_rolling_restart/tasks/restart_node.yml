@@ -5,6 +5,9 @@
     es_rr_node: "{{ hostvars[es_rr_name] }}"
     es_rr_allocation_changed: false
 
+- name: Find the host {{ es_rr_name }}'s VM is on
+  ansible.builtin.include_tasks: locate_vm.yml
+
 - name: Restart {{ es_rr_name }}
   block:
     - name: Wait for green with every node present, before restarting {{ es_rr_name }}
@@ -38,7 +41,7 @@
 
     - name: Ask Proxmox to restart {{ es_rr_name }}'s VM, which applies its new size
       ansible.builtin.uri:
-        url: "{{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/reboot"
+        url: "{{ pve_api_url }}/api2/json/nodes/{{ es_rr_pve_node }}/qemu/{{ es_rr_node.es_vmid }}/status/reboot"
         method: POST
         headers:
           Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
@@ -50,7 +53,7 @@
     - name: Wait for Proxmox to finish restarting it
       ansible.builtin.uri:
         url: >-
-          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_node.es_pve_node }}/tasks/{{ es_rr_reboot.json.data | urlencode }}/status
+          {{ pve_api_url }}/api2/json/nodes/{{ es_rr_pve_node }}/tasks/{{ es_rr_reboot.json.data | urlencode }}/status
         headers:
           Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
         validate_certs: "{{ pve_verify_tls | bool }}"

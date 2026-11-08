@@ -76,7 +76,9 @@ def make_planned_handler(cluster: PlannedCluster):
                     return self._send(200, {"nodes": {f"id-{n}": {"name": n, "jvm": {"uptime_in_millis": cluster.uptime[n]}}
                                                       for n in cluster.names if cluster.up[n]}})
                 parts = unquote(url.path).split("/")
-                name = next(n for n in cluster.names if cluster.hosts[n] == parts[4] and cluster.vmids[n] == int(parts[6]))
+                name = next((n for n in cluster.names if cluster.hosts[n] == parts[4] and cluster.vmids[n] == int(parts[6])), None)
+                if name is None:                                  # the VM is not on that host
+                    return self._send(500, {"data": None, "message": f"Configuration file 'nodes/{parts[4]}/qemu-server/{parts[6]}.conf' does not exist"})
                 return self._send(200, {"data": {"status": "stopped" if name in cluster.stopped else "running"}})
             return super().do_GET()
 
@@ -86,7 +88,10 @@ def make_planned_handler(cluster: PlannedCluster):
                 if not self._authorised(url.path):
                     return
                 parts = url.path.split("/")
-                return self._send(200, {"data": cluster.start(parts[4], int(parts[6]))})
+                try:
+                    return self._send(200, {"data": cluster.start(parts[4], int(parts[6]))})
+                except StopIteration:
+                    return self._send(500, {"data": None, "message": f"Configuration file 'nodes/{parts[4]}/qemu-server/{parts[6]}.conf' does not exist"})
             return super().do_POST()
 
     return Handler
@@ -243,3 +248,26 @@ def test_the_playbook_passes_a_syntax_check_with_a_plan(tmp_path):
     assert result.returncode == 0, result.stderr
     assert parse_qs("a=1") == {"a": ["1"]}                              # parse_qs is imported for the fake's sake
     run()
+
+
+# -- a VM that is not where ECM recorded it ---------------------------------------------------------------------------------------
+
+def test_a_vm_that_was_moved_to_another_host_is_found_and_restarted_there(tmp_path):
+    """Found live: the last node of a restart died with "Configuration file 'nodes/pve2/qemu-server/500.conf' does not exist" because the VM
+    had left the host ECM recorded (moved by hand or by HA). The playbook now asks the cluster where each VM is."""
+    fake, run = build(tmp_path, [("lab-x-04", "restart"), ("lab-x-01", "restart")])
+    inventory_host = fake.hosts["lab-x-01"]                            # what the inventory (ECM's record) says
+    fake.hosts["lab-x-01"] = "pve9"                                    # where Proxmox has it now
+    result = run()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert done(fake, "reboot") == ["lab-x-04", "lab-x-01"]
+    assert f"lab-x-01's VM 500 is on pve9 now, not on {inventory_host} where ECM recorded it" in " ".join(result.stdout.split())
+
+
+def test_a_vm_that_proxmox_does_not_list_stops_the_run_with_a_plain_message(tmp_path):
+    fake, run = build(tmp_path, [("lab-x-05", "restart"), ("lab-x-01", "restart")])
+    fake.unlisted = {"lab-x-01"}
+    result = run()
+    assert result.returncode != 0
+    assert "Proxmox does not list a VM 500 (lab-x-01)" in " ".join(result.stdout.split()) and "VM.Audit" in result.stdout
+    assert done(fake, "reboot") == ["lab-x-05"]                        # the node before it was done, nothing was started on it

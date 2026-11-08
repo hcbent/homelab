@@ -913,10 +913,18 @@ def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, cli
     ordered_down = sorted(down)
     ordered_up = sorted(restarting, key=lambda n: (_restart_class(by_name[n]), n == elected, n))
     order = [*ordered_down, *ordered_up]
+    # The host to show is where Proxmox last said each machine is, not where ECM first put it: a VM can be moved (by hand, or by HA when a
+    # host reboots). The playbook asks Proxmox again at run time, so this is only what the plan page says.
     placement = params.get("placement", {})
+    seen_on = {v.vmid: v for v in db.scalars(select(Vm).where(
+        Vm.connection_id == conn_id, Vm.vmid.in_([int(params["vm_ids"][n]) for n in order])))}
+
+    def host_of(n: str) -> str | None:
+        row = seen_on.get(int(params["vm_ids"][n]))
+        return row.pve_node if row is not None and row.name == n and row.pve_node else placement.get(n)
     params["change"] = {
         "kind": "restart_nodes", "order": order, "present": sorted(live), "warnings": notes,
-        "nodes": {n: {"action": actions[n], "host": placement.get(n), "vm_id": int(params["vm_ids"][n]),
+        "nodes": {n: {"action": actions[n], "host": host_of(n), "vm_id": int(params["vm_ids"][n]),
                       "roles": ", ".join(sorted(by_name[n].effective_roles)) or "none (coordinating only)",
                       "position": i + 1} for i, n in enumerate(order)},
         "describe": _restart_describe(ordered_down, ordered_up),

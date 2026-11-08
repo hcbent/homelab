@@ -374,6 +374,47 @@ test("a restart that failed says what stays done, and a finished one says the cl
   expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
 });
 
+const manyLines = (n: number) => Array.from({ length: n }, (_, i) => ({ ts: "t", stream: i % 2 ? "ansible" : "terraform", line: `line ${i + 1}` }));
+
+test("Copy log copies every line, including the ones the window does not draw, and says how many", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  mockFetch(table({ "GET /api/operations/big": [200, op({ id: "big", state: "succeeded", plan: null, logs: manyLines(450) })] }));
+  render(<OperationDetail id="big" />);
+  expect(await screen.findByText(/50 earlier lines are not shown/)).toBeInTheDocument();            // the window draws the last 400
+  await userEvent.click(screen.getByRole("button", { name: "Copy log" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  const text: string = writeText.mock.calls[0][0];
+  expect(text.split("\n")).toHaveLength(450);
+  expect(text.startsWith("[terraform] line 1\n[ansible] line 2")).toBe(true);                     // a line that is not on the screen
+  expect(text.endsWith("[ansible] line 450")).toBe(true);
+  expect(await screen.findByRole("status")).toHaveTextContent("Copied 450 lines");
+});
+
+test("Copy log falls back to the old copy command when the clipboard API is not there, and says when it cannot copy at all", async () => {
+  Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  const exec = vi.fn(() => true);
+  Object.defineProperty(document, "execCommand", { value: exec, configurable: true });
+  mockFetch(table({ "GET /api/operations/one": [200, op({ id: "one", state: "succeeded", plan: null, logs: manyLines(1) })] }));
+  const { unmount } = render(<OperationDetail id="one" />);
+  await userEvent.click(await screen.findByRole("button", { name: "Copy log" }));
+  expect(exec).toHaveBeenCalledWith("copy");
+  expect(await screen.findByRole("status")).toHaveTextContent("Copied 1 line");                      // singular
+  expect(document.querySelector("textarea")).toBeNull();                                          // the helper box is removed
+  unmount();
+
+  Object.defineProperty(document, "execCommand", { value: vi.fn(() => false), configurable: true });
+  render(<OperationDetail id="one" />);
+  await userEvent.click(await screen.findByRole("button", { name: "Copy log" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Could not copy the log");
+});
+
+test("an operation with no log lines has nothing to copy", async () => {
+  mockFetch(table({ "GET /api/operations/none": [200, op({ id: "none", plan: null, state: "running", phase: "plan", logs: [] })] }));
+  render(<OperationDetail id="none" />);
+  expect(await screen.findByRole("button", { name: "Copy log" })).toBeDisabled();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

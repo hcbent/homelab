@@ -54,6 +54,7 @@ class FakeCluster:
         self.joining: dict[str, int] = {}                        # a started node joins after this many health looks
         self._yellow_for = 0
         self.tasks: dict[str, str] = {}
+        self.unlisted: set[str] = set()                          # VMs Proxmox does not list (deleted, or the token cannot see them)
 
     # -- what the API says ------------------------------------------------------------------------
 
@@ -155,6 +156,10 @@ def make_handler(cluster: FakeCluster):
                 return self._send(200, cluster.nodes_os())
             if url.path == "/_nodes/stats/os":
                 return self._send(200, cluster.nodes_stats_os())
+            if url.path == "/api2/json/cluster/resources":
+                with cluster.lock:
+                    return self._send(200, {"data": [{"type": "qemu", "vmid": cluster.vmids[n], "node": cluster.hosts[n], "name": n}
+                                                     for n in cluster.names if n not in cluster.unlisted]})
             if url.path == "/_cat/master":
                 return self._send(200, [{"node": cluster.elected}])
             if url.path.startswith("/api2/json/nodes/") and url.path.endswith("/status"):
@@ -186,7 +191,10 @@ def make_handler(cluster: FakeCluster):
                 return self._send(200, {"_shards": {}})
             parts = url.path.split("/")
             if url.path.startswith("/api2/json/nodes/") and url.path.endswith("/status/reboot"):
-                upid = cluster.reboot(parts[4], int(parts[6]))
+                try:
+                    upid = cluster.reboot(parts[4], int(parts[6]))
+                except StopIteration:                                    # the VM is not on that host, as Proxmox says
+                    return self._send(500, {"data": None, "message": f"Configuration file 'nodes/{parts[4]}/qemu-server/{parts[6]}.conf' does not exist"})
                 return self._send(200, {"data": upid})
             self._send(404, {"error": url.path})
 

@@ -65,6 +65,32 @@ function configured(result: Detail["result"]) {
   return c && typeof c === "object" ? c : null;
 }
 
+/** Put text on the clipboard. The async clipboard API needs a secure page; the fallback is a hidden textarea and the old copy command. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the older way
+  }
+  try {
+    const box = document.createElement("textarea");
+    box.value = text;
+    box.setAttribute("readonly", "");
+    box.style.position = "fixed";
+    box.style.opacity = "0";
+    document.body.appendChild(box);
+    box.select();
+    const ok = document.execCommand?.("copy") ?? false;
+    document.body.removeChild(box);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 interface AddedNode {
   name: string; host: string; address: string; vm_id: number; roles: string; cores: number; ram_mb: number;
   data_disk_gb: number | null;
@@ -175,6 +201,7 @@ export function OperationDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<Detail>(`/api/operations/${id}`).then((o) => { setOp(o); setLoadError(null); })
@@ -201,6 +228,14 @@ export function OperationDetail({ id }: { id: string }) {
       setBusy(false);
       load();
     }
+  }
+
+  async function copyLog() {
+    // The whole log, not only the last lines the window draws: the page already holds every line.
+    const all = op?.logs ?? [];
+    const ok = await copyText(all.map((l) => `[${l.stream}] ${l.line}`).join("\n"));
+    setCopied(ok ? `Copied ${all.length} line${all.length === 1 ? "" : "s"}` : "Could not copy the log. Select it and copy by hand.");
+    window.setTimeout(() => setCopied(null), 6000);
   }
 
   if (op === null) {
@@ -376,7 +411,11 @@ export function OperationDetail({ id }: { id: string }) {
             <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink></p></EuiCallOut>)}
 
       <div className="ecm-detail__log">
-        <h3 className="ecm-label">Log</h3>
+        <div className="ecm-detail__logbar">
+          <h3 className="ecm-label">Log</h3>
+          <EuiButtonEmpty size="xs" iconType="copy" isDisabled={op.logs.length === 0} onClick={copyLog}>Copy log</EuiButtonEmpty>
+          {copied && <span role="status" className={copied.startsWith("Copied") ? "ecm-small" : "ecm-small ecm-error-text"}>{copied}</span>}
+        </div>
         <pre ref={logRef} className="ecm-log ecm-mono" tabIndex={0} aria-label="Operation log"
           onScroll={(e) => {
             const el = e.currentTarget;

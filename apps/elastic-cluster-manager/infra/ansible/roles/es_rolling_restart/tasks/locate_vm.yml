@@ -1,0 +1,34 @@
+---
+# Where a node's VM is now. ECM records the host a machine was made on, but a VM can be moved (migrated by hand, or by HA while a host
+# reboots), and Proxmox answers a VM's calls only on the host that has it. Found live: a restart of the last of five nodes died with
+# "Configuration file 'nodes/pve2/qemu-server/500.conf' does not exist" because VM 500 was no longer on pve2. So ask the cluster, and use
+# the answer; the recorded host is only a fallback for the message.
+- name: Ask Proxmox where {{ es_rr_name }}'s VM is
+  ansible.builtin.uri:
+    url: "{{ pve_api_url }}/api2/json/cluster/resources?type=vm"
+    headers:
+      Authorization: "PVEAPIToken={{ pve_token_id }}={{ pve_token_secret }}"
+    validate_certs: "{{ pve_verify_tls | bool }}"
+    ca_path: "{{ pve_ca_file | default(omit) }}"
+    return_content: true
+  register: es_rr_where
+
+- name: Pick out that VM
+  ansible.builtin.set_fact:
+    es_rr_found: "{{ es_rr_where.json.data | default([]) | selectattr('vmid', 'equalto', es_rr_node.es_vmid | int) | list }}"
+
+- name: Stop if Proxmox does not list the VM
+  ansible.builtin.fail:
+    msg: >-
+      Proxmox does not list a VM {{ es_rr_node.es_vmid }} ({{ es_rr_name }}), so it cannot be restarted. The VM may have been deleted, or the
+      token that restarts the machines may lack VM.Audit on it.
+  when: es_rr_found | length != 1
+
+- name: Use the host the VM is on now
+  ansible.builtin.set_fact:
+    es_rr_pve_node: "{{ es_rr_found[0].node }}"
+
+- name: Note that the VM is not where ECM recorded it
+  ansible.builtin.debug:
+    msg: "{{ es_rr_name }}'s VM {{ es_rr_node.es_vmid }} is on {{ es_rr_pve_node }} now, not on {{ es_rr_node.es_pve_node }} where ECM recorded it."
+  when: es_rr_pve_node != es_rr_node.es_pve_node

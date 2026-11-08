@@ -323,3 +323,6 @@ section { scroll-margin-top: 64px; }
   .ecm-enter, .ecm-step-in, .ecm-callout-in, .ecm-row-changed td, .ecm-row-changed .euiTableRowCell { animation: none; }
   .ecm-nav-link, .euiButton, .euiButtonEmpty, .ecm-faq__row, .ecm-op-side, .ecm-faq__row .euiAccordion__childWrapper { transition: none; }
 }
+
+.ecm-detail__logbar { display: flex; align-items: center; gap: 12px; }
+.ecm-detail__logbar .ecm-label { margin: 0; }

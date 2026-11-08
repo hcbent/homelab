@@ -50,6 +50,17 @@ def test_named_nodes_are_planned_alone_and_a_different_elected_master_changes_th
     assert new["change"]["nodes"]["lab-x-04"]["vm_id"] == built.desired["vm_ids"]["lab-x-04"]
 
 
+def test_the_host_shown_is_where_proxmox_last_saw_the_machine_not_where_ecm_first_put_it(session, built):
+    recorded = built.desired["placement"]["lab-x-04"]
+    row = Vm(connection_id=built.desired["proxmox_connection_id"], pve_node="pve9", vmid=built.desired["vm_ids"]["lab-x-04"],
+             name="lab-x-04", status="running")
+    session.add(row)
+    session.commit()
+    new = restart(session, built, "lab-x-04", "lab-x-05")
+    assert new["change"]["nodes"]["lab-x-04"]["host"] == "pve9" != recorded              # moved: the sync saw it elsewhere
+    assert new["change"]["nodes"]["lab-x-05"]["host"] == built.desired["placement"]["lab-x-05"]   # no row: the record
+
+
 def test_a_node_the_only_copy_of_a_shard_is_on_gets_a_warning(session, built):
     es = FakeEs(state_of(built), shards=[("solo", 0, "lab-x-04"), ("logs", 0, "lab-x-04"), ("logs", 0, "lab-x-05")])
     new = restart(session, built, "lab-x-04", "lab-x-05", es=es)

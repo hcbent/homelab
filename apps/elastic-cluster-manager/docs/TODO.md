@@ -60,19 +60,6 @@ Two changes, neither made yet:
 
 Done when deleting a VM and pressing *Sync now* once on the cluster page is enough to make the Recovery panel offer the rebuild, and the panel's text shows how old the Proxmox reading is.
 
-## A "Copy log" button on the log window
-
-**Asked for 2026-11-08, after the operator had trouble copying a rebuild's log out of the operation page.** The log window (`OperationDetail.tsx`, the `<pre aria-label="Operation log">`, the only
-one in the app) shows the last 400 lines (`MAX_LOG_LINES`) and says "217 earlier lines are not shown", and selecting text in a scrolling box is awkward. The API already returns every line of an
-operation's log (`GET /api/operations/{id}` has no limit), so the page holds the whole log in memory, not just the 400 it draws.
-
-Add a **Copy log** button beside the log heading that copies the **whole** log (every line of `op.logs`, not only the 400 shown) to the clipboard, in the same `[stream] line` form the window uses, and
-says it did ("Copied 617 lines"). Use `navigator.clipboard.writeText`, with a fallback for a context where it is not available, and say so if the copy fails. If the log is large, copying should not freeze
-the page.
-
-Done when pressing it on an operation with more than 400 lines puts every line on the clipboard, a test shows the clipboard text holds the hidden lines too and the confirmation names the count, and a
-failed copy says it failed. A **Download log** button next to it would be a natural small addition (a text file named for the operation), but is not asked for.
-
 ## Two warnings say the same thing on a rebuild's plan page
 
 **Found 2026-11-08, from the operator's screenshot of a master rebuild on a host that already had one.** The plan page lists "master-eligible nodes test-5a-01, test-5a-03 are pinned to the same Proxmox host (pve2);
@@ -105,4 +92,17 @@ that the cluster is green without them. The alternative is to keep running it, a
 is, so the Restart nodes panel can only offer "Select every node", which restarts nodes that did not need it. Two ways to know: (1) have the playbook report the hosts where `Write elasticsearch.yml` (or the heap file) changed while
 `es_allow_restart` was false, and keep that list on the cluster until those nodes restart; or (2) read it from each node when the restart is planned, by asking whether the configuration file is newer than the service's start time (an SSH
 probe, since nothing else can tell). (2) needs no new state and cannot go stale; (1) needs a column and a migration. Done when the panel marks the nodes that are waiting and offers "Restart the nodes that are waiting".
+
+## ECM's record of where a machine is can go stale
+
+**Found 2026-11-08, when a restart of the last of five nodes failed because VM 500 was no longer on the host ECM had recorded (`pve2`).** The record's `placement` is the host a machine was made on. A VM can be moved (live migration by hand, HA when a host
+reboots or is put in maintenance), and after that the record is wrong, though discovery's inventory (`Vm.pve_node`) is right. The restart playbook now asks Proxmox at run time, so it is safe. Still using the recorded host:
+
+- **Terraform.** A later plan, apply or teardown names the node a VM is on (`node_name`). With the bpg provider, a VM that was moved outside Terraform may be planned for migration back or for replacement (`replace` is refused on an update, so such a plan would be
+  rejected); not tried. Worth testing before relying on update operations after any host reboot.
+- **A rebuild's "old host"** (online or not) and its host-spread warning use the record, not where the machine was last seen.
+- **The Remove nodes, Recovery and add-node placement** read the record when they decide where a node goes and what the spread is.
+
+Options: (1) when the inventory shows a managed VM on a different host than recorded, show a note on the cluster page ("test-5a-01 is on pve1; ECM recorded pve2") and offer to update the record; (2) update the record from the inventory at each sync (the record then follows
+reality, but Terraform's state still names the old host); (3) leave it and make each operation ask Proxmox, as the restart now does. Done when the choice is made and a test shows an operation planned after a VM was moved uses where it is.
 

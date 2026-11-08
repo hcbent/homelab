@@ -111,6 +111,13 @@ def test_the_token_must_be_able_to_power_vms_and_the_run_stops_before_asking_ans
     with pytest.raises(PreflightFailed, match="no VM.PowerMgmt on /pool/ecm, which restarting or starting a VM in it needs"):
         run(session, world, op)
     assert seen == []
+    world.perms["/pool/ecm"]["VM.PowerMgmt"] = 1
+    world.perms["/pool/ecm"].pop("VM.Audit")                                   # it also has to see where each VM is now
+    operations.retry_operation(session, op.id)
+    op = run(session, world, op)
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    with pytest.raises(PreflightFailed, match="no VM.Audit on /pool/ecm"):
+        run(session, world, op)
 
 
 def test_a_cluster_with_no_api_key_is_not_restarted_and_ansible_is_not_asked(session, world, six, seen):

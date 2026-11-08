@@ -270,3 +270,19 @@ A restart of the data node `test-5a-04` alone ("1 to restart, 0 to start").
   time, as ECM planned or after a resize", and the resize path says it only runs after a resize.
 - **Not yet seen:** a restart of every node (masters last, the elected master last), and a retry that skips nodes already restarted, against a real cluster.
 
+## Seventh live result: restarting every node, and a VM that had left its recorded host (2026-11-08, the operator's log and screenshots)
+
+A restart of all five nodes of `test-5a` (order `test-5a-04`, `-06`, `-02`, `-03`, then the elected master `-01`).
+
+- **Four of five went through exactly as designed.** For each of `04`, `06`, `02` and `03`: the cluster asked, the strict green gate, allocation restricted, flush, Proxmox reboot (one poll), the wait to rejoin (four or five polls of ten seconds), the yellow
+  gate, allocation allowed, and the green gate (nothing or one poll). The masters `02` and `03` restarted one at a time with the other two up each time, and nothing failed or got stuck.
+- **The last node failed before anything was done to it.** For `test-5a-01` the playbook's first call about its VM failed: Proxmox answered HTTP 500 "Configuration file 'nodes/pve2/qemu-server/500.conf' does not exist". VM 500 was no longer on
+  `pve2`, the host ECM had recorded for it when it was rebuilt there; a VM can be moved by hand or by HA when a host reboots (the operator had rebooted the three hosts earlier that day). Proxmox answers a VM's calls only on the host that has it.
+  Nothing was restarted on `01`, and the operation ended "failed", with the message saying nodes already restarted stay restarted and a retry skips them.
+- **Fixed:** the playbook now asks Proxmox where each VM is (`GET /cluster/resources?type=vm`) before it calls it, and uses that host; if Proxmox does not list the VM it stops with a plain message (deleted, or the token lacks `VM.Audit`). It says in the log when the VM is not
+  where ECM recorded it. The resize restart (`restart_node.yml`) had the same flaw and is fixed the same way. The pre-flight now also asks for `VM.Audit` (a resize's already needed it in effect), and the restart plan page shows the host Proxmox last
+  reported for each machine rather than the recorded one.
+- **What this means for the retry:** the operation can be retried once this build is deployed (or once VM 500 is moved back to `pve2`, which needs no new build). The retry will skip `04`, `06`, `02` and `03` (each has been up for less time than the operation
+  has existed), which will be the first test of that skip against a real cluster.
+- **A wider question this raised, in `docs/TODO.md`:** ECM's record of where a machine is can go stale, and Terraform and the Recovery placement use it.
+
