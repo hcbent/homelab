@@ -37,11 +37,15 @@ printf '%s' "$payload" | exec /bin/sh -c "$cmd"
 """
 FAKE_CLOUD_INIT = """#!/bin/sh
 echo "$*" >> "$STATE/cloud-init-ran"
+case "$*" in
+  *--long*) echo "status: running"; echo "detail: DataSourceNoCloud [seed=/dev/sr0]"; echo "stage: modules-final"; exit 0;;
+  *--wait*) if [ -n "$HANG" ]; then sleep 30; fi;;
+esac
 echo "status: done"
 """
 
 
-def run_wait(tmp_path, refusals, *extra, ssh_retries=None):
+def run_wait(tmp_path, refusals, *extra, ssh_retries=None, hang=False):
     """Run wait_for_first_boot.yml against one fake machine. Returns the process, how many calls were refused and
     how many times the real cloud-init command ran."""
     bin_dir, state = tmp_path / "bin", tmp_path / "state"
@@ -59,6 +63,8 @@ def run_wait(tmp_path, refusals, *extra, ssh_retries=None):
                ANSIBLE_NOCOLOR="1")
     if ssh_retries is not None:
         env["ANSIBLE_SSH_RETRIES"] = str(ssh_retries)
+    if hang:
+        env["HANG"] = "1"                                    # cloud-init status --wait does not return in time
     result = subprocess.run(
         ["ansible-playbook", "-i", str(inventory), "playbooks/wait_for_first_boot.yml",
          "-e", "first_boot_poll_delay=0", *extra],   # the real wait pauses 5 seconds before each check; not here
@@ -102,6 +108,26 @@ def test_a_machine_that_never_comes_back_fails_with_a_plain_message_not_as_unrea
     assert result.returncode != 0
     assert "did not finish its first boot" in result.stdout
     assert recap(result)["failed"] == 1 and recap(result)["unreachable"] == 0
+
+
+def test_a_cloud_init_that_is_still_running_fails_with_a_plain_message_and_shows_what_it_was_doing(tmp_path):
+    """Found on infra: a rebuilt master's cloud-init was still running after 900 seconds and the run ended in Ansible's raw
+    "Timed out" error, with nothing about why. The wait is shortened here; it must fail once, plainly, with the evidence."""
+    result, _, _ = run_wait(tmp_path, 0, "-e", "first_boot_cloud_init_wait=3", hang=True)
+    assert result.returncode != 0
+    out = result.stdout
+    assert "cloud-init was still running after 3 seconds (what it was doing is shown above)" in " ".join(out.split())
+    assert "stage: modules-final" in out and "the end of /var/log/cloud-init-output.log" in out   # the evidence is in the log
+    assert "Timed out after" not in out.split("PLAY RECAP")[0].split("Stop if a machine never finished")[-1]
+    assert out.count("TASK [Ask cloud-init to finish]") == 1, "a timeout must not be asked again: it would only wait the same time"
+    assert recap(result)["failed"] == 1 and recap(result)["unreachable"] == 0
+
+
+def test_a_cloud_init_that_finishes_inside_the_wait_is_not_affected_by_the_timeout_setting(tmp_path):
+    result, _, ran = run_wait(tmp_path, 0, "-e", "first_boot_cloud_init_wait=20")
+    assert result.returncode == 0, result.stdout
+    assert ran == 1 and "Ask what cloud-init was doing" in result.stdout
+    assert "stage: modules-final" not in result.stdout                # skipped: nothing to explain
 
 
 def test_the_create_playbook_uses_the_wait_and_ansible_retries_ssh():

@@ -174,3 +174,20 @@ A six-node cluster `test-5a` (three masters, three data and ingest nodes). The o
   whether the VM really went back to the host in the record (`pve3`; the operator remembered `pve2`), a rebuild of a master with the spread warning, a forget, the refusals (a node whose machine exists,
   a red cluster), and a VM created over disks that were left behind (here the disks were deleted with the VM).
 
+## Second live result: a master rebuilt on a host that already has one (2026-11-08, the operator's screenshots)
+
+The operator deleted the VM of the master `test-5a-01` (pve1, VM 500) and rebuilt it with the host set to `pve2`, which already held `test-5a-03`.
+
+- **The plan page** showed "Create 1 virtual machine" (Terraform: 1 to add, 0 to change, 0 to destroy, plus a change to the *outputs* only, `node_name` of `test-5a-01` going from `pve1` to `pve2`), the
+  node's row (`pve2`, its address, VM 500, `master`, 2 cores, 4 GiB) and three warnings: the master spread ("host 'pve2' would hold 2 of 3 master-eligible nodes (test-5a-01, test-5a-03) ... allowed because
+  the cluster is being recovered and getting it back matters more"), "test-5a-01 goes to pve2, not pve1 where it was", and a third, older one that says nearly the same as the first (nodes pinned to the same
+  host). The operator approved it. So a rebuild that breaks the master spread is accepted with a warning, as decided.
+- **The first attempt failed at the first-boot wait.** `cloud-init status --wait` was still running after 900 seconds on the new machine, and the run ended in Ansible's raw "Task failed: Timed out after 900
+  second(s)" (the playbook's plain message did not apply to a timeout, which `failed_when` does not cover). The machine was kept. The cause of the slow cloud-init is not known (no console output was seen; the
+  other rebuilt node and the original nodes on `pve2` all got through the same wait).
+- **Retry worked.** It planned again (nothing to create, since this operation's own apply had made the machine: the retry rule), ran the configure steps again, and the cluster page then showed `test-5a-01` back as
+  a master on `pve2`, VM 500, the cluster green with 6 nodes and 6 of 6 VMs linked. The operation page after the retry and the voting configuration (`GET _cluster/state/metadata?filter_path=metadata.cluster_coordination`)
+  have not been seen.
+- **Changed because of it:** the first-boot wait now handles a cloud-init that is still running after its time (`first_boot_cloud_init_wait`, 900 seconds): it is not asked again (that would wait the same
+  time again), `cloud-init status --long` and the end of `/var/log/cloud-init-output.log` are put in the log, and the failure says plainly that cloud-init was still running and that Retry is safe.
+

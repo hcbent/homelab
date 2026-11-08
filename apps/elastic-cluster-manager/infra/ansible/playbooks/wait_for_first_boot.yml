@@ -30,9 +30,31 @@
     - name: Wait for cloud-init to finish, however often the connection drops meanwhile
       ansible.builtin.include_tasks: tasks/first_boot_ask.yml
 
+    # A cloud-init that is still running after the wait (a slow package step, a hung network wait) is not the same as a machine that
+    # never answered. Say what it was doing, in the log, so the console is not needed to find out.
+    - name: Ask what cloud-init was doing, when it did not finish in time
+      ansible.builtin.shell: |
+        cloud-init status --long 2>&1
+        echo "--- the end of /var/log/cloud-init-output.log"
+        tail -n 60 /var/log/cloud-init-output.log 2>&1
+      register: cloud_init_evidence
+      changed_when: false
+      failed_when: false
+      ignore_unreachable: true
+      ignore_errors: true
+      timeout: 60
+      when: cloud_init_timed_out | default(false)
+
+    - name: Show what cloud-init was doing
+      ansible.builtin.debug:
+        msg: "{{ cloud_init_evidence.stdout_lines | default(['cloud-init did not answer when asked what it was doing']) }}"
+      when: cloud_init_timed_out | default(false)
+
     - name: Stop if a machine never finished its first boot
       ansible.builtin.fail:
         msg: >-
-          {{ inventory_hostname }} did not finish its first boot: its connection kept dropping, or cloud-init did
-          not finish. The machine is kept. Retry once it answers (check its console in Proxmox).
+          {{ inventory_hostname }} did not finish its first boot:
+          {{ 'cloud-init was still running after ' ~ (first_boot_cloud_init_wait | default(900)) ~ ' seconds (what it was doing is shown above)'
+             if (cloud_init_timed_out | default(false)) else 'its connection kept dropping, or cloud-init did not finish' }}.
+          The machine is kept. Retry asks again, which is safe to repeat (check its console in Proxmox if it keeps failing).
       when: not (cloud_init_finished | default(false))

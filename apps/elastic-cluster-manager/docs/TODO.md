@@ -73,3 +73,11 @@ the page.
 Done when pressing it on an operation with more than 400 lines puts every line on the clipboard, a test shows the clipboard text holds the hidden lines too and the confirmation names the count, and a
 failed copy says it failed. A **Download log** button next to it would be a natural small addition (a text file named for the operation), but is not asked for.
 
+## Two warnings say the same thing on a rebuild's plan page
+
+**Found 2026-11-08, from the operator's screenshot of a master rebuild on a host that already had one.** The plan page lists "master-eligible nodes test-5a-01, test-5a-03 are pinned to the same Proxmox host (pve2);
+losing it would break the master quorum" (from the desired-state warnings) and then "host 'pve2' would hold 2 of 3 master-eligible nodes ... This is allowed because the cluster is being recovered ..." (from the
+placement). The second is clearer, and the first adds nothing. On a rebuild, drop the desired-state warning when the placement warning covers the same host, and keep the "goes to X, not Y where it was" line.
+
+Done when a rebuild that puts a master on a host that already has one shows the placement warning once, and a rebuild with no such problem shows no master warning at all.
+

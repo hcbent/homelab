@@ -14,13 +14,18 @@
   changed_when: false
   failed_when: false          # a degraded cloud-init is not ours to fail on; the roles check what they need
   ignore_unreachable: true    # keep the host in the run if its connection drops, and wait for it on the next ask
-  timeout: 900
+  # A task that runs out of time fails, and failed_when does not cover that: found on infra, where a rebuilt master's cloud-init was
+  # still running after 900 seconds and the run ended in Ansible's raw "Timed out" message. It is handled below, with evidence.
+  ignore_errors: true
+  timeout: "{{ first_boot_cloud_init_wait | default(900) | int }}"
 
 - name: Note whether cloud-init answered, and how many times it was asked
   ansible.builtin.set_fact:
     cloud_init_finished: "{{ cloud_init.rc is defined }}"
+    # Running out of time is not a dropped connection: asking again would just wait the same time again.
+    cloud_init_timed_out: "{{ cloud_init.rc is not defined and 'Timed out' in (cloud_init.msg | default('')) }}"
     first_boot_asks: "{{ (first_boot_asks | default(0) | int) + 1 }}"
 
 - name: Ask again, since the connection dropped
   ansible.builtin.include_tasks: first_boot_ask.yml
-  when: not cloud_init_finished and (first_boot_asks | int) < (first_boot_attempts | int)
+  when: not cloud_init_finished and not cloud_init_timed_out and (first_boot_asks | int) < (first_boot_attempts | int)
