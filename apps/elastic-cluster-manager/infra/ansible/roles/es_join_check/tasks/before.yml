@@ -1,6 +1,6 @@
 ---
 # The cluster the nodes are joining must be healthy first, with every node it already has. Asked of an existing node.
-- name: Wait for the cluster to be green with all of its existing nodes
+- name: Wait for the cluster to be green (yellow or better for a rebuild) with all of its existing nodes
   ansible.builtin.uri:
     url: >-
       {{ es_jc_scheme }}://{{ es_jc_existing_hosts[0] }}:{{ es_jc_http_port }}/_cluster/health?wait_for_status={{ es_jc_min_status }}&timeout=5s

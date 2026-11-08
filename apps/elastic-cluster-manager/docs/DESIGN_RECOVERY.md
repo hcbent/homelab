@@ -154,3 +154,23 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
 - **Unverified on a real cluster:** all of it. In particular that Terraform's refresh drops a deleted VM from its state so the plan shows a create; that it accepts
   an empty saved plan; that a VM can be created at a VM ID whose disks were left behind on shared storage; that Elasticsearch takes a rebuilt master-eligible node
   (same name, new node ID) into the voting configuration; and that the join steps work on a machine that replaces one of a running cluster's.
+
+## First live result: a rebuild (2026-11-08, the operator's reports and screenshots)
+
+A six-node cluster `test-5a` (three masters, three data and ingest nodes). The operator deleted the VM of `test-5a-05` (VM 504) in Proxmox.
+
+- **Detection needed the Proxmox inventory to be current.** After pressing *Sync now* on the cluster page (which refreshes only Elasticsearch), the cluster was yellow with 2 data nodes but the
+  Recovery panel said the node "has a machine in Proxmox but is not in the cluster", because ECM's Proxmox inventory still had the VM's row. After the scheduled Proxmox sync the panel showed
+  "1 node is lost: test-5a-05" with the rebuild and forget actions. The stale-inventory problem is in `docs/TODO.md`.
+- **Terraform's refresh dropped the deleted VM, as hoped.** The plan was "1 to add, 0 to change, 0 to destroy", and the plan page read "Create 1 virtual machine" with a table row for `test-5a-05`
+  (`pve3`, its address, VM 504, `data, ingest`, 4 cores, 8 GiB, 100 GB data) and no warnings. This resolves the first *to confirm* item.
+- **The rebuild went through.** The log shows the join check's "before" gate passing, the new machine's first boot, the base packages, the **blank data disk** being partitioned, formatted and
+  mounted (the `data_disk` role's blank-disk path), Elasticsearch installed, the certificate issued **only for the new node** (signed on `test-5a-01`, the CA host, with the stored CA), the
+  configuration written and the service started and answering, and the join check's "after" gate passing. Recap: `test-5a-05` ok=64 changed=24, the worker's checks ok=9, nothing failed. The
+  operation ended "the rebuilt nodes joined and the cluster is not red".
+- **Small things:** the join-check task names said "green" while the gate was yellow (renamed); the log window showed only the last 400 of 617 lines, which made the log hard to copy out (a
+  "Copy log" button is in `docs/TODO.md`).
+- **Not seen yet:** the Terraform apply part of the log (the new VM's creation), what the cluster looked like afterwards and how long it took to return to green, that the node's shards refilled,
+  whether the VM really went back to the host in the record (`pve3`; the operator remembered `pve2`), a rebuild of a master with the spread warning, a forget, the refusals (a node whose machine exists,
+  a red cluster), and a VM created over disks that were left behind (here the disks were deleted with the VM).
+

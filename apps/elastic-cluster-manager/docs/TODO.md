@@ -60,3 +60,16 @@ Two changes, neither made yet:
 
 Done when deleting a VM and pressing *Sync now* once on the cluster page is enough to make the Recovery panel offer the rebuild, and the panel's text shows how old the Proxmox reading is.
 
+## A "Copy log" button on the log window
+
+**Asked for 2026-11-08, after the operator had trouble copying a rebuild's log out of the operation page.** The log window (`OperationDetail.tsx`, the `<pre aria-label="Operation log">`, the only
+one in the app) shows the last 400 lines (`MAX_LOG_LINES`) and says "217 earlier lines are not shown", and selecting text in a scrolling box is awkward. The API already returns every line of an
+operation's log (`GET /api/operations/{id}` has no limit), so the page holds the whole log in memory, not just the 400 it draws.
+
+Add a **Copy log** button beside the log heading that copies the **whole** log (every line of `op.logs`, not only the 400 shown) to the clipboard, in the same `[stream] line` form the window uses, and
+says it did ("Copied 617 lines"). Use `navigator.clipboard.writeText`, with a fallback for a context where it is not available, and say so if the copy fails. If the log is large, copying should not freeze
+the page.
+
+Done when pressing it on an operation with more than 400 lines puts every line on the clipboard, a test shows the clipboard text holds the hidden lines too and the confirmation names the count, and a
+failed copy says it failed. A **Download log** button next to it would be a natural small addition (a text file named for the operation), but is not asked for.
+
