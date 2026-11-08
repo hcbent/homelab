@@ -2,6 +2,7 @@ import { EuiButton, EuiButtonEmpty, EuiCallOut, EuiCheckboxGroup, EuiFormRow, Eu
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { rolesText } from "./roles";
 import { ids } from "./checkboxIds";
 
 const box = ids("restart");
@@ -29,7 +30,7 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
   const offerable = names.filter((n) => !lost(n));
   const chosen = offerable.filter((n) => picked[n]);
   const label = (n: string) => {
-    const r = roles[n].roles.length ? roles[n].roles.join(", ") : "coordinating only";
+    const r = rolesText(roles[n].roles);
     const note = lost(n) ? " (lost: rebuild or forget it under Recovery)"
       : down(n) ? ` (not in the cluster${state[n]?.vm_status ? `, its machine is ${state[n].vm_status}` : ""}: it will be ${state[n]?.vm_status === "stopped" ? "started" : "restarted"} first)`
       : "";

@@ -415,6 +415,43 @@ test("an operation with no log lines has nothing to copy", async () => {
   expect(await screen.findByRole("button", { name: "Copy log" })).toBeDisabled();
 });
 
+test("the configure step is named for what the operation does, and only a create says it installs Elasticsearch", async () => {
+  const cases: [string, Record<string, unknown>, string][] = [
+    ["create", { kind: "tf.create", change: undefined }, "Install and start Elasticsearch"],
+    ["add", { kind: "tf.update", change: { kind: "add_node" } }, "Configure and start the new nodes"],
+    ["rebuild", { kind: "tf.update", change: { kind: "rebuild_nodes" } }, "Configure and start the rebuilt nodes"],
+    ["forget", { kind: "tf.update", change: { kind: "forget_nodes" } }, "Bring the remaining nodes in line"],
+    ["remove", { kind: "tf.update", change: { kind: "remove_nodes" } }, "Bring the remaining nodes in line and check the cluster"],
+    ["resize", { kind: "tf.update", change: { kind: "resize" } }, "Write the new settings"],
+    ["grow", { kind: "tf.update", change: { kind: "expand_disk" } }, "Grow the filesystems"],
+  ];
+  for (const [name, over, label] of cases) {
+    mockFetch(table({ [`GET /api/operations/${name}`]: [200, op({ id: name, plan: null, ...over })] }));
+    const { unmount } = render(<OperationDetail id={name} />);
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    if (name !== "create") expect(screen.queryByText("Install and start Elasticsearch")).not.toBeInTheDocument();
+    unmount();
+  }
+});
+
+test("a forget's apply step says the machines are already gone", async () => {
+  mockFetch(table({ "GET /api/operations/fg2": [200, op({ id: "fg2", kind: "tf.update", plan: null, change: { kind: "forget_nodes" } })] }));
+  render(<OperationDetail id="fg2" />);
+  expect(await screen.findByText("Apply the plan (the machines are already gone)")).toBeInTheDocument();
+});
+
+test("the roles column of a plan table shows all roles for a default node and the list for others", async () => {
+  const everything = "data, data_cold, data_content, data_frozen, data_hot, data_warm, ingest, master, ml, remote_cluster_client, transform";
+  mockFetch(table({ "GET /api/operations/rl": [200, op({ id: "rl", kind: "tf.update", cluster_id: "c1", plan: { digest: DIGEST, approvable: true,
+    summary: { adds: 2, updates: 0, deletes: 0, configure: "add 2 nodes" } }, change: { kind: "add_node", warnings: [], nodes: {
+      "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: everything, cores: 4, ram_mb: 8192, data_disk_gb: 100 },
+      "lab-d-08": { host: "pve2", address: "192.168.10.121", vm_id: 511, roles: "ml, remote_cluster_client", cores: 4, ram_mb: 8192, data_disk_gb: null } } } })] }));
+  render(<OperationDetail id="rl" />);
+  const full = (await screen.findByText("lab-d-07")).closest("tr")!;
+  expect(within(full).getByText("all roles")).toHaveAttribute("title", everything);               // the full list is in the tooltip
+  expect(within(screen.getByText("lab-d-08").closest("tr")!).getByText("ml, remote_cluster_client")).toBeInTheDocument();
+});
+
 test("a finished create links to the cluster and the log keeps its stream labels", async () => {
   mockFetch(table({ "GET /api/operations/op1": [200, op({
     state: "succeeded", phase: null, plan: null, progress: { done: 6, total: 6 },

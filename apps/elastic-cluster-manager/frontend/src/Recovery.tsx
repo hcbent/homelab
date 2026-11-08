@@ -2,6 +2,7 @@ import { EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFormRow, EuiLink, EuiPanel,
 import { useEffect, useState } from "react";
 import { api, ApiError, ClusterDetail, Infrastructure } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { ago } from "./format";
 import { ids } from "./checkboxIds";
 
 const box = ids("recover");
@@ -30,6 +31,8 @@ export function Recovery({ cluster }: { cluster: ClusterDetail }) {
   if (!life?.managed || (lost.length === 0 && down.length === 0)) return null;
 
   const chosen = lost.filter((n) => picked[n] ?? true);
+  // Whether a machine is there comes from the last Proxmox sync, which can be minutes old; say how old, so a stale reading shows as stale.
+  const asOf = life.proxmox_synced_at ? `as of the Proxmox sync ${ago(life.proxmox_synced_at)}` : "as of the last Proxmox sync";
 
   async function plan(what: "rebuild-nodes" | "forget-nodes") {
     setAsking(null);
@@ -54,14 +57,14 @@ export function Recovery({ cluster }: { cluster: ClusterDetail }) {
       {lost.length > 0 && (
         <EuiCallOut color="warning" iconType="warning" size="s"
           title={`${lost.length} node${lost.length === 1 ? " is" : "s are"} lost: ${lost.join(", ")}`}>
-          <p>Each one's machine is gone from Proxmox and Elasticsearch no longer reports it. Rebuilding makes the machine again
+          <p>{lost.length === 1 ? "Its" : "Each one's"} machine is gone from Proxmox ({asOf}) and Elasticsearch no longer reports it. Rebuilding makes the machine again
             with the same name, address and VM ID and an empty disk, then starts the node, and the other nodes refill it.
             Forgetting takes it out of ECM's record and destroys nothing. ECM recovers a node only while the cluster is yellow or
             green: a red cluster has lost data, which has to be dealt with by hand first.</p>
         </EuiCallOut>)}
       {down.length > 0 && (
-        <p className="ecm-muted">{down.join(", ")} {down.length === 1 ? "has" : "have"} a machine in Proxmox but {down.length === 1 ? "is" : "are"} not
-          in the cluster. That needs starting or restarting, which ECM does not do yet; it is not a rebuild.</p>)}
+        <p className="ecm-muted">{down.join(", ")} {down.length === 1 ? "has" : "have"} a machine in Proxmox ({asOf}) but {down.length === 1 ? "is" : "are"} not
+          in the cluster. That needs starting or restarting, which is what Restart nodes below does; it is not a rebuild.</p>)}
       {error && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="That cannot be done" size="s">
           <p>{error}</p></EuiCallOut>)}

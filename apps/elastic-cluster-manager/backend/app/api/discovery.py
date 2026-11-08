@@ -304,11 +304,22 @@ def cluster_detail(cluster_id: str, db: Session = Depends(get_db), _: User = Dep
 
 @router.post("/clusters/{cluster_id}/sync")
 def sync_one(cluster_id: str, db: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """Refresh the cluster from Elasticsearch, and, for a cluster ECM built, from the Proxmox connection it was built on too. What ECM shows
+    about a machine (is it there, is it running, which host) comes from Proxmox, so a page that was just refreshed must not be showing a
+    Proxmox reading that is minutes old: found when the Recovery panel called a deleted VM "present" right after a sync. Proxmox goes first
+    so the links between nodes and machines are made from fresh data. A Proxmox failure is reported and does not fail the sync."""
     c = db.get(Cluster, cluster_id)
     if not c:
         raise HTTPException(404, "Cluster not found")
+    proxmox_error = None
+    conn = db.get(ProxmoxConnection, (c.desired or {}).get("proxmox_connection_id") or "") if c.ownership == "managed" else None
+    if conn is not None:
+        try:
+            sync.sync_proxmox(db, conn)
+        except DiscoveryError as e:
+            proxmox_error = f"Proxmox could not be read ({e}); machines are shown as of its last good sync"
     try:
         sync.sync_cluster(db, c)
     except (DiscoveryError, sync.IdentityMismatch) as e:
         raise HTTPException(502, str(e)) from e
-    return {"ok": True, "last_sync_at": c.last_sync_at}
+    return {"ok": True, "last_sync_at": c.last_sync_at, "proxmox_error": proxmox_error}

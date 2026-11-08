@@ -93,6 +93,11 @@ section { scroll-margin-top: 64px; }
 .euiHeaderLink, .euiHeaderSectionItemButton, .euiTableHeaderButton, .euiAccordion__button,
 .euiPopover button { min-height: 44px; }
 .euiButtonIcon, .euiTab, .euiHeaderSectionItemButton { min-width: 44px !important; min-inline-size: 44px !important; }
+/* The 44px minimum above also caught the buttons INSIDE an EUI combo box, which is a popover: the x on each selected pill and the clear-all button. In a
+   22px pill the x stretched the pill's content to 44px, so the pill's outline was drawn too small for its text, and the clear-all circle was tall. They keep
+   their small size, and only their hit area is widened (without moving anything). Found by rendering the page in a real browser. */
+.euiComboBox button { min-height: 0; position: relative; }
+.euiComboBox .euiBadge__iconButton::after, .euiComboBox .euiFormControlLayoutClearButton::after { content: ""; position: absolute; inset: -6px; }
 .euiLink, .euiTable a { display: inline-block; padding-block: 15px; margin-block: -15px; min-width: 44px; }
 [aria-label="Open navigation menu"] { min-width: 44px !important; min-inline-size: 44px !important; min-height: 44px; }
 .euiButtonEmpty, .euiButton { transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out; }
@@ -264,6 +269,9 @@ section { scroll-margin-top: 64px; }
 .ecm-step__name { color: var(--ecm-heading); font-weight: 500; }
 .ecm-plan { background: var(--ecm-surface); }
 .ecm-plan .ecm-h3 { margin-bottom: 12px; }
+/* Every block under the plan's summary (the table of nodes, the dry-run note, the approve buttons) has the same room above it. The table block had none,
+   so its heading sat directly under the plan digest. */
+.ecm-plan > .ecm-stack-lg, .ecm-plan > .ecm-gap, .ecm-plan > .ecm-detail__actions { margin-top: 20px; }
 .ecm-detail__log { display: flex; flex-direction: column; gap: 8px; }
 .ecm-log { margin: 0; max-height: 360px; overflow: auto; padding: 14px 16px; border: 1px solid var(--ecm-border); border-radius: 10px; background: var(--ecm-surface-alt); color: var(--ecm-text); font-size: 12px; line-height: 18px; white-space: pre-wrap; word-break: break-word; }
 .ecm-log:focus-visible { outline: 2px solid var(--ecm-accent); outline-offset: 2px; }

@@ -1131,7 +1131,7 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
         session, world, cluster, conn):
     created = reach_success(session, world, cluster, conn)
     got = lifecycle(session, cluster)
-    assert got == {"managed": True, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
+    assert got == {"managed": True, "proxmox_synced_at": None, "busy_operation_id": None, "teardown_of": created.id, "nodes": NODES,
                    "bootstrapped": True, "can_remove": False,
                    "data_disks": {n: 100 for n in NODES}, "can_change": True,
                    "sizes": {n: {"cores": 4, "ram_mb": 8192} for n in NODES},

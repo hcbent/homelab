@@ -82,7 +82,10 @@ def test_a_master_whose_host_died_is_rebuilt_on_a_host_that_already_has_one_with
 def test_a_master_put_on_a_host_that_already_has_one_by_choice_is_allowed_with_the_same_warning(session, built):
     other = built.desired["placement"]["lab-x-02"]                                        # another master's host
     new = rebuild(session, built, "lab-x-01", pve_node=other)
-    assert any("would hold 2 of 3 master-eligible nodes" in w and "being recovered" in w for w in new["change"]["warnings"])
+    warnings = new["change"]["warnings"]
+    assert any("would hold 2 of 3 master-eligible nodes" in w and "being recovered" in w for w in warnings)
+    assert not any("pinned to the same Proxmox host" in w for w in warnings)               # the older warning said the same, with less reason
+    assert len([w for w in warnings if "master" in w and "host" in w and "pve" in w]) == 1
 
 
 def test_several_lost_nodes_are_rebuilt_together_and_a_node_that_is_not_lost_is_refused_with_why(session, built):
@@ -158,8 +161,8 @@ def test_forgetting_needs_the_cluster_name_a_lost_node_and_the_quorum(session, b
     session.add(Vm(connection_id=built.desired["proxmox_connection_id"], pve_node="pve1",
                    vmid=built.desired["vm_ids"]["lab-x-06"], name="lab-x-06", status="running"))
     session.commit()
-    with pytest.raises(OperationRefused, match=r"exists in Proxmox and is running.*not in the cluster needs to be started or restarted "
-                                               r"first.*Remove nodes needs every node present"):
+    with pytest.raises(OperationRefused, match=r"exists in Proxmox and is running.*not in the cluster is started or restarted "
+                                               r"with Restart nodes first.*Remove nodes needs every node present"):
         forget(session, built, "lab-x-06")                                               # down: Remove nodes cannot take it out
     with pytest.raises(OperationRefused, match=r"lab-x-05 is in the cluster.*a node that is in the cluster is taken out with Remove nodes"):
         forget(session, built, "lab-x-05", es=FakeEs(state_of(built)))                    # in the cluster: it can

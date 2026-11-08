@@ -50,6 +50,13 @@ test("the panel names the lost nodes, explains rebuild and forget, and says a re
   expect(screen.getByRole("button", { name: "Plan the rebuild" })).toBeEnabled();
 });
 
+test("the panel says how old the Proxmox reading is, so a stale one shows as stale", async () => {
+  const fiveMinutes = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  app({ ...LIFE, proxmox_synced_at: fiveMinutes });
+  await panel();
+  expect(screen.getByText(/gone from Proxmox \(as of the Proxmox sync 5m ago\)/)).toBeInTheDocument();
+});
+
 test("a rebuild posts the chosen nodes and the host only when one is chosen", async () => {
   const fn = app(LIFE, { "POST /api/clusters/c1/rebuild-nodes": [202, { operation_id: "rb1", change: {} }] });
   await panel();
@@ -94,7 +101,7 @@ test("a refusal such as a red cluster is shown with its reason and nothing navig
 test("a node with a machine that Elasticsearch does not report is not offered a rebuild, and says why", async () => {
   app({ ...LIFE, node_state: { ...NODE_STATE, "lab-d-03": { machine: true, in_cluster: false } } });
   await panel();
-  expect(screen.getByText(/lab-d-03 has a machine in Proxmox but is not in the cluster. That needs starting or restarting, which ECM does not do yet/)).toBeInTheDocument();
+  expect(screen.getByText(/lab-d-03 has a machine in Proxmox \(as of the last Proxmox sync\) but is not in the cluster. That needs starting or restarting, which is what Restart nodes below does/)).toBeInTheDocument();
   expect(screen.queryByLabelText("lab-d-03")).not.toBeInTheDocument();
 });
 

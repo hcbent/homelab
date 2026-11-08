@@ -2,6 +2,7 @@ import { EuiButton, EuiCallOut, EuiCheckboxGroup, EuiFormRow, EuiLink, EuiPanel 
 import { useState } from "react";
 import { api, ApiError, ClusterDetail } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
+import { rolesText } from "./roles";
 import { ids } from "./checkboxIds";
 
 const box = ids("remove");
@@ -26,7 +27,7 @@ export function RemoveNodes({ cluster }: { cluster: ClusterDetail }) {
   const masters = names.filter((n) => info[n].master_eligible).length;
   const label = (n: string) => {
     const i = info[n];
-    const roles = i.roles.length ? i.roles.join(", ") : "coordinating only";
+    const roles = rolesText(i.roles);
     return `${n}: ${roles}${i.master_eligible ? " (counts towards the master quorum)" : ""}${i.host ? `, on ${i.host}` : ""}`;
   };
 

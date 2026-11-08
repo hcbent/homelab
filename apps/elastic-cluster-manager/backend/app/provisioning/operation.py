@@ -321,8 +321,11 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     roles = {name: {"roles": sorted(n.effective_roles), "master_eligible": n.is_master_eligible,
                     "holds_data": n.holds_data, "host": placement.get(name)} for name, n in members.items()}
     blocker = _removal_blocker(db, cluster)
+    conn = db.get(ProxmoxConnection, (cluster.desired or {}).get("proxmox_connection_id") or "")
     return {
         "managed": True,
+        # when the Proxmox inventory the node states below come from was last read
+        "proxmox_synced_at": conn.last_sync_at.isoformat() if conn is not None and conn.last_sync_at else None,
         "busy_operation_id": busy.id if busy else None,
         "teardown_of": target.id if target and not busy else None,
         "nodes": names if target and not busy else [],

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, OperationDetail as Detail, PlanSummary } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
 import { bytes } from "./format";
+import { rolesFromText } from "./roles";
 import { useInterval } from "./useInterval";
 
 const TERMINAL = ["succeeded", "failed", "cancelled"];
@@ -28,6 +29,20 @@ const STEP_TEXT: Record<string, string> = {
   approval: "Wait for your approval", restart: "Restart the nodes one at a time", drain: "Move the data off the nodes", apply: "Make the changes on Proxmox", configure: "Install and start Elasticsearch",
 };
 const MAX_LOG_LINES = 400;
+
+const CONFIGURE_TEXT: Record<string, string> = {
+  add_node: "Configure and start the new nodes", rebuild_nodes: "Configure and start the rebuilt nodes",
+  remove_nodes: "Bring the remaining nodes in line and check the cluster", forget_nodes: "Bring the remaining nodes in line",
+  resize: "Write the new settings", expand_disk: "Grow the filesystems",
+};
+
+/** A step's name in plain words. `configure` is the last step of several operations that do different things, so it is named for the one it
+ * belongs to: only a create installs Elasticsearch. */
+function stepText(name: string, op: Detail): string {
+  if (name === "configure") return op.kind === "tf.create" ? STEP_TEXT.configure : CONFIGURE_TEXT[op.change?.kind ?? ""] ?? "Configure the nodes";
+  if (name === "apply" && op.change?.kind === "forget_nodes") return "Apply the plan (the machines are already gone)";
+  return STEP_TEXT[name] ?? name;
+}
 
 const stateLabel = (state: string) => state.replace("_", " ").replace("pending approval", "waiting for approval");
 
@@ -107,7 +122,7 @@ function AddedNodes({ change, title = "Where each new node goes", first = "New n
     { name: "Proxmox host", render: (n: AddedNode) => <span className="ecm-mono">{n.host}</span> },
     { name: "Address", render: (n: AddedNode) => <span className="ecm-mono">{n.address}</span> },
     { field: "vm_id", name: "VM ID" },
-    { field: "roles", name: "Roles" },
+    { name: "Roles", render: (n: { roles: string }) => <span title={n.roles}>{rolesFromText(n.roles)}</span> },
     { name: "Size", render: (n: AddedNode) => `${n.cores} cores, ${n.ram_mb / 1024} GiB${n.data_disk_gb ? `, ${n.data_disk_gb} GB data` : ""}` },
   ];
   return (
@@ -134,7 +149,7 @@ function RemovedNodes({ change }: { change: NonNullable<Detail["change"]> }) {
     { name: "Proxmox host", render: (n: RemovedNode) => <span className="ecm-mono">{n.host}</span> },
     { name: "Address", render: (n: RemovedNode) => <span className="ecm-mono">{n.address}</span> },
     { field: "vm_id", name: "VM ID" },
-    { field: "roles", name: "Roles" },
+    { name: "Roles", render: (n: { roles: string }) => <span title={n.roles}>{rolesFromText(n.roles)}</span> },
     { name: "Data to move", render: (n: RemovedNode) => (n.shards ? `${n.shards} shard${n.shards === 1 ? "" : "s"}, ${bytes(n.data_bytes)}` : "none") },
   ];
   return (
@@ -156,7 +171,7 @@ function ForgottenNodes({ change }: { change: NonNullable<Detail["change"]> }) {
     { name: "Was on", render: (n: AddedNode) => <span className="ecm-mono">{n.host}</span> },
     { name: "Address", render: (n: AddedNode) => <span className="ecm-mono">{n.address}</span> },
     { field: "vm_id", name: "VM ID" },
-    { field: "roles", name: "Roles" },
+    { name: "Roles", render: (n: { roles: string }) => <span title={n.roles}>{rolesFromText(n.roles)}</span> },
   ];
   return (
     <div className="ecm-stack-lg">
@@ -180,7 +195,7 @@ function RestartOrder({ change }: { change: NonNullable<Detail["change"]> }) {
     { name: "What happens", render: (n: PlannedNode) => (n.action === "start" ? "Started (it is not in the cluster)" : "Restarted") },
     { name: "Proxmox host", render: (n: PlannedNode) => <span className="ecm-mono">{n.host}</span> },
     { field: "vm_id", name: "VM ID" },
-    { field: "roles", name: "Roles" },
+    { name: "Roles", render: (n: { roles: string }) => <span title={n.roles}>{rolesFromText(n.roles)}</span> },
   ];
   return (
     <div className="ecm-stack-lg">
@@ -283,7 +298,7 @@ export function OperationDetail({ id }: { id: string }) {
         {op.steps.map((step) => (
           <li key={step.seq} className="ecm-step">
             <EuiHealth color={STEP_COLOR[step.status] ?? "subdued"}>
-              <span className="ecm-step__name">{STEP_TEXT[step.name] ?? step.name}</span>{" "}
+              <span className="ecm-step__name">{stepText(step.name, op)}</span>{" "}
               <span className="ecm-small">{STEP_STATUS[step.status] ?? step.status}</span>
             </EuiHealth>
             {step.detail && <div role="alert" className="ecm-error-text">{step.detail}</div>}

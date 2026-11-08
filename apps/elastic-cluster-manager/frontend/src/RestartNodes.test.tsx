@@ -55,6 +55,13 @@ test("the panel explains the order and the use, lists every node with its role, 
   expect(plan()).toBeDisabled();
 });
 
+test("a node with the default roles reads as all roles, not a line of eleven names", async () => {
+  const everything = ["data", "data_cold", "data_content", "data_frozen", "data_hot", "data_warm", "ingest", "master", "ml", "remote_cluster_client", "transform"];
+  app({ ...LIFE, node_roles: { ...NODE_ROLES, "lab-d-04": { roles: everything, master_eligible: true, holds_data: true, host: "pve1" } } });
+  const p = await inPanel();
+  expect(p.getByLabelText("lab-d-04: all roles (master-eligible)")).toBeInTheDocument();
+});
+
 test("the chosen nodes are posted after a confirmation that says nothing changes yet", async () => {
   const fn = app(LIFE, { "POST /api/clusters/c1/restart-nodes": [202, { operation_id: "rs1", change: {} }] });
   const p = await inPanel();

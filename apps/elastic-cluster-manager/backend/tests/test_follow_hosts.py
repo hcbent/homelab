@@ -52,3 +52,59 @@ def test_other_connections_unmanaged_and_unbuilt_clusters_are_left_alone(logged_
     session.refresh(other)
     assert cluster.desired["placement"] == {"fxa-01": "old"} and other.desired["placement"] == {"fxa-01": "old"}
     assert actual != "old"                                                        # it would have changed if they had been followed
+
+
+# -- Sync now on a cluster ECM built also reads Proxmox --------------------------------------------------------------------------------
+
+H = {"x-ecm-csrf": "1"}
+
+
+def spy_syncs(monkeypatch, fail_proxmox=False):
+    """Replace the two syncs with recorders, so the order and who was called are visible."""
+    from app.discovery import sync as sync_module
+    from app.discovery.http import DiscoveryError
+    calls: list[str] = []
+    real_proxmox = sync_module.sync_proxmox
+
+    def proxmox(db, conn, client=None):
+        calls.append("proxmox")
+        if fail_proxmox:
+            raise DiscoveryError("connection refused")
+        return real_proxmox(db, conn, client)
+    monkeypatch.setattr(sync_module, "sync_proxmox", proxmox)
+    monkeypatch.setattr(sync_module, "sync_cluster", lambda db, c, client=None: calls.append("cluster"))
+    return calls
+
+
+def test_sync_now_reads_proxmox_first_so_the_recorded_host_and_the_machine_states_are_fresh(logged_in, session, cluster, monkeypatch):
+    pve = fixture_proxmox(logged_in, session, monkeypatch)
+    cluster.desired = {"proxmox_connection_id": pve.id, "vm_ids": {"fxa-01": 301}, "placement": {"fxa-01": "stale-host"}}
+    session.commit()
+    calls = spy_syncs(monkeypatch)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/sync", headers=H)
+    assert r.status_code == 200 and r.json()["proxmox_error"] is None
+    assert calls == ["proxmox", "cluster"]                                         # Proxmox first, so the links are made from fresh data
+    session.refresh(cluster)
+    assert cluster.desired["placement"]["fxa-01"] != "stale-host"
+    shown = logged_in.get(f"/api/clusters/{cluster.id}").json()["lifecycle"]
+    assert shown["proxmox_synced_at"] is not None                                  # the page can say how old the Proxmox reading is
+
+
+def test_a_proxmox_failure_is_reported_and_does_not_fail_the_sync(logged_in, session, cluster, monkeypatch):
+    pve = fixture_proxmox(logged_in, session, monkeypatch)
+    cluster.desired = {"proxmox_connection_id": pve.id, "vm_ids": {}, "placement": {}}
+    session.commit()
+    calls = spy_syncs(monkeypatch, fail_proxmox=True)
+    r = logged_in.post(f"/api/clusters/{cluster.id}/sync", headers=H)
+    assert r.status_code == 200 and calls == ["proxmox", "cluster"]
+    assert "Proxmox could not be read (connection refused)" in r.json()["proxmox_error"]
+
+
+def test_a_cluster_ecm_did_not_build_is_synced_from_elasticsearch_only(logged_in, session, monkeypatch):
+    pve = fixture_proxmox(logged_in, session, monkeypatch)
+    other = Cluster(name="lab-found", ownership="discovered", desired={"proxmox_connection_id": pve.id})
+    session.add(other)
+    session.commit()
+    calls = spy_syncs(monkeypatch)
+    assert logged_in.post(f"/api/clusters/{other.id}/sync", headers=H).json()["proxmox_error"] is None
+    assert calls == ["cluster"]

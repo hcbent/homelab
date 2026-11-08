@@ -9,6 +9,7 @@ import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
 import { AddNodes } from "./AddNodes";
 import { GrowDisks } from "./GrowDisks";
 import { Recovery } from "./Recovery";
+import { rolesText } from "./roles";
 import { RemoveNodes } from "./RemoveNodes";
 import { Resize } from "./Resize";
 import { RestartNodes } from "./RestartNodes";
@@ -66,8 +67,10 @@ export function ClusterDetailView({ id }: { id: string }) {
   async function syncNow() {
     setSyncErr(null);
     setSyncing(true);
-    try { await api(`/api/clusters/${id}/sync`, { method: "POST" }); }
-    catch (e) { setSyncErr(e instanceof ApiError ? e.message : String(e)); }
+    try {
+      const out = await api<{ proxmox_error?: string | null }>(`/api/clusters/${id}/sync`, { method: "POST" });
+      if (out?.proxmox_error) setSyncErr(out.proxmox_error);       // Elasticsearch was read; Proxmox was not, and the page says so
+    } catch (e) { setSyncErr(e instanceof ApiError ? e.message : String(e)); }
     setSyncing(false);
     load();
   }
@@ -89,7 +92,7 @@ export function ClusterDetailView({ id }: { id: string }) {
   const nodeColumns: EuiBasicTableColumn<NodeRow>[] = [
     { name: "Node", render: (n: NodeRow) => (
       <div className="ecm-stack"><span className="ecm-mono">{n.name}</span><div className="ecm-mono ecm-small">{n.ip}</div></div>) },
-    { name: "Roles", render: (n: NodeRow) => <span className="ecm-small">{n.roles.join(", ") || "coordinating only"}</span> },
+    { name: "Roles", render: (n: NodeRow) => <span className="ecm-small" title={n.roles.join(", ")}>{rolesText(n.roles)}</span> },
     { name: "Heap", render: (n: NodeRow) => `${n.heap_used_pct ?? "—"}%` },
     { name: "Disk free", render: (n: NodeRow) => `${bytes(n.disk_avail_bytes)} / ${bytes(n.disk_total_bytes)}` },
     { field: "shard_count", name: "Shards" },
