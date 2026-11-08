@@ -56,6 +56,9 @@ class PlacementConfig:
     w_ram: float = 0.5
     w_cpu: float = 0.3
     w_disk: float = 0.2
+    # False when a cluster is being recovered: a placement that breaks the master spread is then reported as a warning, because
+    # a dead host's master has to come back somewhere, and refusing would leave the cluster without it.
+    spread_is_required: bool = True
 
 
 @dataclass
@@ -247,11 +250,12 @@ def recommend_placement(
                           for n in state.nodes if n.name in result.assignments}
     used = {p.host for p in result.assignments.values()}
     result.excluded = {h: r for h, r in why_not.items() if h not in used}
-    _quorum_findings(result, masters, {n.name for n in state.nodes if n.is_master_eligible})
+    _quorum_findings(result, masters, {n.name for n in state.nodes if n.is_master_eligible},
+                     severity="error" if cfg.spread_is_required else "warning")
     return result
 
 
-def _quorum_findings(result: PlacementResult, masters: Counter, master_names: set[str]) -> None:
+def _quorum_findings(result: PlacementResult, masters: Counter, master_names: set[str], severity: str = "error") -> None:
     total = sum(masters.values())
     # Fewer than three master-eligible nodes cannot survive losing any host, so there is no placement to demand.
     # A node that could not be placed already made the result an error; counts of the rest would mislead.
@@ -267,11 +271,13 @@ def _quorum_findings(result: PlacementResult, masters: Counter, master_names: se
             skipped = "; ".join(f"{h} could not take one: {', '.join(why)}"
                                 for h, why in sorted(result.excluded.items()))
             result.issues.append(PlacementIssue(
-                "error",
+                severity,
                 f"host '{host}' would hold {held} of {total} master-eligible nodes{named}, and losing it would "
                 f"break the master quorum. At least {needed} hosts must each take master-eligible nodes"
                 + (f" ({skipped})" if skipped else "")
-                + ". Free capacity on another host, or move machines, then plan again."))
+                + (". Free capacity on another host, or move machines, then plan again." if severity == "error"
+                   else ". This is allowed because the cluster is being recovered and getting it back matters more; "
+                        "spread them again once a host is available.")))
     shared = sorted(h for h, c in masters.items() if c > 1)
     if shared and result.quorum_safe:
         result.issues.append(PlacementIssue(

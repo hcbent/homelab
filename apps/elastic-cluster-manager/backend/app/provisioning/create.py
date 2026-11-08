@@ -265,9 +265,10 @@ def _template(db: Session, conn: ProxmoxConnection, vmid: int | None) -> Vm:
 
 
 def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datastore: str, template: Vm,
-               exclude_vms: frozenset[str] = frozenset()):
+               exclude_vms: frozenset[str] = frozenset(), spread_is_required: bool = True):
     """Place the nodes of `state`. `exclude_vms` names machines left out of what the hosts are seen to carry: when a
-    cluster's existing nodes are in `state` (pinned where they are), their machines would otherwise be charged twice."""
+    cluster's existing nodes are in `state` (pinned where they are), their machines would otherwise be charged twice.
+    `spread_is_required` is False when recovering a cluster, so a master that has to share a host is a warning, not an error."""
     nodes = [{"name": n.name, "status": n.status, "usage": n.usage}
              for n in db.scalars(select(PveNode).where(PveNode.connection_id == conn.id))]
     if not nodes:
@@ -279,7 +280,7 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
             "memory_mb": v.memory_mb}
            for v in db.scalars(select(Vm).where(Vm.connection_id == conn.id)) if v.name not in exclude_vms]
     result = recommend_placement(state, host_views_from_rows(nodes, storages, vms),
-                                 PlacementConfig(datastore=datastore))
+                                 PlacementConfig(datastore=datastore, spread_is_required=spread_is_required))
     errors = [(f"{i.node}: " if i.node else "") + i.message for i in result.issues if i.severity == "error"]
     if errors:
         raise CreateInvalid("the nodes cannot be placed: " + "; ".join(errors))

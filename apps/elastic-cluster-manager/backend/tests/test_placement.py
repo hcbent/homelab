@@ -151,6 +151,15 @@ def test_two_hosts_for_three_masters_is_refused_because_losing_one_breaks_the_qu
     assert "At least 3 hosts" in message
 
 
+def test_the_same_placement_is_only_a_warning_when_the_spread_is_not_required():
+    """Recovering a cluster: a dead host's master has to come back somewhere (docs/DESIGN_RECOVERY.md)."""
+    hosts = [host("pve1"), host("pve2"), host("pve3", online=False)]
+    got = recommend_placement(three_node(), hosts, PlacementConfig(spread_is_required=False))
+    assert got.ok and not got.quorum_safe                              # still marked unsafe, so the caller can say so
+    warning = next(i.message for i in got.issues if i.severity == "warning" and "would hold 2 of 3" in i.message)
+    assert "allowed because the cluster is being recovered" in warning and "Free capacity" not in warning
+
+
 def test_a_single_host_is_refused_too():
     got = recommend_placement(three_node(), [host("pve1")])
     assert not got.ok and not got.quorum_safe

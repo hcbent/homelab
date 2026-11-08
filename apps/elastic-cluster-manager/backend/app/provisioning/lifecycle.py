@@ -733,8 +733,10 @@ def plan_rebuild_nodes(db: Session, cluster: Cluster, request: RebuildNodes, cli
     datastore = params.get("datastore_id", get_settings().default_storage)
     try:
         template = _template(db, conn, (params.get("template") or {}).get("vm_id"))
+        # A dead host's master has to come back somewhere, so sharing a host is a warning here, not a refusal (the operator's
+        # call): the cluster is already degraded and getting it back matters more than the spread.
         placement = _placement(db, conn, grown, datastore, template,
-                               exclude_vms=frozenset(n.name for n in state.nodes))
+                               exclude_vms=frozenset(n.name for n in state.nodes), spread_is_required=False)
     except (CreateInvalid, AllocationError) as exc:
         raise OperationRefused(str(exc)) from exc
 

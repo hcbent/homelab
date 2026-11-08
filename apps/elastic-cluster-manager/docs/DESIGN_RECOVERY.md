@@ -116,6 +116,7 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
 
 - A mistaken "lost": the last sync is up to a few minutes old, so a node that is only slow could be rebuilt over a live one. The plan rule (the machine must be absent from
   Terraform's refreshed state) and the ownership check are the guards, not the sync.
+- A master rebuilt on a shared host leaves the cluster one host failure from losing its quorum until a host is available to spread them again; the plan's warning says so.
 - A rebuilt data node starts empty and pulls its shards from the others, which loads a cluster that is already degraded.
 - Forgetting a node whose data was not replicated makes the loss permanent in ECM's record; the red warning and the quorum rules are the guards.
 
@@ -139,10 +140,13 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
   or better** (`es_jc_min_status`) before and after instead of green. The record's addresses, VM IDs and roles are unchanged; only a moved node's host changes.
 - **The host** is one optional choice for every node in the request (as add-node has), else each node's old host if the last sync shows it online, else
   ECM's placement under the master spread rule with every other node pinned where it is.
-- **What the tests found:** with three masters on three hosts, a **dead host's master cannot be rebuilt on the two hosts left**: the spread rule (no host may
-  hold more than `(masters - 1) // 2`) refuses it, and forgetting it is refused too (fewer than three masters would remain), and add-node refuses while a node is
-  missing. So in that one case ECM offers no recovery until the host is back or a host is added by hand. That follows from the rules the operator set; it is
-  recorded here because the alternative (a warning instead of a refusal for a rebuild) is the operator's call. See the open question below.
+- **The master spread is a warning for a rebuild, not a refusal (the operator's decision, 2026-11-08).** The first build refused it, and the tests showed
+  the consequence: with three masters on three hosts a dead host's master could not be rebuilt on the two left, could not be forgotten (fewer than three masters),
+  and add-node refuses while a node is missing, so ECM offered no recovery. The operator's answer: when a host dies, the anti-affinity rule can be ignored in
+  favour of getting the cluster back. So `plan_rebuild_nodes` places with `spread_is_required=False`: the placement still spreads where it can, and where it
+  cannot (or the operator picks a shared host) the plan page carries a warning that names the host, how many masters it would hold and that losing it would break
+  the quorum, and says it is allowed because the cluster is being recovered. Every other rule is unchanged, and forgetting a master is still refused when fewer
+  than three would remain.
 - **The UI:** a Recovery panel on the cluster page, shown only when a node is lost (machine absent and not in the cluster, from the last syncs), with the nodes
   chosen by default, an optional host, "Plan the rebuild" and "Forget these nodes" (the cluster name typed); a node that has a machine but is not in the cluster
   gets a note that it needs starting or restarting, which is not built. The operation page shows tables for each, a danger-coloured "Approve and forget", and failure
@@ -150,8 +154,3 @@ approval by design, so a restart must not ride on `tf.update`.) The job, the app
 - **Unverified on a real cluster:** all of it. In particular that Terraform's refresh drops a deleted VM from its state so the plan shows a create; that it accepts
   an empty saved plan; that a VM can be created at a VM ID whose disks were left behind on shared storage; that Elasticsearch takes a rebuilt master-eligible node
   (same name, new node ID) into the voting configuration; and that the join steps work on a machine that replaces one of a running cluster's.
-
-**Open question for the operator:** should a rebuild be allowed, with a warning instead of a refusal, to put a master on a host that already has one when
-the host it was on is down? Today it is refused (the spread rule is hard everywhere), which leaves a three-host, three-master cluster with no ECM recovery for a dead
-host's master. The alternatives are to keep the refusal and say so in the panel, or to allow it with an explicit confirmation.
-

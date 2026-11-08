@@ -209,8 +209,11 @@ master-only, over `pve1` to `pve3`. What was seen, and what was not:
   cluster needs at least 3 to survive losing one".
 - **Not yet seen:** the drain's own log (the shutdown calls' response shapes and how long a drain took, and no `STALLED` was reported as far as
   the operator said), the Terraform apply, that Proxmox destroyed the machines and left no orphaned volumes, that the shutdown records were
-  deleted, that the voting configuration lists only the remaining masters, and the teardown of the cluster afterwards (started by the operator;
-  it is the first teardown after nodes were removed).
+  deleted, and that the voting configuration lists only the remaining masters.
+- **The teardown afterwards worked (the operator's report, 2026-11-08):** the first teardown after nodes were added and removed ran "as expected" and
+  the pool is empty, so the removed machines and the remaining ones are all gone from Proxmox. The ownership question the design flagged (the removed nodes'
+  VM IDs against the teardown's check) did not stop it. Not reported: whether any disk volumes were left on the datastore (the pool is empty, which
+  does not say).
 - **Small thing noticed:** an all-in-one node's eleven roles are listed in full in the Remove nodes panel and on the cluster page's node table;
   "all roles" would read better (see `docs/TODO.md`).
 

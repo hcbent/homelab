@@ -64,20 +64,25 @@ def test_a_node_whose_old_host_is_not_online_is_placed_elsewhere(session, built)
     assert new["placement"]["lab-x-06"] in ("pve1", "pve2", "pve3") and new["change"]["nodes"]["lab-x-06"]["moved"] is True
 
 
-def test_a_master_whose_host_died_cannot_be_rebuilt_on_the_two_hosts_left_under_the_spread_rule(session, built):
-    """Three masters on three hosts: with one host gone, a rebuilt master would share a host with another, and losing that host
-    would break the quorum. The rule is hard, so ECM says so and the operator brings the host back or adds one."""
-    for host in session.query(PveNode).filter(PveNode.name == built.desired["placement"]["lab-x-03"]):
+def test_a_master_whose_host_died_is_rebuilt_on_a_host_that_already_has_one_with_a_warning(session, built):
+    """Three masters on three hosts: with one host gone, a rebuilt master has to share a host with another, and losing that host
+    would break the quorum. Recovery wins over the spread (the operator's decision): ECM says so, and allows it."""
+    dead = built.desired["placement"]["lab-x-03"]
+    for host in session.query(PveNode).filter(PveNode.name == dead):
         host.status = "offline"
     session.commit()
-    with pytest.raises(OperationRefused, match="cannot be placed"):
-        rebuild(session, built, "lab-x-03", "lab-x-06")
+    new = rebuild(session, built, "lab-x-03", "lab-x-06")
+    hosts = new["placement"]
+    assert hosts["lab-x-03"] != dead and hosts["lab-x-03"] in (hosts["lab-x-01"], hosts["lab-x-02"])
+    warning = next(w for w in new["change"]["warnings"] if "would hold 2 of 3 master-eligible nodes" in w)
+    assert "This is allowed because the cluster is being recovered" in warning
+    assert new["change"]["nodes"]["lab-x-03"]["moved"] is True
 
 
-def test_a_master_cannot_be_put_on_a_host_that_would_break_the_master_spread(session, built):
+def test_a_master_put_on_a_host_that_already_has_one_by_choice_is_allowed_with_the_same_warning(session, built):
     other = built.desired["placement"]["lab-x-02"]                                        # another master's host
-    with pytest.raises(OperationRefused, match="cannot be placed"):
-        rebuild(session, built, "lab-x-01", pve_node=other)
+    new = rebuild(session, built, "lab-x-01", pve_node=other)
+    assert any("would hold 2 of 3 master-eligible nodes" in w and "being recovered" in w for w in new["change"]["warnings"])
 
 
 def test_several_lost_nodes_are_rebuilt_together_and_a_node_that_is_not_lost_is_refused_with_why(session, built):
