@@ -208,3 +208,17 @@ The operator deleted the VM of the data node `test-5a-05` (VM 504, `pve3`), sync
   the rebuild, never had it (changed=0).
 - **A forgotten data node changes nothing the others refer to**: `discovery.seed_hosts` lists only master-eligible nodes, so for this forget the converge was not needed. Two follow-ups are in `docs/TODO.md`.
 
+## Fourth live result: the refusals (2026-11-08, the operator's console output)
+
+The operator stopped `test-5a-06` (VM 505, a data node) and, with its VM still in ECM's Proxmox inventory, called the two endpoints from the browser console. The cluster page then showed 4 nodes, green, one data node.
+
+- **Both refused with 409 and created no operation.** `rebuild-nodes`: "test-5a-06's machine (VM 505) exists in Proxmox and is running; it is not lost, so it needs to be started or restarted, not rebuilt".
+  `forget-nodes`: the same, then "a node whose machine exists is taken out with Remove nodes".
+- **"is running" was stale.** The VM had been stopped, but only Elasticsearch was synced (the Proxmox inventory was not), so the message used the VM's last recorded status. The refusal is right either way (the machine exists);
+  the status in the text is only as fresh as the last Proxmox sync.
+- **A flaw the output showed, now fixed:** the forget message sent the operator to Remove nodes, which cannot take out a node that is down (it needs every node present and green). For a node that is not in the cluster the message now
+  says it needs starting or restarting first, that ECM cannot yet start a node, and that Remove nodes cannot take out one that is down.
+- **A gap this leaves, for 5b or later:** a node whose machine exists but that will not come back (Elasticsearch will not start, the guest is broken) can be neither rebuilt (the machine exists), forgotten (same), nor removed
+  (it is down). Starting or restarting (5b) fixes the usual case. For a machine that cannot be recovered, the way out today is a teardown of the whole cluster; a "remove a down node" workflow (no drain, since there is nothing
+  to move, and Terraform destroys the machine and its disks) would close it, and is a decision for the operator.
+

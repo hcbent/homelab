@@ -158,8 +158,11 @@ def test_forgetting_needs_the_cluster_name_a_lost_node_and_the_quorum(session, b
     session.add(Vm(connection_id=built.desired["proxmox_connection_id"], pve_node="pve1",
                    vmid=built.desired["vm_ids"]["lab-x-06"], name="lab-x-06", status="running"))
     session.commit()
-    with pytest.raises(OperationRefused, match=r"exists in Proxmox and is running.*Remove nodes"):
-        forget(session, built, "lab-x-06")
+    with pytest.raises(OperationRefused, match=r"exists in Proxmox and is running.*not in the cluster needs to be started or restarted "
+                                               r"first.*Remove nodes needs every node present"):
+        forget(session, built, "lab-x-06")                                               # down: Remove nodes cannot take it out
+    with pytest.raises(OperationRefused, match=r"lab-x-05 is in the cluster.*a node that is in the cluster is taken out with Remove nodes"):
+        forget(session, built, "lab-x-05", es=FakeEs(state_of(built)))                    # in the cluster: it can
 
 
 def test_the_host_spread_rule_applies_to_forgetting_a_master(session, five_masters):

@@ -790,7 +790,12 @@ def plan_forget_nodes(db: Session, cluster: Cluster, request: ForgetNodes, clien
     _, live = _recovery_read(db, cluster, state, [n.name for n in removing], client)
     problems = _not_lost(db, params, [n.name for n in removing], live)
     if problems:
-        raise OperationRefused("; ".join(problems) + "; a node whose machine exists is taken out with Remove nodes")
+        # What to do instead depends on whether the node is in the cluster: one that is is taken out with Remove nodes, but Remove
+        # nodes needs every node present, so it cannot take out one that is down. Say so rather than point at a path that refuses.
+        advice = ("a node that is in the cluster is taken out with Remove nodes" if live & {n.name for n in removing} else
+                  "a node whose machine exists but that is not in the cluster needs to be started or restarted first; ECM cannot "
+                  "yet start a node, and Remove nodes needs every node present, so it cannot take out one that is down")
+        raise OperationRefused("; ".join(problems) + "; " + advice)
     detail = _drop_nodes(params, state, removing, remaining, {})
     names = [n.name for n in removing]
     params["change"] = {
