@@ -195,3 +195,16 @@ The operator deleted the VM of the master `test-5a-01` (pve1, VM 500) and rebuil
 - **Changed because of it:** the first-boot wait now handles a cloud-init that is still running after its time (`first_boot_cloud_init_wait`, 900 seconds): it is not asked again (that would wait the same
   time again), `cloud-init status --long` and the end of `/var/log/cloud-init-output.log` are put in the log, and the failure says plainly that cloud-init was still running and that Retry is safe.
 
+## Third live result: a forget (2026-11-08, the operator's screenshot)
+
+The operator deleted the VM of the data node `test-5a-05` (VM 504, `pve3`), synced Proxmox, and planned "Forget these nodes".
+
+- **The plan page** said "On Proxmox: Nothing: the machines are already gone", listed the node (`pve3`, its address, VM 504, `data, ingest`), and **waited for approval although the plan was empty**, as designed.
+- **It ran to the end in 1m 5s.** All six steps were done, including "Make the changes on Proxmox", which is the **apply of the empty saved plan**: Terraform accepted it, so that assumption holds. The page then said "The lost
+  nodes are forgotten ... Nothing was destroyed".
+- **The converge touched the five remaining nodes** and restarted none (recap: `test-5a-01` changed=0, `-02` and `-03` changed=1, `-04` and `-06` changed=2, nothing failed). The step is labelled "Install and start
+  Elasticsearch" on the page, which is its name for every configure step; for a forget it is a converge and installs nothing. What changed on those nodes was not read from the log (the lines scrolled out of view); the likely
+  reason is that this was the first converge since the create, which rewrites `elasticsearch.yml` without `cluster.initial_master_nodes`, a setting that is only ever rendered at the first bootstrap, while `test-5a-01`, written fresh by
+  the rebuild, never had it (changed=0).
+- **A forgotten data node changes nothing the others refer to**: `discovery.seed_hosts` lists only master-eligible nodes, so for this forget the converge was not needed. Two follow-ups are in `docs/TODO.md`.
+
