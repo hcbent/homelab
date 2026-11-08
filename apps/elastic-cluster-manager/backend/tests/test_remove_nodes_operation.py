@@ -2,6 +2,8 @@
 failure leaves behind, how a retry resumes, and who counts as ECM's afterwards. Terraform and Ansible are the same fakes
 the other operation tests use; the cluster's answers come from the fake Elasticsearch of the rules tests."""
 # ruff: noqa: F811  (the fixtures are imported from the other operation tests and used by name)
+import copy
+
 import pytest
 from sqlalchemy import select
 
@@ -102,13 +104,14 @@ def test_the_removal_waits_for_approval_then_drains_before_terraform_destroys_an
 
     op = approve_and_run(session, world, op)
     assert op.state == "succeeded"
-    assert seen == [("remove_drain", 1), ("converge", 2), ("remove_check", 2)]     # drained while one apply (the create) had run
-    drain = world.ansible_requests[-3]
+    # drained while one apply (the create) had run; no converge, because neither node was master-eligible (see below)
+    assert seen == [("remove_drain", 1), ("remove_check", 2)]
+    drain = world.ansible_requests[-2]
     assert drain.kind == "remove_drain" and drain.removing == ["lab-b-05", "lab-b-06"]
     assert [n.name for n in drain.state.nodes] == NAMES[:4] and set(drain.addresses) == set(NAMES[:4])
     assert drain.es_api_key and drain.es_ca_pem
-    assert [r.kind for r in world.ansible_requests[-2:]] == ["converge", "remove_check"]
-    assert world.ansible_requests[-2].check is False
+    assert [r.kind for r in world.ansible_requests[-2:]] == ["remove_drain", "remove_check"]
+    assert "no remaining node's configuration refers to the nodes that left" in logs(session, op)
     assert "the cluster is green with the nodes that remain" in logs(session, op)
 
 
@@ -217,7 +220,7 @@ def test_a_failed_check_after_the_machines_are_gone_keeps_the_new_state_and_a_re
     op = run(session, world, op)
     assert op.state == "succeeded" and world.calls.count("apply") == 2   # no second apply
     kinds = [k for k, _ in seen]
-    assert kinds == ["remove_drain", "converge", "remove_check", "remove_drain", "converge", "remove_check"]
+    assert kinds == ["remove_drain", "remove_check", "remove_drain", "remove_check"]
     assert "nothing to apply" in logs(session, op)
 
 
@@ -311,3 +314,38 @@ def test_the_cluster_page_data_lists_each_nodes_roles_and_host_for_the_panel(log
     assert sorted(roles) == NAMES and roles["lab-b-01"]["master_eligible"] and not roles["lab-b-01"]["holds_data"]
     assert roles["lab-b-04"]["holds_data"] and not roles["lab-b-04"]["master_eligible"]
     assert roles["lab-b-06"]["roles"] == [] and roles["lab-b-06"]["host"] == "pve3"
+
+
+def edit_params(session, op, change):
+    """Change an operation's parameters and save them: a JSON column is only saved when it is assigned, not when it is edited in place."""
+    params = copy.deepcopy(op.params)
+    change(params)
+    op.params = params
+    session.commit()
+
+
+# -- the converge after a removal runs only when a master-eligible node left ----------------------------------------------------------
+
+def test_taking_out_a_master_eligible_node_does_run_the_converge_since_it_leaves_the_seed_lists(session, world, six, seen):
+    """`discovery.seed_hosts` names the master-eligible nodes, so only their leaving changes what the others' configuration says. The rules
+    allow removing a master only from a cluster with more than three, so the flag is set on the plan here, as a plan for such a cluster has it."""
+    op = removing(session, world, six, "lab-b-05", "lab-b-06")
+    edit_params(session, op, lambda p: p["change"]["nodes"]["lab-b-05"].__setitem__("master_eligible", True))
+    assert "then the nodes that remain are brought in line" not in op.params["change"]["describe"]      # the flag was edited, the text was not
+    op = approve_and_run(session, world, run(session, world, op))
+    assert op.state == "succeeded"
+    assert [k for k, _ in seen] == ["remove_drain", "converge", "remove_check"]
+    assert "a master-eligible node left the seed lists, so the remaining nodes are brought in line" in logs(session, op)
+
+
+def test_a_plan_made_before_the_flag_existed_runs_the_converge_to_be_safe(session, world, six, seen):
+    op = removing(session, world, six, "lab-b-06")
+    edit_params(session, op, lambda p: [info.pop("master_eligible") for info in p["change"]["nodes"].values()])
+    approve_and_run(session, world, run(session, world, op))
+    assert [k for k, _ in seen] == ["remove_drain", "converge", "remove_check"]
+
+
+def test_the_plan_says_whether_the_remaining_nodes_will_be_reconfigured(session, world, six):
+    quiet = removing(session, world, six, "lab-b-06").params["change"]
+    assert "brought in line" not in quiet["describe"] and quiet["nodes"]["lab-b-06"]["master_eligible"] is False
+    assert quiet["describe"].endswith("then ECM checks the cluster is green with the nodes that remain")

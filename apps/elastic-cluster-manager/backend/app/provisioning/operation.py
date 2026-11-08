@@ -739,6 +739,19 @@ class _Handlers:
             raise ConfigureFailed(f"{outcome.error or 'the converge failed'}. {kept}")
         log(self.db, self.op.id, "the change is applied on every node")
 
+    def _converge_if_a_master_left(self) -> None:
+        """After nodes leave, bring the remaining nodes' configuration in line, but only when something in it refers to a node that left. The
+        only such thing is the seed list, which names the master-eligible nodes; taking out a data, ingest, ML or coordinating node
+        changes nothing a remaining node's configuration says, so a converge would only rewrite whatever else had drifted. A node whose
+        record has no flag (an operation planned before this was known) is treated as master-eligible, which runs the converge."""
+        change = self.op.params.get("change") or {}
+        if any(info.get("master_eligible", True) for info in (change.get("nodes") or {}).values()):
+            log(self.db, self.op.id, "a master-eligible node left the seed lists, so the remaining nodes are brought in line")
+            self._converge()
+            return
+        log(self.db, self.op.id, "no remaining node's configuration refers to the nodes that left (only master-eligible nodes are in the "
+                                 "seed lists), so nothing is reconfigured")
+
     def restart(self) -> None:
         """Restart the nodes that are not yet at their new size, one at a time (playbooks/rolling_restart.yml). It
         asks Elasticsearch about the cluster with ECM's API key and asks Proxmox to restart each VM with the
@@ -862,10 +875,10 @@ class _Handlers:
             elif kind == "rebuild_nodes":
                 self._add_nodes(rebuild=True)
             elif kind == "remove_nodes":
-                self._converge()            # the remaining nodes' seed lists lose the removed ones; nothing restarts
+                self._converge_if_a_master_left()
                 self._removal_check()
             elif kind == "forget_nodes":
-                self._converge()            # the same for nodes that were already gone; there is nothing to check
+                self._converge_if_a_master_left()   # nodes that were already gone; there is nothing to check afterwards
             else:
                 self._converge()
             return

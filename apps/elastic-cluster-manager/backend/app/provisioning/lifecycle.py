@@ -509,7 +509,9 @@ def plan_remove_nodes(db: Session, cluster: Cluster, request: RemoveNodes, clien
         "kind": "remove_nodes", "removed": names, "warnings": notes, "nodes": detail,
         "describe": (f"remove {len(names)} node{'s' if len(names) != 1 else ''} ({', '.join(names)}): "
                      "Elasticsearch moves their shards to the other nodes, then Terraform destroys the machines and "
-                     "their disks, then ECM checks the cluster is green with the nodes that remain"),
+                     "their disks, " + ("then the nodes that remain are brought in line (a master-eligible node leaves their seed list), "
+                                        if any(n.is_master_eligible for n in removing) else "")
+                     + "then ECM checks the cluster is green with the nodes that remain"),
     }
     return params
 
@@ -614,7 +616,8 @@ def _drop_nodes(params: dict, state: DesiredState, removing: list[NodeSpec], rem
         detail[n.name] = {"host": params["placement"].get(n.name), "address": params["addresses"].get(n.name),
                           "vm_id": int(params["vm_ids"][n.name]), "roles": ", ".join(sorted(n.effective_roles)) or
                           "none (coordinating only)", "cores": n.cores, "ram_mb": n.ram_mb,
-                          "data_disk_gb": n.data_disk_gb, **per_node.get(n.name, {"shards": 0, "data_bytes": 0})}
+                          "data_disk_gb": n.data_disk_gb, "master_eligible": n.is_master_eligible,
+                          **per_node.get(n.name, {"shards": 0, "data_bytes": 0})}
     for table in ("placement", "addresses", "vm_ids"):
         params[table] = {k: v for k, v in params[table].items() if k not in names}
     params["node_counter"] = max([int(params.get("node_counter", 0)), *numbered])
@@ -803,8 +806,10 @@ def plan_forget_nodes(db: Session, cluster: Cluster, request: ForgetNodes, clien
     params["change"] = {
         "kind": "forget_nodes", "removed": names, "warnings": [], "nodes": detail,
         "describe": (f"forget {len(names)} lost node{'s' if len(names) != 1 else ''} ({', '.join(names)}): their machines are "
-                     "already gone, so nothing is destroyed; ECM takes them out of the cluster's record and brings the "
-                     "nodes that remain in line with it"),
+                     "already gone, so nothing is destroyed; ECM takes them out of the cluster's record"
+                     + (" and brings the nodes that remain in line with it" if any(n.is_master_eligible for n in removing)
+                        else "; no remaining node's configuration refers to a node that is not master-eligible, so nothing is "
+                             "reconfigured")),
     }
     return params
 

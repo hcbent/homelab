@@ -18,7 +18,15 @@ from app.provisioning.lifecycle import (
 from app.provisioning.operation import OperationRefused, PlanRejected, start_update
 from app.provisioning.runner import ApplyOutcome
 from tests.test_remove_nodes import FakeEs
-from tests.test_remove_nodes_operation import ADDR, NAMES, approve_and_run, fail_kinds, seen, six  # noqa: F401
+from tests.test_remove_nodes_operation import (  # noqa: F401
+    ADDR,
+    NAMES,
+    approve_and_run,
+    edit_params,
+    fail_kinds,
+    seen,
+    six,
+)
 from tests.test_tf_operations import (  # noqa: F401  (fixtures and helpers shared with the other operation tests)
     cluster,
     conn,
@@ -152,7 +160,9 @@ def test_a_forget_waits_for_approval_even_though_its_plan_has_nothing_to_do(sess
 
     op = approve_and_run(session, world, op)
     assert op.state == "succeeded"
-    assert seen == [("converge", 2)]                                    # the remaining nodes are brought in line; no drain
+    assert seen == []                                                   # lab-b-06 was not master-eligible: nothing to reconfigure, no drain
+    assert "no remaining node's configuration refers to the nodes that left" in logs(session, op)
+    assert "nothing is reconfigured" in op.params["change"]["describe"]
     session.refresh(lost)
     assert [n["name"] for n in lost.desired["state"]["nodes"]] == NAMES[:5]
     assert LOST not in lost.desired["vm_ids"] and LOST not in lost.desired["addresses"]
@@ -236,3 +246,11 @@ def test_the_cluster_page_data_says_which_nodes_have_a_machine_and_are_in_the_cl
     assert state[LOST] == {"machine": False, "in_cluster": False, "vm_status": None}
     assert state["lab-b-05"] == {"machine": True, "in_cluster": True, "vm_status": "running"}
     assert AnsibleError                                                  # imported for the shared fixtures' sake
+
+
+def test_forgetting_a_master_eligible_node_does_reconfigure_the_nodes_that_remain(session, world, lost, seen):
+    op = run(session, world, forgetting(session, world, lost, LOST))
+    edit_params(session, op, lambda p: p["change"]["nodes"][LOST].__setitem__("master_eligible", True))   # as such a plan would say
+    op = approve_and_run(session, world, op)
+    assert op.state == "succeeded" and seen == [("converge", 2)]
+    assert "a master-eligible node left the seed lists" in logs(session, op)

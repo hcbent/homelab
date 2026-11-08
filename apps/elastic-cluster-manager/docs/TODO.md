@@ -3,15 +3,6 @@
 Small known problems and follow-ups that are not part of a phase. Add an item when one is found; remove it when it is fixed (the
 fix goes in `DECISIONS.md` if it taught anything).
 
-## Forgetting or removing a node that is not master-eligible runs a converge that has nothing to change because of it
-
-**Found 2026-11-08, from the same forget.** `discovery.seed_hosts` is built from the master-eligible nodes only, so taking a data, ingest, ML or coordinating-only node out of the record changes nothing the remaining nodes' configuration
-refers to. The converge after a forget (and after a removal) still runs on every remaining node, rewriting any file that has drifted from the render (in the operator's forget it changed files on four of five nodes, probably the
-first-converge drift described in `docs/DESIGN_RECOVERY.md`), and nothing restarts. It is safe, but it touches nodes the change did not concern.
-
-Propose: run it only when a master-eligible node leaves (its address leaves the seed list), and otherwise skip the step and say so ("no remaining node's configuration refers to the removed nodes"). A removal would still run its check
-that the cluster is green without them. The alternative is to keep running it, as a deliberate reconcile. Done when a forget or removal of non-master nodes skips the converge and says why, one of a master still runs it, and tests show both.
-
 ## Restart only the nodes whose configuration is waiting for a restart
 
 **Left over from slice 5b (2026-11-08).** Every converge after an add, a removal or a forget says, per node, "has not been restarted; the change takes effect at the next rolling restart", but ECM does not record which nodes that
