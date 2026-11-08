@@ -46,3 +46,17 @@ list in a tooltip. The same list shows on the plan page's table for removed and 
 Done when a default-roles node reads as one short phrase in the Remove nodes panel, the node table and the plan tables, and a node with a custom set
 of roles still lists them.
 
+## The Recovery panel can be up to five minutes stale, and says so as if it were fact
+
+**Found 2026-11-08 on infra, from the operator's first live test of a rebuild.** The operator deleted a node's VM in Proxmox and pressed *Sync now* on the cluster page. That
+button refreshes only Elasticsearch (`POST /api/clusters/{id}/sync`), so the cluster went yellow with the node missing while ECM's Proxmox inventory still held the VM's row (the
+Proxmox connection syncs separately: every 5 minutes, or from the Infrastructure page). The Recovery panel then read "test-5a-05 has a machine in Proxmox but is not in the cluster.
+That needs starting or restarting" and offered no rebuild, which is the right answer for the data it had and the wrong one for what was true.
+
+Two changes, neither made yet:
+
+- *Sync now* on a managed cluster also syncs the cluster's Proxmox connection (`desired.proxmox_connection_id`), a read-only call, and reports an error from either.
+- The panel says when the Proxmox data it relies on was taken ("as of the last Proxmox sync, 4 minutes ago") instead of stating that a machine exists.
+
+Done when deleting a VM and pressing *Sync now* once on the cluster page is enough to make the Recovery panel offer the rebuild, and the panel's text shows how old the Proxmox reading is.
+
