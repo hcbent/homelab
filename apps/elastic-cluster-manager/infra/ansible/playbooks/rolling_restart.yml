@@ -13,7 +13,7 @@
 # With es_restart_plan (docs/DESIGN_RECOVERY.md, slice 5b) it follows ECM's plan instead: the named nodes in the order given, a node whose VM is
 # stopped started rather than restarted, and a node that has been up for less time than the operation has existed skipped.
 # Extra vars for that: es_restart_plan, es_restart_present, es_restart_since.
-- name: Restart the nodes that are not at their target size, one at a time
+- name: Restart nodes one at a time, as ECM planned or after a resize
   hosts: localhost
   connection: local
   gather_facts: false

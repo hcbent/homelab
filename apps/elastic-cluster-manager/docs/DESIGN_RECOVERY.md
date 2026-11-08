@@ -258,3 +258,15 @@ After the three Proxmox hosts were rebooted and ECM redeployed, the operator sto
 - **What this settles:** Proxmox's `status/current` and `status/start` calls and the `VM.PowerMgmt` right work, a stopped node's VM is started and the node rejoins, and `GET _nodes/stats/jvm` answers (the plan's uptime read runs for every node).
 - **Not yet seen:** a restart of a node the cluster has (the allocation steps and the reboot through Proxmox), the uptime-based skip on a retry against a real cluster, and "every node" with the masters last.
 
+## Sixth live result: restarting a node the cluster has (2026-11-08, the operator's log)
+
+A restart of the data node `test-5a-04` alone ("1 to restart, 0 to start").
+
+- **Every step ran in the order designed:** the plan assertions, the cluster asked which nodes it has and how long each has been up (the real `uptime_in_millis` field is there and the "already restarted?" decision ran; the node was
+  not skipped, correctly), the VM's state read from Proxmox, the **strict green gate** before the node, **allocation restricted to primaries**, the flush, the **Proxmox reboot**, the wait for Proxmox's task (one poll), the wait for the node to join
+  (four polls), the yellow gate, **allocation allowed again**, the green gate (one poll) and the final green gate. Recap ok=34, nothing failed or changed. The polls are 10 seconds each, so the node rejoined about 40 to 50 seconds after Proxmox finished.
+- **This settles** that `GET _nodes/stats/jvm` with `filter_path` returns the uptime field the retry logic reads, and that a reboot through Proxmox of a node the cluster has works end to end.
+- **A misleading label, fixed:** the play was still named "Restart the nodes that are not at their target size, one at a time" (its name from the resize), and the skipped resize path appeared in the log under a similar name. The play is now "Restart nodes one at a
+  time, as ECM planned or after a resize", and the resize path says it only runs after a resize.
+- **Not yet seen:** a restart of every node (masters last, the elected master last), and a retry that skips nodes already restarted, against a real cluster.
+

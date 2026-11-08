@@ -25,7 +25,7 @@
   ansible.builtin.include_tasks: planned.yml
   when: es_restart_plan is defined
 
-- name: Restart the nodes that are not at their target size
+- name: Restart the nodes that are not at their target size (only after a resize, when there is no plan)
   ansible.builtin.include_tasks: sized.yml
   when: es_restart_plan is not defined
 
