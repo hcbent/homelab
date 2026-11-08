@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import audit
 from app.crypto import redact
 from app.discovery import correlate, es, proxmox
 from app.discovery.factory import es_client, proxmox_client
 from app.discovery.http import DiscoveryError
 from app.models import Cluster, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
 from app.provisioning.ownership import mark_tf_managed
+from app.provisioning.reality import follow_hosts
 
 
 def _now() -> datetime:
@@ -68,9 +70,12 @@ def sync_proxmox(db: Session, conn: ProxmoxConnection, client=None) -> None:
         db.delete(gone)
     db.flush()
     mark_tf_managed(db, conn.id)  # machines ECM created only appear here, so this is where they are marked
+    moved = follow_hosts(db, conn.id)  # a VM that was moved is recorded where it is now
 
     conn.last_sync_at, conn.last_sync_error = now, None
     db.commit()
+    for m in moved:
+        audit.record(db, "system", "cluster.host_followed", "cluster", m["cluster_id"], node=m["node"], was=m["was"], now=m["now"])
     for cluster in db.scalars(select(Cluster)):
         relink(db, cluster)
 

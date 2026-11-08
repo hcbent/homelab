@@ -93,16 +93,14 @@ is, so the Restart nodes panel can only offer "Select every node", which restart
 `es_allow_restart` was false, and keep that list on the cluster until those nodes restart; or (2) read it from each node when the restart is planned, by asking whether the configuration file is newer than the service's start time (an SSH
 probe, since nothing else can tell). (2) needs no new state and cannot go stale; (1) needs a column and a migration. Done when the panel marks the nodes that are waiting and offers "Restart the nodes that are waiting".
 
-## ECM's record of where a machine is can go stale
+## Does Terraform follow a VM that was moved to another host?
 
-**Found 2026-11-08, when a restart of the last of five nodes failed because VM 500 was no longer on the host ECM had recorded (`pve2`).** The record's `placement` is the host a machine was made on. A VM can be moved (live migration by hand, HA when a host
-reboots or is put in maintenance), and after that the record is wrong, though discovery's inventory (`Vm.pve_node`) is right. The restart playbook now asks Proxmox at run time, so it is safe. Still using the recorded host:
+**Left over from 2026-11-08, when a restart found VM 500 on `pve1` while ECM had recorded `pve2`.** The operator decided the record should always reflect reality, and **that is done for ECM's own record**: after every Proxmox sync, `placement` is
+updated to where the inventory last saw each machine (`provisioning/reality.py`, with an audit event `cluster.host_followed`). What is not known is what **Terraform** does with a VM that has left the host in its state (`node_name`):
 
-- **Terraform.** A later plan, apply or teardown names the node a VM is on (`node_name`). With the bpg provider, a VM that was moved outside Terraform may be planned for migration back or for replacement (`replace` is refused on an update, so such a plan would be
-  rejected); not tried. Worth testing before relying on update operations after any host reboot.
-- **A rebuild's "old host"** (online or not) and its host-spread warning use the record, not where the machine was last seen.
-- **The Remove nodes, Recovery and add-node placement** read the record when they decide where a node goes and what the spread is.
+- With the bpg provider, a VM moved outside Terraform may be refreshed into place (its `node_name` in state updated), or may look missing on the old node and be planned for **creation** (a duplicate VM ID, which Proxmox would refuse), or be planned for
+  **replacement** (an update operation rejects that). Not tried. Now that ECM renders the host the VM is on, a plan whose state still names the old host may also want to **migrate** it.
+- **A harmless way to find out:** on a cluster with a VM that has moved (`test-5a-01`), plan any update (for example *Add nodes*, one coordinating node), read the Terraform part of the log, and **cancel** the plan. Existing VMs should show no change.
+  If `test-5a-01` shows a change, a refresh-only step (`terraform apply -refresh-only`, which updates state to reality and changes no machine) before an update's plan would be the fix.
 
-Options: (1) when the inventory shows a managed VM on a different host than recorded, show a note on the cluster page ("test-5a-01 is on pve1; ECM recorded pve2") and offer to update the record; (2) update the record from the inventory at each sync (the record then follows
-reality, but Terraform's state still names the old host); (3) leave it and make each operation ask Proxmox, as the restart now does. Done when the choice is made and a test shows an operation planned after a VM was moved uses where it is.
-
+Done when that plan has been read and either shows no change for the moved VM or a refresh-only step is added and tested.

@@ -286,3 +286,14 @@ A restart of all five nodes of `test-5a` (order `test-5a-04`, `-06`, `-02`, `-03
   has existed), which will be the first test of that skip against a real cluster.
 - **A wider question this raised, in `docs/TODO.md`:** ECM's record of where a machine is can go stale, and Terraform and the Recovery placement use it.
 
+## Eighth live result: the retry, and the host lookup (2026-11-08, the operator's log)
+
+After the fix was deployed, the operator retried the failed restart of all five nodes.
+
+- **The retry skipped what was done.** For `test-5a-04`, `-06`, `-02` and `-03` the log said "was already restarted since this operation began, so it is skipped" (each had been up for less time than the operation had existed). This is the first run
+  of the skip against a real cluster, and it works: no node was restarted twice.
+- **The host lookup worked.** For `test-5a-01` the log said "VM 500 is on pve1 now, not on pve2 where ECM recorded it", then the restart used `pve1`. The node rebooted, rejoined, and the cluster was green: recap ok=63, nothing failed. The page said
+  "The nodes are restarted". The operation's plan table (made before the fix) still showed `pve2` for it, which is the record it was planned from.
+- **Decision that followed:** the record always follows reality. After each Proxmox sync ECM now updates the recorded host of every node to where the inventory last saw its machine (`provisioning/reality.py`); see `docs/DECISIONS.md`. What Terraform does with
+  a moved VM is still to be checked (`docs/TODO.md`).
+
