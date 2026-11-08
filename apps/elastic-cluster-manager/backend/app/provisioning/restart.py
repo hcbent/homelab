@@ -127,4 +127,9 @@ class RestartHandlers:
             raise RestartFailed(f"{e}. {resumes}") from e
         if not outcome.ok:
             raise RestartFailed(f"{outcome.error or 'the restart failed'}. {resumes}")
+        # What was waiting for a restart in these nodes is now in effect (a node that restarted before the run stopped is cleared by the sync).
+        if cluster.pending_restart:
+            left = {n: t for n, t in cluster.pending_restart.items() if n not in change["order"]}
+            cluster.pending_restart = left or None
+            self.db.commit()
         log(self.db, op.id, "every node in the plan was restarted and the cluster is green")

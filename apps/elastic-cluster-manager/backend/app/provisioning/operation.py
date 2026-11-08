@@ -330,6 +330,8 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "teardown_of": target.id if target and not busy else None,
         "nodes": names if target and not busy else [],
         "bootstrapped": cluster.bootstrapped_at is not None,
+        # nodes ECM wrote a configuration change to without restarting them, so the change is waiting for a restart
+        "pending_restart": sorted(n for n in (cluster.pending_restart or {}) if n in members),
         # What the cluster is now and whether a change can be planned: each data node's disk, from the recorded state
         "data_disks": data_disks,
         "sizes": sizes,
@@ -735,9 +737,20 @@ class _Handlers:
             raise ConfigureFailed(f"{e}. {kept}") from e
         if outcome.new_ca is not None:
             self._store_ca(cluster, outcome.new_ca)
+        self._note_pending(cluster, outcome.pending_restart)          # even if the run then failed: the files were written
         if not outcome.ok:
             raise ConfigureFailed(f"{outcome.error or 'the converge failed'}. {kept}")
         log(self.db, self.op.id, "the change is applied on every node")
+
+    def _note_pending(self, cluster: Cluster, names: list[str]) -> None:
+        """Remember which nodes this run left with a configuration change that only a restart applies, so the Restart nodes panel can say
+        so. An entry is dropped when the node is seen to have restarted since (the sync checks its uptime) or when ECM restarts it."""
+        if not names:
+            return
+        now = datetime.now(UTC).isoformat()
+        cluster.pending_restart = {**(cluster.pending_restart or {}), **dict.fromkeys(names, now)}
+        self.db.commit()
+        log(self.db, self.op.id, f"{', '.join(names)} {'is' if len(names) == 1 else 'are'} now waiting for a restart to apply the change")
 
     def _converge_if_a_master_left(self) -> None:
         """After nodes leave, bring the remaining nodes' configuration in line, but only when something in it refers to a node that left. The
@@ -836,6 +849,10 @@ class _Handlers:
                                                     Vm.name == name)).rowcount
                    for name, info in (change.get("nodes") or {}).items())
         self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id, EsNode.name.in_(names)))
+        cluster = self.db.get(Cluster, self.cluster_id)
+        if cluster is not None and cluster.pending_restart:
+            left = {n: t for n, t in cluster.pending_restart.items() if n not in names}
+            cluster.pending_restart = left or None
         self.db.commit()
         log(self.db, self.op.id, f"{', '.join(names)} removed from the inventory ({gone} machine{'s' if gone != 1 else ''})")
 

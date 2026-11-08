@@ -22,6 +22,7 @@ CA_CERT = pem("CERTIFICATE", "FakeCertificateBodyLineOne0000")
 CA_KEY = pem("PRIVATE KEY", "FakeKeyBodyLineOneOfTheCaKey0001", "FakeKeyBodyLineTwoOfTheCaKey0002==")
 GOOD_RESULT = {"cluster_uuid": "4Et2nKICTImSzjMyH77utQ", "status": "green", "number_of_nodes": 3,
                "api_key_id": "ZSmjsaEB1M7T5v1mkNOK", "api_key_encoded": "FakeEncodedApiKeyValueForTests0001"}
+ANSIBLE_DIR = Path(__file__).resolve().parents[2] / "infra" / "ansible"
 RECAP = ["PLAY RECAP *********************************************************************",
          "lab-b-01                   : ok=67   changed=16   unreachable=0    failed=0    skipped=13   rescued=0",
          "lab-b-02                   : ok=47   changed=7    unreachable=0    failed=0    skipped=12   rescued=0"]
@@ -395,3 +396,34 @@ def test_a_bad_add_node_request_is_refused_before_ansible_starts(tmp_path, kw, m
     with pytest.raises(AnsibleError, match=message):
         r.run(add_request(**kw))
     assert not record.exists() and work_dir_is_empty(tmp_path)
+
+
+# ---- nodes a run left waiting for a restart ---------------------------------------------------------------------------------------
+
+def test_the_nodes_a_converge_left_waiting_for_a_restart_are_read_from_the_markers_the_handler_writes(tmp_path):
+    binary, _ = fake(tmp_path, artifacts={"pending-lab-b-02": "lab-b-02\n", "pending-lab-b-01": "lab-b-01\n"})
+    out = runner(tmp_path, binary)[0].run(request("converge"))
+    assert out.ok and out.pending_restart == ["lab-b-01", "lab-b-02"]                    # sorted, whatever the order they were written
+
+
+def test_a_run_that_fails_still_reports_the_nodes_it_changed_before_it_failed(tmp_path):
+    binary, _ = fake(tmp_path, artifacts={"pending-lab-b-01": "lab-b-01\n"}, exit=2)
+    out = runner(tmp_path, binary)[0].run(request("converge"))
+    assert not out.ok and out.pending_restart == ["lab-b-01"]                            # the files were written, so they are waiting
+
+
+def test_a_marker_that_does_not_look_like_a_node_name_is_ignored_and_no_markers_means_none_waiting(tmp_path):
+    binary, _ = fake(tmp_path, artifacts={"pending-Not A Name!": "x", "pending-": "x", "pending-ok-node": "x"})
+    assert runner(tmp_path, binary)[0].run(request("converge")).pending_restart == ["ok-node"]
+    second = tmp_path / "two"
+    second.mkdir()
+    binary, _ = fake(second)
+    assert runner(second, binary)[0].run(request("converge")).pending_restart == []
+
+
+def test_the_node_role_tells_ecm_when_it_changes_a_node_it_does_not_restart():
+    handlers = (ANSIBLE_DIR / "roles" / "es_node" / "handlers" / "main.yml").read_text()
+    assert "Tell ECM this node is waiting for a restart" in handlers
+    assert 'dest: "{{ es_artifacts_dir }}/pending-{{ es_node_name }}"' in handlers and "delegate_to: localhost" in handlers
+    # only when the node is NOT being restarted by this run, the same condition as the "restart is pending" note
+    assert handlers.count("not (es_allow_restart | bool or es_start_node | default(false) | bool)") == 2

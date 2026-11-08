@@ -60,6 +60,7 @@ class NodeInfo:
     disk_total_bytes: int | None = None
     disk_avail_bytes: int | None = None
     shard_count: int = 0
+    uptime_ms: int | None = None        # how long this node's JVM has been running, for telling whether it restarted since a change
 
 
 @dataclass
@@ -92,7 +93,7 @@ def collect(client: ESClient) -> ClusterSnapshot:
             attributes=n.get("attributes", {}),
             heap_used_pct=heap.get("heap_used_percent"), heap_max_bytes=heap.get("heap_max_in_bytes"),
             disk_total_bytes=fs.get("total_in_bytes"), disk_avail_bytes=fs.get("available_in_bytes"),
-            shard_count=per_node.get(n["name"], 0)))
+            shard_count=per_node.get(n["name"], 0), uptime_ms=(st.get("jvm") or {}).get("uptime_in_millis")))
 
     return ClusterSnapshot(
         cluster_uuid=root["cluster_uuid"], cluster_name=root["cluster_name"],

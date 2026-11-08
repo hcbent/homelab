@@ -3,6 +3,7 @@ failure leaves behind, how a retry resumes, and who counts as ECM's afterwards. 
 the other operation tests use; the cluster's answers come from the fake Elasticsearch of the rules tests."""
 # ruff: noqa: F811  (the fixtures are imported from the other operation tests and used by name)
 import copy
+from datetime import UTC
 
 import pytest
 from sqlalchemy import select
@@ -349,3 +350,38 @@ def test_the_plan_says_whether_the_remaining_nodes_will_be_reconfigured(session,
     quiet = removing(session, world, six, "lab-b-06").params["change"]
     assert "brought in line" not in quiet["describe"] and quiet["nodes"]["lab-b-06"]["master_eligible"] is False
     assert quiet["describe"].endswith("then ECM checks the cluster is green with the nodes that remain")
+
+
+def test_a_converge_that_changed_a_node_without_restarting_it_leaves_that_node_waiting_for_a_restart(session, world, six, seen):
+    op = removing(session, world, six, "lab-b-05", "lab-b-06")
+    edit_params(session, op, lambda p: p["change"]["nodes"]["lab-b-05"].__setitem__("master_eligible", True))   # so the converge runs
+    world.ansible_outcome = AnsibleOutcome(True, pending_restart=["lab-b-01", "lab-b-02"])
+    op = approve_and_run(session, world, run(session, world, op))
+    assert op.state == "succeeded"
+    session.refresh(six)
+    assert sorted(six.pending_restart) == ["lab-b-01", "lab-b-02"] and all(six.pending_restart.values())
+    assert "lab-b-01, lab-b-02 are now waiting for a restart to apply the change" in logs(session, op)
+
+
+def test_a_converge_that_fails_after_writing_files_still_records_what_it_changed(session, world, six, seen):
+    from app.provisioning.lifecycle import ExpandDisk, plan_expand_disk
+    params = plan_expand_disk(session, six, ExpandDisk(data_disk_gb=500))        # an update whose first Ansible call is the converge
+    op = start_update(session, cluster_id=six.id, params=params, actor="admin")
+    world.create_changes = [(ADDR("lab-b-04"), "update"), (ADDR("lab-b-05"), "update")]
+    world.apply_outcome = ApplyOutcome(True, None, [ADDR(n) for n in NAMES], {})
+    op = run(session, world, op)
+    operations.approve_operation(session, op.id, op.plan_digest, "admin")
+    world.ansible_outcome = AnsibleOutcome(False, "ansible-playbook failed: a later host failed", pending_restart=["lab-b-03"])
+    with pytest.raises(tfop.ConfigureFailed):
+        run(session, world, op)
+    session.refresh(six)
+    assert list(six.pending_restart) == ["lab-b-03"]                             # the file was written on it before the run failed
+
+
+def test_removing_a_node_forgets_that_it_was_waiting(session, world, six):
+    from datetime import datetime
+    six.pending_restart = {"lab-b-06": datetime.now(UTC).isoformat(), "lab-b-01": datetime.now(UTC).isoformat()}
+    session.commit()
+    approve_and_run(session, world, run(session, world, removing(session, world, six, "lab-b-06")))
+    session.refresh(six)
+    assert list(six.pending_restart) == ["lab-b-01"]

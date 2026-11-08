@@ -19,6 +19,7 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
   const roles = life?.node_roles ?? {};
   const state = life?.node_state ?? {};
   const names = Object.keys(roles).sort();
+  const waiting = new Set(life?.pending_restart ?? []);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,15 +35,18 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
     const note = lost(n) ? " (lost: rebuild or forget it under Recovery)"
       : down(n) ? ` (not in the cluster${state[n]?.vm_status ? `, its machine is ${state[n].vm_status}` : ""}: it will be ${state[n]?.vm_status === "stopped" ? "started" : "restarted"} first)`
       : "";
-    return `${n}: ${r}${roles[n].master_eligible ? " (master-eligible)" : ""}${note}`;
+    const pending = waiting.has(n) ? " (configuration waiting for a restart)" : "";
+    return `${n}: ${r}${roles[n].master_eligible ? " (master-eligible)" : ""}${pending}${note}`;
   };
 
-  async function plan() {
+  const waitingNodes = offerable.filter((n) => waiting.has(n));
+
+  async function plan(onlyWaiting = false) {
     setAsking(false);
     setError(null);
     try {
       const out = await api<{ operation_id: string }>(`/api/clusters/${cluster.id}/restart-nodes`, {
-        method: "POST", body: JSON.stringify({ nodes: chosen }),
+        method: "POST", body: JSON.stringify(onlyWaiting ? { pending: true } : { nodes: chosen }),
       });
       window.location.hash = `#/operations/${out.operation_id}`;
     } catch (e) {
@@ -59,6 +63,11 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
           nodes last (the elected master last of those), and starts a node whose machine is stopped. Use it to apply a configuration change that is
           waiting for a restart, for example after nodes were added or removed, or to bring a node back that is down.</p>
       </EuiCallOut>
+      {waitingNodes.length > 0 && (
+        <EuiCallOut color="warning" iconType="clock" size="s"
+          title={`${waitingNodes.join(", ")} ${waitingNodes.length === 1 ? "has" : "have"} a configuration change waiting for a restart`}>
+          <p>ECM wrote it without restarting {waitingNodes.length === 1 ? "the node" : "them"}, so it takes effect only when {waitingNodes.length === 1 ? "it" : "they"} restart.</p>
+        </EuiCallOut>)}
       {error && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="That cannot be done" size="s">
           <p>{error}</p></EuiCallOut>)}
@@ -79,6 +88,9 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
           </EuiFormRow>
           <div className="ecm-detail__actions">
             <EuiButton iconType="refresh" isDisabled={chosen.length === 0} onClick={() => setAsking(true)}>Plan the restart</EuiButton>
+            {waitingNodes.length > 0 && (
+              <EuiButton iconType="refresh" onClick={() => plan(true)}>
+                Restart the {waitingNodes.length === 1 ? "node" : `${waitingNodes.length} nodes`} waiting for a restart</EuiButton>)}
             <EuiButtonEmpty onClick={() => setPicked(Object.fromEntries(offerable.map((n) => [n, true])))}>Select every node</EuiButtonEmpty>
             <EuiButtonEmpty isDisabled={chosen.length === 0} onClick={() => setPicked({})}>Clear</EuiButtonEmpty>
           </div>
@@ -86,7 +98,7 @@ export function RestartNodes({ cluster }: { cluster: ClusterDetail }) {
 
       {asking && (
         <ConfirmAction action="Restart nodes of" confirmText="Plan the restart" resource={cluster.name}
-          onCancel={() => setAsking(false)} onConfirm={plan}>
+          onCancel={() => setAsking(false)} onConfirm={() => plan()}>
           <p>ECM will read the cluster, plan the order for {chosen.length} node{chosen.length === 1 ? "" : "s"} and show you the plan. This step
             changes nothing. After you approve it, each node is restarted in turn and is briefly out of the cluster.</p>
         </ConfirmAction>)}

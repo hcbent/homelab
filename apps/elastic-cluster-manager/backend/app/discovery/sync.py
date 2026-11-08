@@ -121,9 +121,27 @@ def apply_snapshot(db: Session, cluster: Cluster, snap: es.ClusterSnapshot) -> N
         db.add(row)
     for gone in existing.values():
         db.delete(gone)
+    _prune_pending_restarts(cluster, snap)
     cluster.last_sync_at, cluster.last_sync_error = _now(), None
     db.commit()
     relink(db, cluster)
+
+
+def _prune_pending_restarts(cluster: Cluster, snap: es.ClusterSnapshot) -> None:
+    """A node whose JVM has been up for less time than has passed since ECM wrote a configuration change has restarted since, so the
+    change is in effect and it is no longer waiting. A node that is not in the cluster now, or that reports no uptime, is kept: nothing
+    says it restarted. Both are durations, so no clock but this one is trusted."""
+    waiting = dict(cluster.pending_restart or {})
+    if not waiting:
+        return
+    now = _now()
+    up = {n.name: n.uptime_ms for n in snap.nodes if n.uptime_ms is not None}
+    for name, since in list(waiting.items()):
+        written = datetime.fromisoformat(since)
+        if name in up and up[name] / 1000 < (now - written).total_seconds():
+            del waiting[name]
+    if waiting != (cluster.pending_restart or {}):
+        cluster.pending_restart = waiting or None
 
 
 def relink(db: Session, cluster: Cluster) -> None:

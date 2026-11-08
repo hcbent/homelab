@@ -232,3 +232,45 @@ def test_a_restart_in_progress_blocks_another_operation_on_the_cluster(session, 
     restarting(session, six, "lab-b-04")
     with pytest.raises(operations.OperationConflict):
         restarting(session, six, "lab-b-05")
+
+
+# -- the nodes whose configuration is waiting for a restart ----------------------------------------------------------------------------
+
+def mark_waiting(session, cluster, *names, minutes=30):
+    from datetime import datetime, timedelta
+    when = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+    cluster.pending_restart = dict.fromkeys(names, when)
+    session.commit()
+
+
+def test_a_finished_restart_clears_the_nodes_it_restarted_and_keeps_the_others_waiting(session, world, six):
+    mark_waiting(session, six, "lab-b-04", "lab-b-05")
+    op = approve_and_run(session, world, run(session, world, restarting(session, six, "lab-b-04")))
+    assert op.state == "succeeded"
+    session.refresh(six)
+    assert sorted(six.pending_restart) == ["lab-b-05"]
+
+
+def test_when_nothing_is_left_waiting_it_is_stored_as_nothing(session, world, six):
+    mark_waiting(session, six, "lab-b-04")
+    approve_and_run(session, world, run(session, world, restarting(session, six, "lab-b-04")))
+    session.refresh(six)
+    assert six.pending_restart is None
+
+
+def test_the_cluster_page_data_lists_the_nodes_waiting_for_a_restart_that_the_record_still_has(logged_in, session, world, six):
+    mark_waiting(session, six, "lab-b-04", "lab-b-99")                              # the second is not a node of the record
+    data = logged_in.get(f"/api/clusters/{six.id}").json()["lifecycle"]
+    assert data["pending_restart"] == ["lab-b-04"]
+
+
+def test_the_restart_endpoint_can_plan_just_the_waiting_nodes(logged_in, session, world, six, live):
+    from procrastinate import testing
+
+    from app import jobs
+    mark_waiting(session, six, "lab-b-05", "lab-b-04")
+    with jobs.queue.replace_connector(testing.InMemoryConnector()):
+        r = logged_in.post(f"/api/clusters/{six.id}/restart-nodes", json={"pending": True}, headers=H)
+    assert r.status_code == 202 and r.json()["change"]["order"] == ["lab-b-04", "lab-b-05"] and r.json()["change"]["pending_only"] is True
+    refused = logged_in.post(f"/api/clusters/{six.id}/restart-nodes", json={"pending": True, "nodes": ["lab-b-04"]}, headers=H)
+    assert refused.status_code == 422

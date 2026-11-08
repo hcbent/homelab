@@ -1,6 +1,8 @@
 # ruff: noqa: F811  (the fixtures are imported from the removal tests and used by name)
 """The rules for restarting nodes: which nodes, in what order, what is done to each, and what is refused. Against the same fake
 Proxmox and fake Elasticsearch as the other lifecycle tests. Nothing here restarts anything."""
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from app.models import Vm
@@ -142,3 +144,48 @@ def test_a_cluster_ecm_cannot_reach_is_refused(session, built):
     built.credential_id, built.endpoint_urls = None, None
     with pytest.raises(OperationRefused, match="no way to reach this cluster"):
         plan_restart_nodes(session, built, RestartNodes(nodes=["lab-x-04"]))
+
+
+# -- the nodes whose configuration is waiting for a restart ------------------------------------------------------------------------------
+
+def waiting(session, cluster, since_minutes=30, **by_name):
+    """Record these nodes as waiting for a restart since this long ago (the default is half an hour)."""
+    when = (datetime.now(UTC) - timedelta(minutes=since_minutes)).isoformat()
+    cluster.pending_restart = {n: when for n in by_name} if by_name else None
+    session.commit()
+
+
+def test_asking_for_the_waiting_nodes_plans_exactly_those_in_the_rolling_order(session, built):
+    waiting(session, built, **{"lab-x-01": 1, "lab-x-04": 1, "lab-x-06": 1})
+    new = plan_restart_nodes(session, built, RestartNodes(pending=True), FakeEs(state_of(built)))
+    assert new["change"]["order"] == ["lab-x-06", "lab-x-04", "lab-x-01"]              # coordinating, data, then the master
+    assert new["change"]["pending_only"] is True
+    assert new["change"]["describe"].startswith("the nodes whose configuration is waiting for a restart: restart 3 nodes one at a time")
+
+
+def test_a_node_that_has_been_up_for_less_time_than_the_change_is_old_is_not_waiting_any_more(session, built):
+    waiting(session, built, **{"lab-x-04": 1, "lab-x-05": 1})
+    es = FakeEs(state_of(built))
+    es.uptime_ms = {"lab-x-04": 5 * 60 * 1000}                                          # restarted five minutes ago; the change is 30 minutes old
+    new = plan_restart_nodes(session, built, RestartNodes(pending=True), es)
+    assert new["change"]["order"] == ["lab-x-05"]
+
+
+def test_a_node_that_is_down_stays_waiting_since_nothing_says_it_restarted(session, built):
+    waiting(session, built, **{"lab-x-04": 1})
+    vm_row(session, built, "lab-x-04", "stopped")
+    new = plan_restart_nodes(session, built, RestartNodes(pending=True), down(built, "lab-x-04"))
+    assert new["change"]["nodes"]["lab-x-04"]["action"] == "start"
+
+
+def test_when_no_node_is_waiting_the_request_is_refused_and_a_node_not_in_the_record_is_ignored(session, built):
+    with pytest.raises(OperationRefused, match="no node has a configuration change waiting for a restart"):
+        plan_restart_nodes(session, built, RestartNodes(pending=True), FakeEs(state_of(built)))
+    waiting(session, built, **{"lab-x-99": 1})
+    with pytest.raises(OperationRefused, match="no node has a configuration change waiting"):
+        plan_restart_nodes(session, built, RestartNodes(pending=True), FakeEs(state_of(built)))
+
+
+def test_naming_nodes_and_asking_for_the_waiting_ones_together_is_refused():
+    with pytest.raises(ValueError, match="name the nodes, or ask for the ones that are waiting, not both"):
+        RestartNodes(nodes=["lab-x-04"], pending=True)

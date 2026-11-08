@@ -108,3 +108,29 @@ def test_a_cluster_ecm_did_not_build_is_synced_from_elasticsearch_only(logged_in
     calls = spy_syncs(monkeypatch)
     assert logged_in.post(f"/api/clusters/{other.id}/sync", headers=H).json()["proxmox_error"] is None
     assert calls == ["cluster"]
+
+
+# -- the sync forgets a pending restart once the node has restarted ---------------------------------------------------------------------
+
+def test_a_sync_drops_a_pending_restart_for_a_node_that_has_restarted_since_and_keeps_the_rest(session, cluster):
+    from datetime import UTC, datetime, timedelta
+
+    from app.discovery import es as es_module
+    written = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
+    cluster.pending_restart = {"n-restarted": written, "n-old": written, "n-down": written, "n-no-uptime": written}
+    session.commit()
+
+    def node(name, uptime_ms):
+        return es_module.NodeInfo(es_node_id=name, name=name, ip="192.0.2.1", host=name, version="9.4.9", roles=[], attributes={},
+                                  uptime_ms=uptime_ms)
+    snap = es_module.ClusterSnapshot(cluster_uuid="u", cluster_name="c", version="9.4.9", status="green", detail={}, nodes=[
+        node("n-restarted", 5 * 60 * 1000),                  # up for five minutes: it restarted after the change was written
+        node("n-old", 3 * 24 * 3600 * 1000),                 # up for three days: it has not
+        node("n-no-uptime", None)])                          # cannot tell; n-down is not in the cluster at all
+    sync.apply_snapshot(session, cluster, snap)
+    session.refresh(cluster)
+    assert sorted(cluster.pending_restart) == ["n-down", "n-no-uptime", "n-old"]
+    snap.nodes = [node("n-old", 5 * 60 * 1000), node("n-down", 5 * 60 * 1000), node("n-no-uptime", 5 * 60 * 1000)]
+    sync.apply_snapshot(session, cluster, snap)
+    session.refresh(cluster)
+    assert cluster.pending_restart is None                   # nothing is waiting: stored as nothing, not as an empty map

@@ -7,6 +7,7 @@ Elasticsearch: the parameters go to `start_update`, which plans them and waits f
 import copy
 import re
 from collections import defaultdict
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -823,11 +824,15 @@ class RestartNodes(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     nodes: list[str] | None = Field(default=None, min_length=1, max_length=50)
+    # Restart exactly the nodes whose configuration is waiting for a restart (ECM recorded a change it wrote without restarting them)
+    pending: bool = False
 
     @model_validator(mode="after")
     def _distinct(self) -> "RestartNodes":
         if self.nodes is not None and len(set(self.nodes)) != len(self.nodes):
             raise ValueError("the same node is listed twice")
+        if self.pending and self.nodes is not None:
+            raise ValueError("name the nodes, or ask for the ones that are waiting, not both")
         return self
 
 
@@ -850,6 +855,23 @@ def _restart_describe(down: list[str], up: list[str]) -> str:
     return text
 
 
+def _waiting_for_restart(cluster: Cluster, view: dict, known: set[str]) -> list[str]:
+    """The nodes ECM wrote a change to without restarting them, less any the cluster says have restarted since: a node whose JVM has been
+    up for less time than has passed since the change was written. A node that is not in the cluster now is kept, since nothing says it
+    restarted."""
+    up = {info.get("name"): (view["stats"].get(nid, {}).get("jvm") or {}).get("uptime_in_millis") for nid, info in view["nodes"].items()}
+    now = datetime.now(UTC)
+    waiting = []
+    for name, since in sorted((cluster.pending_restart or {}).items()):
+        if name not in known:
+            continue
+        uptime = up.get(name)
+        if uptime is not None and uptime / 1000 < (now - datetime.fromisoformat(since)).total_seconds():
+            continue
+        waiting.append(name)
+    return waiting
+
+
 def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, client=None) -> dict:
     """The parameters for a restart: which nodes, in what order, and what is done to each, after refusing what cannot be done
     safely. The order is the rolling restart's (nodes that are down first, since the cluster cannot be green until they are back;
@@ -861,12 +883,17 @@ def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, cli
         raise OperationRefused("this is a single-node cluster: it would be down while its machine restarts, and there is no "
                                "replica to carry it, so ECM does not restart it")
     by_name = {n.name: n for n in state.nodes}
-    names = sorted(request.nodes) if request.nodes is not None else sorted(by_name)
+    names = [] if request.pending else sorted(request.nodes) if request.nodes is not None else sorted(by_name)
     unknown = sorted(set(names) - set(by_name))
     if unknown:
         raise OperationRefused(f"this cluster has no node named {', '.join(unknown)}")
 
     view = _read_cluster(db, cluster, client)
+    if request.pending:
+        names = _waiting_for_restart(cluster, view, set(by_name))
+        if not names:
+            raise OperationRefused("no node has a configuration change waiting for a restart (ECM notes one when it writes a change "
+                                   "without restarting the node, and forgets it once the node has restarted)")
     elected = ((view["master"] or [{}])[0] or {}).get("node")
     if not elected:
         raise OperationRefused("the cluster has no elected master, so ECM cannot ask it anything. That is quorum loss, which is "
@@ -930,10 +957,11 @@ def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, cli
         row = seen_on.get(int(params["vm_ids"][n]))
         return row.pve_node if row is not None and row.name == n and row.pve_node else placement.get(n)
     params["change"] = {
-        "kind": "restart_nodes", "order": order, "present": sorted(live), "warnings": notes,
+        "kind": "restart_nodes", "order": order, "present": sorted(live), "warnings": notes, "pending_only": request.pending,
         "nodes": {n: {"action": actions[n], "host": host_of(n), "vm_id": int(params["vm_ids"][n]),
                       "roles": ", ".join(sorted(by_name[n].effective_roles)) or "none (coordinating only)",
                       "position": i + 1} for i, n in enumerate(order)},
-        "describe": _restart_describe(ordered_down, ordered_up),
+        "describe": ("the nodes whose configuration is waiting for a restart: " if request.pending else "")
+                    + _restart_describe(ordered_down, ordered_up),
     }
     return params

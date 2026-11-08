@@ -3,13 +3,6 @@
 Small known problems and follow-ups that are not part of a phase. Add an item when one is found; remove it when it is fixed (the
 fix goes in `DECISIONS.md` if it taught anything).
 
-## Restart only the nodes whose configuration is waiting for a restart
-
-**Left over from slice 5b (2026-11-08).** Every converge after an add, a removal or a forget says, per node, "has not been restarted; the change takes effect at the next rolling restart", but ECM does not record which nodes that
-is, so the Restart nodes panel can only offer "Select every node", which restarts nodes that did not need it. Two ways to know: (1) have the playbook report the hosts where `Write elasticsearch.yml` (or the heap file) changed while
-`es_allow_restart` was false, and keep that list on the cluster until those nodes restart; or (2) read it from each node when the restart is planned, by asking whether the configuration file is newer than the service's start time (an SSH
-probe, since nothing else can tell). (2) needs no new state and cannot go stale; (1) needs a column and a migration. Done when the panel marks the nodes that are waiting and offers "Restart the nodes that are waiting".
-
 ## Does Terraform follow a VM that was moved to another host?
 
 **Left over from 2026-11-08, when a restart found VM 500 on `pve1` while ECM had recorded `pve2`.** The operator decided the record should always reflect reality, and **that is done for ECM's own record**: after every Proxmox sync, `placement` is

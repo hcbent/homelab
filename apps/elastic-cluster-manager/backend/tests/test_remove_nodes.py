@@ -34,6 +34,7 @@ class FakeEs:
         self.used, self.total = used or {}, total_gib
         self.extra_rows: list[dict] = []
         self.hidden: set[str] = set()                     # nodes the cluster does not report (not present)
+        self.uptime_ms: dict[str, int] = {}               # how long a node's JVM has run, where a test cares
 
     def _present(self):
         return [n for n in self.state.nodes if n.name not in self.hidden]
@@ -47,7 +48,9 @@ class FakeEs:
     def nodes_stats(self):
         return {"nodes": {f"id-{n.name}": {"fs": {"total": {
             "total_in_bytes": self.total * GIB,
-            "available_in_bytes": (self.total - self.used.get(n.name, 10)) * GIB}}} for n in self._present()}}
+            "available_in_bytes": (self.total - self.used.get(n.name, 10)) * GIB}},
+            "jvm": {"uptime_in_millis": self.uptime_ms.get(n.name, 30 * 24 * 3600 * 1000)}}   # up for a month unless a test says otherwise
+            for n in self._present()}}
 
     def shards_sized(self):
         return [*self.shard_rows, *self.extra_rows]

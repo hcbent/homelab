@@ -75,6 +75,25 @@ test("the chosen nodes are posted after a confirmation that says nothing changes
   expect(posted(fn, "/api/clusters/c1/restart-nodes")).toEqual([{ nodes: ["lab-d-01", "lab-d-04"] }]);
 });
 
+test("nodes with a change waiting for a restart are marked, and one button plans exactly those", async () => {
+  const fn = app({ ...LIFE, pending_restart: ["lab-d-02", "lab-d-04"] },
+    { "POST /api/clusters/c1/restart-nodes": [202, { operation_id: "rs3", change: {} }] });
+  const p = await inPanel();
+  expect(p.getByText("lab-d-02, lab-d-04 have a configuration change waiting for a restart")).toBeInTheDocument();
+  expect(p.getByLabelText("lab-d-02: master (master-eligible) (configuration waiting for a restart)")).toBeInTheDocument();
+  expect(p.getByLabelText("lab-d-01: master (master-eligible)")).toBeInTheDocument();                // not waiting: no mark
+  await userEvent.click(p.getByRole("button", { name: "Restart the 2 nodes waiting for a restart" }));
+  await waitFor(() => expect(window.location.hash).toBe("#/operations/rs3"));
+  expect(posted(fn, "/api/clusters/c1/restart-nodes")).toEqual([{ pending: true }]);                 // no node list: ECM works it out
+});
+
+test("with nothing waiting there is no banner and no waiting button", async () => {
+  app({ ...LIFE, pending_restart: [] });
+  const p = await inPanel();
+  expect(p.queryByText(/(has|have) a configuration change waiting for a restart/)).not.toBeInTheDocument();
+  expect(p.queryByRole("button", { name: /waiting for a restart/ })).not.toBeInTheDocument();
+});
+
 test("select every node chooses them all, and clear empties the choice", async () => {
   const fn = app(LIFE, { "POST /api/clusters/c1/restart-nodes": [202, { operation_id: "rs2", change: {} }] });
   const p = await inPanel();

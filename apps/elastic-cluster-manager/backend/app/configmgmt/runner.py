@@ -116,6 +116,8 @@ class AnsibleOutcome:
     recap: dict[str, HostRecap] = field(default_factory=dict)
     result: BootstrapResult | None = None  # a successful create only
     new_ca: NewCa | None = None  # whenever this run made a CA, even if it then failed
+    # Nodes whose configuration this run changed without restarting them (so the change waits for a restart), even if the run then failed.
+    pending_restart: list[str] = field(default_factory=list)
 
 
 class AnsibleRunner(Protocol):
@@ -214,15 +216,16 @@ class CliAnsibleRunner:
             code, tail, recap_lines = self._execute(args, self._env(run_dir))
             recap = parse_recap(recap_lines)
             new_ca = self._read_new_ca(artifacts)
+            pending = self._read_pending(artifacts)
             if code != 0:
-                return AnsibleOutcome(False, self._failure(tail), recap, None, new_ca)
+                return AnsibleOutcome(False, self._failure(tail), recap, None, new_ca, pending)
             result = None
             if request.kind == "create":
                 try:
                     result = self._read_result(artifacts / "result.json")
                 except AnsibleError as exc:
-                    return AnsibleOutcome(False, str(exc), recap, None, new_ca)
-            return AnsibleOutcome(True, None, recap, result, new_ca)
+                    return AnsibleOutcome(False, str(exc), recap, None, new_ca, pending)
+            return AnsibleOutcome(True, None, recap, result, new_ca, pending)
         finally:
             shutil.rmtree(run_dir, ignore_errors=True)
 
@@ -401,6 +404,17 @@ class CliAnsibleRunner:
         ca = NewCa(cert.read_text(), key.read_text())
         _register_pem(ca.key_pem)
         return ca
+
+    @staticmethod
+    def _read_pending(artifacts: Path) -> list[str]:
+        """The nodes the run left waiting for a restart: one `pending-<node>` marker file each (roles/es_node/handlers). A marker is
+        only a name, so it is checked to look like one before it is believed."""
+        names = []
+        for marker in sorted(artifacts.glob("pending-*")):
+            name = marker.name.removeprefix("pending-")
+            if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,39}", name):
+                names.append(name)
+        return names
 
     @staticmethod
     def _read_result(path: Path) -> BootstrapResult:

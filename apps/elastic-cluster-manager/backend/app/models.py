@@ -85,6 +85,8 @@ class Cluster(Base):
     # The parameters (state, placement, addresses, VM ids, profile, template) of the last create or update that
     # Terraform applied: what the cluster is meant to be now. Lifecycle changes start from this.
     desired: Mapped[dict | None] = mapped_column(JSON)
+    # node name -> ISO time ECM wrote a configuration change that only a restart applies (see migration 0008)
+    pending_restart: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ProxmoxConnection(Base):

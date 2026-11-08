@@ -16,3 +16,18 @@
       next rolling restart.
   when: not (es_allow_restart | bool or es_start_node | default(false) | bool)
   listen: Elasticsearch configuration changed
+
+# A configuration change that only a restart applies is recorded for ECM, so its Restart nodes panel can say which nodes are waiting.
+# The marker is a file on the worker, in the run's hand-back directory, as the CA is handed back; ECM reads them when the run ends.
+- name: Tell ECM this node is waiting for a restart
+  ansible.builtin.copy:
+    content: "{{ es_node_name }}\n"
+    dest: "{{ es_artifacts_dir }}/pending-{{ es_node_name }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  when:
+    - es_artifacts_dir is defined
+    - not (es_allow_restart | bool or es_start_node | default(false) | bool)
+  listen: Elasticsearch configuration changed
+
