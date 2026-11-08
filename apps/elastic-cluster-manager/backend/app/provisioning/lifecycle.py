@@ -829,6 +829,20 @@ def _restart_class(node: NodeSpec) -> int:
     return 2 if node.is_master_eligible else (1 if node.effective_roles else 0)
 
 
+def _restart_describe(down: list[str], up: list[str]) -> str:
+    """The plan in a sentence: nodes that are down are brought back first, then the others are restarted one at a time. The
+    cautions about green and masters belong to a restart, so a plan that only brings nodes back does not repeat them."""
+    bits = []
+    if down:
+        bits.append(f"bring back {', '.join(down)}, which {'is' if len(down) == 1 else 'are'} not in the cluster")
+    if up:
+        bits.append(f"restart {len(up)} node{'s' if len(up) != 1 else ''} one at a time ({', '.join(up)})")
+    text = ", then ".join(bits)
+    if up:
+        text += ": ECM waits for the cluster to be green before each, holds back shard allocation while a node is down, and goes masters last"
+    return text
+
+
 def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, client=None) -> dict:
     """The parameters for a restart: which nodes, in what order, and what is done to each, after refusing what cannot be done
     safely. The order is the rolling restart's (nodes that are down first, since the cluster cannot be green until they are back;
@@ -905,9 +919,6 @@ def plan_restart_nodes(db: Session, cluster: Cluster, request: RestartNodes, cli
         "nodes": {n: {"action": actions[n], "host": placement.get(n), "vm_id": int(params["vm_ids"][n]),
                       "roles": ", ".join(sorted(by_name[n].effective_roles)) or "none (coordinating only)",
                       "position": i + 1} for i, n in enumerate(order)},
-        "describe": (f"restart {len(order)} node{'s' if len(order) != 1 else ''} one at a time ({', '.join(order)}): ECM waits for the "
-                     "cluster to be green before each, holds back shard allocation while a node is down, and goes masters last"
-                     + (f"; {', '.join(ordered_down)} {'is' if len(ordered_down) == 1 else 'are'} not in the cluster, so "
-                        f"{'it is' if len(ordered_down) == 1 else 'they are'} brought back first" if ordered_down else "")),
+        "describe": _restart_describe(ordered_down, ordered_up),
     }
     return params

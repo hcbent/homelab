@@ -65,13 +65,14 @@ def test_a_node_with_a_stopped_vm_is_started_and_goes_first_even_when_named_last
     new = restart(session, built, "lab-x-05", "lab-x-04", es=down(built, "lab-x-04"))
     assert new["change"]["order"] == ["lab-x-04", "lab-x-05"]
     assert (new["change"]["nodes"]["lab-x-04"]["action"], new["change"]["nodes"]["lab-x-05"]["action"]) == ("start", "restart")
-    assert "lab-x-04 is not in the cluster, so it is brought back first" in new["change"]["describe"]
+    assert new["change"]["describe"].startswith("bring back lab-x-04, which is not in the cluster, then restart 1 node one at a time (lab-x-05)")
 
 
 def test_a_node_that_is_not_in_the_cluster_but_whose_vm_runs_is_restarted(session, built):
     vm_row(session, built, "lab-x-04", "running")
     new = restart(session, built, "lab-x-04", es=down(built, "lab-x-04"))
     assert new["change"]["nodes"]["lab-x-04"]["action"] == "restart" and new["change"]["order"] == ["lab-x-04"]
+    assert new["change"]["describe"] == "bring back lab-x-04, which is not in the cluster"      # only a node that is down: no cautions about masters
 
 
 def test_a_red_cluster_allows_starting_the_nodes_that_are_down_and_nothing_else(session, built):

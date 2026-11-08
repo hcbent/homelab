@@ -246,3 +246,15 @@ The operator stopped `test-5a-06` (VM 505, a data node) and, with its VM still i
 - **Unverified on a real cluster:** all of it. In particular that `GET _nodes/stats/jvm?filter_path=nodes.*.name,nodes.*.jvm.uptime_in_millis` returns what the fake does, Proxmox's `status/start` and `status/current` calls and the right they need, a
   start of a node whose VM was stopped, and a restart of a VM that runs while its node is not in the cluster.
 
+## Fifth live result: starting a stopped node with Restart nodes (2026-11-08, the operator's screenshots)
+
+After the three Proxmox hosts were rebooted and ECM redeployed, the operator stopped the VM of `test-5a-06` (VM 505, `pve2`), pressed Sync now, and used the Restart nodes panel.
+
+- **The panel** listed the five nodes and marked `test-5a-06` "(not in the cluster, its machine is stopped: it will be started first)".
+- **The plan page** read "What happens: Start 1 node that is down", with a one-row order table: `test-5a-06`, "Started (it is not in the cluster)", `pve2`, VM 505. The sentence under "Then" was awkward for a plan that only starts a node
+  ("Restart 1 node one at a time ... goes masters last; test-5a-06 is not in the cluster, so it is brought back first"); it now reads "bring back test-5a-06, which is not in the cluster" and keeps the cautions for plans that restart.
+- **It ran to the end in 1m 8s (from creation, approval wait included).** The steps `plan, approval, restart` were done, the final gate waited for green with every node, the old size-based path was skipped, and the recap was ok=27 changed=0
+  failed=0. The page said "The nodes are restarted" and the log ended "every node in the plan was restarted and the cluster is green".
+- **What this settles:** Proxmox's `status/current` and `status/start` calls and the `VM.PowerMgmt` right work, a stopped node's VM is started and the node rejoins, and `GET _nodes/stats/jvm` answers (the plan's uptime read runs for every node).
+- **Not yet seen:** a restart of a node the cluster has (the allocation steps and the reboot through Proxmox), the uptime-based skip on a retry against a real cluster, and "every node" with the masters last.
+
