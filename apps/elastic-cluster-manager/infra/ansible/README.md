@@ -40,7 +40,7 @@ cd ../../backend && .venv/bin/python -m pytest tests/test_ansible_inventory.py t
 ```
 
 `tests/test_ansible_kibana_roles.py` runs `kibana_credential.yml` and `kibana_health.yml` for real against a local HTTPS server that plays
-Elasticsearch and Kibana. The roles that run on the Kibana machine (`es_package` for Kibana, `es_tls` there, `kibana`) have only had a syntax
-check; no VM has run them.
+Elasticsearch and Kibana. The roles that run on the Kibana machine (`es_package` for Kibana, `es_tls` there, `kibana`) ran once on a real VM
+(2026-11-09, per the operator's log of an Add Kibana on `test-5a`); that is the only live run.
 
 Running a playbook changes real machines. Do it only against VMs you have approved for it.

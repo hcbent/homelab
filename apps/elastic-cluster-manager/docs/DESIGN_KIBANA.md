@@ -1,6 +1,6 @@
 # Kibana: proposed design (Phase 6)
 
-**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built and tested offline, and has not run on any real machine; 6b and 6c are not built (see "Slice 6a as built").** It was written for the operator to review first, because it adds machines and
+**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built, tested offline and run live once (2026-11-09, `test-5a`, per the operator's log); 6b and 6c are not built (see "Slice 6a as built").** It was written for the operator to review first, because it adds machines and
 credentials to a live cluster and settles how a person signs in to it. Items marked *to confirm* are from knowledge of Kibana and Elasticsearch
 and have not been checked against this project's versions. The acceptance test in `IMPLEMENTATION_PLAN.md` is: the Kibana health check passes
 on the disposable target, and a Caddy snippet is generated while the existing Caddyfile is untouched.
@@ -151,14 +151,26 @@ What exists, and the choices made while building it that the design left open:
   configure whose retry reuses the same token and keys, and a teardown), the panel data and the endpoints; 31 of the inventory and the runner; 15 that run
   `kibana_credential.yml` and `kibana_health.yml` with real `ansible-playbook` against a local HTTPS server (they found and fixed a bug where the new token was not
   handed back, because a block's `when` was re-evaluated after the block set the variable it tested); 12 frontend tests; a syntax check of `add_kibana.yml`.
-- **Not verified:** everything in "To confirm" below, and that `es_package`, `es_tls` and the `kibana` role work on a real Kibana machine (the keystore commands, file
-  ownership, Kibana's start time and memory, whether `/api/status` accepts an API key). `ansible-lint --profile production` reports `var-naming` findings on the new
+- **Run live on 2026-11-09** on the test cluster `test-5a` (Kibana 9.4.9; from the operator's log of the operation, which succeeded: 1 machine added, `ok=48 failed=0` on the
+  Kibana machine). The log shows the service token was made with ECM's API key, the machine was installed (package, `es_tls` signing with the CA host's `certutil`, keystore, service),
+  and `/api/status` answered an `ApiKey` request with Kibana available on the third look (two retries, about 20 seconds after it listened). The operator then reached Kibana in a
+  browser and, as expected, could not sign in. See "To confirm" for which items that settles.
+- **Not verified:** the items marked open in "To confirm" below; a retry after a failed configure on a real machine (only tested against fakes); and the Caddy snippet. `ansible-lint --profile production` reports `var-naming` findings on the new
   roles as it does on the existing ones (this machine's lint is stricter than the notes say it was, and lacks the collections); the two long lines the new code
   introduced were fixed.
 - **Left for later slices:** the `elastic` password reset and its reveal (6b), remove Kibana, Restart Kibana, a public name added after the fact, a VM `tags` value for
   Kibana (the machine carries the cluster's tags for now), and Kibana at create time (6c).
 
 ## To confirm
+
+Settled by the live run of 2026-11-09 (the operator's log; the log does not show the HTTP bodies, so only what it implies is claimed):
+
+- **Service-token call and rights:** settled. ECM's API key could make the `elastic/kibana` token (no refusal), and it was handed back and stored.
+- **`kibana-keystore add` with `--stdin --force`:** settled. All four secrets were added, and Kibana started and reached Elasticsearch with them, since it reported available.
+- **`/api/status` with `Authorization: ApiKey`:** settled. It answered and `overall.level` reached `available`; the check verified Kibana's certificate against the cluster CA by IP.
+- **Start time:** about 20 seconds from listening to available on this cluster (the wait allows 600).
+
+Still open:
 
 - The exact service-token call and the right it needs (`manage_service_account`, which the `elastic` user's API key should carry), and that the token is shown once.
 - `kibana-keystore add` for `elasticsearch.serviceAccountToken` and the three keys, and that the keystore is read at start.
