@@ -310,6 +310,7 @@ def _removal_blocker(db: Session, cluster: Cluster, tearing_down: Operation | No
         if op.kind != CREATE or op.dry_run:
             continue
         node_names |= {n["name"] for n in (op.params.get("state") or {}).get("nodes", [])}
+        node_names |= {k["name"] for k in op.params.get("kibana") or []}
         built = (op.result or {}).get("resources_in_state") or []
         if built and not _torn_down(db, op.id) and not (tearing_down is not None
                                                        and tearing_down.parent_op_id == op.id):
@@ -336,6 +337,10 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     target = next((o for o in ops if o.kind == CREATE and not o.dry_run and o.state in ("failed", "succeeded")
                    and (o.result or {}).get("resources_in_state") and not _torn_down(db, o.id)), None)
     names = [n["name"] for n in ((target.params or {}).get("state") or {}).get("nodes", [])] if target else []
+    if target:
+        # A Kibana is destroyed with the cluster too, whether it was built with the cluster or added later.
+        names += [k["name"] for k in [*((target.params or {}).get("kibana") or []), *((cluster.desired or {}).get("kibana") or [])]
+                  if k["name"] not in names]
     recorded = ((cluster.desired or {}).get("state") or {}).get("nodes", []) if cluster.bootstrapped_at else []
     data_disks = {n["name"]: n["data_disk_gb"] for n in recorded if n.get("data_disk_gb")}
     sizes = {n["name"]: {"cores": n["cores"], "ram_mb": n["ram_mb"]} for n in recorded}
@@ -394,6 +399,13 @@ def _kibana_panel(cluster: Cluster, ops: list[Operation], busy: Operation | None
         o = next((o for o in ops if o.kind == kind and not o.dry_run and (o.params.get("change") or {}).get("kind") == change_kind), None)
         return ({"operation_id": o.id, "state": o.state, "finished_at": o.finished_at.isoformat() if o.finished_at else None}
                 if o else None)
+    # How Kibana was last added: by an Add Kibana, or by the create that built it with the cluster (its result says whether Kibana got installed).
+    by_create = next((o for o in ops if o.kind == CREATE and not o.dry_run and (o.params or {}).get("kibana")), None)
+    by_update = ended(UPDATE, "add_kibana")
+    last_add = by_update
+    if by_create is not None and (by_update is None or by_create.created_at > next(o for o in ops if o.id == by_update["operation_id"]).created_at):
+        last_add = {"operation_id": by_create.id, "state": by_create.state,
+                    "finished_at": by_create.finished_at.isoformat() if by_create.finished_at else None}
     return {
         "machines": [{**k.model_dump(mode="json"), "url": k.url, "public_url": k.public_url,
                       "caddy_snippet": caddy_snippet(cluster.name, k),
@@ -402,7 +414,7 @@ def _kibana_panel(cluster: Cluster, ops: list[Operation], busy: Operation | None
         "can_add": ready and not recorded,
         "can_change": ready and bool(recorded),
         "ca_available": bool(cluster.tls_ca_pem),
-        "last_add": ended(UPDATE, "add_kibana"),
+        "last_add": last_add,
         # Whether ECM holds a sign-in that works (never the password itself: that is only ever sent by the reveal endpoint), when it was
         # set, and how the last attempt ended.
         "login": {"set": bool(login.get("current")), "reset_at": login.get("reset_at"), "last": ended(KIBANA, "reset_login")},
@@ -763,7 +775,12 @@ class _Handlers:
             return ""
         state = self._state()
         n = len(state.nodes)
-        return f"install elasticsearch {state.version} on {n} node{'s' if n != 1 else ''} and start the cluster"
+        text = f"install elasticsearch {state.version} on {n} node{'s' if n != 1 else ''} and start the cluster"
+        for k in kibana_of(self.op.params):
+            # Part of the approved digest: the one approval covers Kibana too.
+            text += (f", then install Kibana {state.version} on {k.name} ({k.cores} cores, {k.ram_mb} MiB, a {k.os_disk_gb} GB disk) and check it "
+                     "reports itself available")
+        return text
 
     def _credential(self, name: str) -> Credential | None:
         return self.db.scalar(select(Credential).where(Credential.name == name))
@@ -1004,7 +1021,7 @@ class _Handlers:
             crypto.register_secret(value)
         return keys
 
-    def _add_kibana(self) -> None:
+    def _add_kibana(self, names: list[str] | None = None) -> None:
         """Install and start Kibana on the machine this change made, and check it reports itself available (playbooks/add_kibana.yml).
         No Elasticsearch node is configured or restarted. It needs ECM's API key (to ask for the service token and to ask Kibana its
         status) and the cluster's CA (to sign Kibana's certificate)."""
@@ -1016,7 +1033,7 @@ class _Handlers:
             raise ConfigureFailed("ECM has no API key or CA for this cluster, so it cannot make Kibana's token, sign its certificate "
                                   "or check it. The new machine is kept")
         profile = NetworkProfile.model_validate(params["profile"])
-        wanted = set(self._change_nodes("kibana_added"))
+        wanted = set(names) if names is not None else set(self._change_nodes("kibana_added"))
         hosts = [KibanaHost(name=k.name, address=k.address, public_url=k.public_url)
                  for k in kibana_of(params) if k.name in wanted]
         token_name = kibana_credential_names(self.cluster_id)[0]
@@ -1070,6 +1087,22 @@ class _Handlers:
             self.db.commit()
         log(self.db, self.op.id, "Kibana's service token was deleted from the cluster and from ECM; the encryption keys are kept")
 
+    def _create_kibana(self) -> None:
+        """The last step of a create that asked for Kibana (docs/DESIGN_KIBANA.md, decision 8): once the cluster is built, install Kibana on the machine
+        the same plan made. It runs once: a retry after a failure here finds the cluster built, skips straight to this step, and a retry after
+        it succeeded does nothing. Kibana's machine and the cluster are kept if it fails; Retry runs this step again with the same token and keys."""
+        machines = kibana_of(self.op.params)
+        if not machines:
+            return
+        if (self.op.result or {}).get("kibana_added"):
+            log(self.db, self.op.id, "Kibana was already added by an earlier run of this operation")
+            return
+        log(self.db, self.op.id, f"the cluster is built; now adding Kibana on {', '.join(k.name for k in machines)}")
+        self._add_kibana([k.name for k in machines])
+        op = self._fresh()
+        op.result = {**(op.result or {}), "kibana_added": True}
+        self.db.commit()
+
     def configure(self) -> None:
         if self.kind == UPDATE:
             kind = (self.op.params.get("change") or {}).get("kind")
@@ -1092,6 +1125,7 @@ class _Handlers:
         cluster = self.db.get(Cluster, self.cluster_id)
         if cluster.bootstrapped_at is not None:
             log(self.db, self.op.id, "the cluster has already bootstrapped; nothing to configure")
+            self._create_kibana()       # unless an earlier run of this create already added Kibana
             return
         params = self.op.params
         state = self._state()
@@ -1130,6 +1164,7 @@ class _Handlers:
                                                          "number_of_nodes": result.number_of_nodes}}
         self.db.commit()
         log(self.db, op.id, f"the cluster bootstrapped: {result.number_of_nodes} nodes, {result.status}")
+        self._create_kibana()
 
     def _forget_cluster(self) -> None:
         """A teardown removed every machine, so nothing of the cluster is left to reach or to trust. Clearing this

@@ -97,6 +97,8 @@ async def create_cluster(body: plan_create.CreateRequest, db: Session = Depends(
         "nodes": [{"name": n.name, "host": resolved.placement[n.name], "address": resolved.addresses[n.name],
                    "vm_id": resolved.vm_ids[n.name]} for n in resolved.state.nodes],
         "warnings": resolved.warnings,
+        # Kibana planned with the cluster, when it was asked for (one machine, built in the same plan)
+        "kibana": [{**k.model_dump(mode="json", exclude={"es_hosts"}), "url": k.url, "public_url": k.public_url} for k in resolved.kibana],
     }
 
 

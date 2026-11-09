@@ -334,6 +334,41 @@ test("a removal of Kibana lists the machine it destroys, asks to approve and rem
   expect(await screen.findByText(/so the machine is gone. Retry runs the rest \(deleting the service token\)/)).toBeInTheDocument();
 });
 
+const CREATE_KIBANA = { name: "lab-d-kb-01", host: "pve3", address: "192.168.10.116", vm_id: 506, cores: 2, ram_mb: 4096, os_disk_gb: 32,
+  public_name: null, url: "https://192.168.10.116:5601", public_url: null };
+
+test("a create that includes Kibana shows the machine, names the last step for it, and says what the one approval covers", async () => {
+  mockFetch(table({ "GET /api/operations/ck": [200, op({ id: "ck", kibana: [CREATE_KIBANA],
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 4, updates: 0, deletes: 0,
+      configure: "install elasticsearch 9.5.6 on 3 nodes and start the cluster, then install Kibana 9.5.6 on lab-d-kb-01 (2 cores, 4096 MiB, a 32 GB disk) and check it reports itself available" } } })] }));
+  render(<OperationDetail id="ck" />);
+  expect(await screen.findByText("Kibana, built with the cluster", { selector: "h4" })).toBeInTheDocument();
+  const row = screen.getByText("lab-d-kb-01").closest("tr")!;
+  expect(within(row).getByText("pve3")).toBeInTheDocument();
+  expect(within(row).getByText("https://192.168.10.116:5601")).toBeInTheDocument();
+  expect(within(row).getByText("2 cores, 4 GiB, 32 GB disk")).toBeInTheDocument();
+  expect(within(screen.getByLabelText("The plan")).getByText("Create 4 virtual machines")).toBeInTheDocument();
+  expect(within(screen.getByLabelText("The plan")).getByText(/then install Kibana 9.5.6 on lab-d-kb-01/)).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Install and start Elasticsearch, then Kibana")).toBeInTheDocument();
+});
+
+test("a create without Kibana shows no Kibana table and keeps its own last-step name", async () => {
+  mockFetch(table({ "GET /api/operations/nk": [200, op({ id: "nk", kibana: [] })] }));
+  render(<OperationDetail id="nk" />);
+  expect(await screen.findByRole("heading", { name: "Create cluster" })).toBeInTheDocument();
+  expect(screen.queryByText("Kibana, built with the cluster")).not.toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Install and start Elasticsearch")).toBeInTheDocument();
+});
+
+test("a finished create with Kibana says Kibana is installed and that nobody can sign in yet", async () => {
+  mockFetch(table({ "GET /api/operations/ok2": [200, op({ id: "ok2", state: "succeeded", plan: null, kibana: [CREATE_KIBANA],
+    result: { configured: { cluster_uuid: "u", status: "green", number_of_nodes: 3 }, kibana_added: true } })] }));
+  render(<OperationDetail id="ok2" />);
+  expect(await screen.findByText("The cluster is up")).toBeInTheDocument();
+  expect(screen.getByText(/Kibana is installed and reports itself available; nobody can sign in yet/)).toBeInTheDocument();
+  expect(screen.getByText(/Create sign-in/)).toBeInTheDocument();
+});
+
 const REMOVAL = { kind: "remove_nodes", warnings: ["lab-d-07 is the elected master, so a new master is elected when it goes (a few seconds)"],
   nodes: {
     "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: "data, ingest", cores: 4, ram_mb: 8192, data_disk_gb: 100,

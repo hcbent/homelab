@@ -24,6 +24,7 @@ const PLAN = {
   cluster_id: "c1", operation_id: "op1", dry_run: true, warnings: ["pve1 is over-committed"],
   nodes: ["lab-c-01", "lab-c-02", "lab-c-03"].map((name, i) => ({
     name, host: `pve${i + 1}`, address: `192.168.10.${113 + i}`, vm_id: 503 + i })),
+  kibana: [],
 };
 const DRY_OP = {
   id: "op1", kind: "tf.create", state: "succeeded", phase: null, error: null, elapsed_seconds: 8, dry_run: true,
@@ -50,7 +51,7 @@ async function start(name = "lab-c") {
   await userEvent.type(screen.getByLabelText("Cluster name"), name);
 }
 async function toReview() {
-  for (const heading of ["/ Topology", "/ Sizing", "/ Infrastructure", "/ Review"]) {
+  for (const heading of ["/ Topology", "/ Sizing", "/ Kibana", "/ Infrastructure", "/ Review"]) {
     await next();
     await screen.findByRole("heading", { name: heading });
   }
@@ -66,6 +67,9 @@ test("it walks every step, sends a dry run with exactly the choices made, then p
   await fill("Coordinating nodes", "1");
   await next();
   await fill("Cores per node", "8");
+  await next();
+  await screen.findByRole("heading", { name: "/ Kibana" });                          // off by default: nothing to fill in
+  expect(screen.getByRole("switch", { name: "Add Kibana to this cluster" })).not.toBeChecked();
   await next();
   await waitFor(() => expect(screen.getByLabelText("Network profile")).toHaveValue("default"));
   await fill("CPU type", "x86-64-v2-AES");
@@ -149,8 +153,10 @@ test("changing a choice after the review plans a fresh dry run", async () => {
   expect(posted(fn, "/api/clusters")).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: "Back" }));
   await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
   await screen.findByRole("heading", { name: "/ Sizing" });
   await fill("RAM per node (GiB)", "16");
+  await next();
   await next();
   await next();
   await screen.findByRole("heading", { name: "/ Review" });
@@ -240,11 +246,142 @@ test("steps that have not been reached cannot be jumped to from the strip", asyn
   await start();
   const strip = document.querySelector(".ecm-wizard__strip") as HTMLElement;
   const buttons = within(strip).getAllByRole("button");
-  expect(buttons).toHaveLength(6);
+  expect(buttons).toHaveLength(7);
   expect(buttons[0]).toBeEnabled();
   expect(buttons.slice(1).every((b) => b.hasAttribute("disabled"))).toBe(true);
   await next();
   await screen.findByRole("heading", { name: "/ Topology" });
   expect(within(strip).getAllByRole("button")[1]).toBeEnabled();                      // reached now
   expect(within(strip).getAllByRole("button")[2]).toBeDisabled();
+});
+
+// -- Kibana at create time ------------------------------------------------------------------------------------------------------------------
+
+const HOSTS = { ...INFRA, nodes: [{ name: "pve1", status: "online", usage: {} }, { name: "pve2", status: "online", usage: {} }] };
+const KIBANA_PLANNED = { name: "lab-c-kb-01", host: "pve2", address: "192.168.10.116", vm_id: 506, cores: 2, ram_mb: 4096, os_disk_gb: 32,
+  public_name: null, url: "https://192.168.10.116:5601", public_url: null };
+const toKibana = async () => {
+  for (const heading of ["/ Topology", "/ Sizing", "/ Kibana"]) {
+    await next();
+    await screen.findByRole("heading", { name: heading });
+  }
+};
+const kibanaSwitch = () => screen.getByRole("switch", { name: "Add Kibana to this cluster" });
+
+test("the Kibana step explains itself, and its fields appear only when Kibana is switched on", async () => {
+  mockFetch(base());
+  await start();
+  await toKibana();
+  expect(screen.getByText(/built in the same plan as the cluster/)).toBeInTheDocument();
+  expect(screen.getByText(/You approve both once/)).toBeInTheDocument();
+  expect(screen.getByText(/Nobody can sign in until you use\s+Create sign-in/)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Public name/)).not.toBeInTheDocument();
+  await userEvent.click(kibanaSwitch());
+  expect(screen.getByLabelText(/Public name/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Cores \(default 2\)/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/RAM, GiB \(default 4\)/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Disk, GB \(default 32\)/)).toBeInTheDocument();
+});
+
+test("with Kibana on and nothing changed, the dry run asks for Kibana with its defaults, and the review shows where it would run", async () => {
+  const fn = mockFetch(base({ "POST /api/clusters": [202, { ...PLAN, kibana: [KIBANA_PLANNED] }] }));
+  await start();
+  await toKibana();
+  await userEvent.click(kibanaSwitch());
+  await next();
+  await screen.findByRole("heading", { name: "/ Infrastructure" });
+  await next();
+  await screen.findByRole("heading", { name: "/ Review" });
+  await screen.findByText("Where Kibana would run", { selector: "h4" });
+  expect(posted(fn, "/api/clusters")[0]).toMatchObject({ kibana: {} });
+  const row = screen.getByText("lab-c-kb-01").closest("tr")!;
+  expect(within(row).getByText("pve2")).toBeInTheDocument();
+  expect(within(row).getByText("https://192.168.10.116:5601")).toBeInTheDocument();
+  expect(within(row).getByText("2 cores, 4 GiB, 32 GB disk")).toBeInTheDocument();
+});
+
+test("a public name, a size and a host are sent as asked, with RAM converted from GiB", async () => {
+  const fn = mockFetch(base({ "GET /api/infrastructure": [200, HOSTS] }));
+  await start();
+  await toKibana();
+  await userEvent.click(kibanaSwitch());
+  await userEvent.type(screen.getByLabelText(/Public name/), "kibana.lab.example.org");
+  await userEvent.type(screen.getByLabelText(/Cores/), "4");
+  await userEvent.type(screen.getByLabelText(/RAM, GiB/), "8");
+  await userEvent.type(screen.getByLabelText(/Disk, GB/), "64");
+  await userEvent.selectOptions(screen.getByLabelText("Proxmox host"), "pve2");
+  await next();
+  await next();
+  await screen.findByRole("heading", { name: "/ Review" });
+  await waitFor(() => expect(posted(fn, "/api/clusters")).toHaveLength(1));
+  expect(posted(fn, "/api/clusters")[0].kibana).toEqual({
+    public_name: "kibana.lab.example.org", cores: 4, ram_mb: 8192, os_disk_gb: 64, pve_node: "pve2" });
+});
+
+test("a public name with a scheme or a port, or a size out of range, is explained and blocks Continue", async () => {
+  mockFetch(base());
+  await start();
+  await toKibana();
+  await userEvent.click(kibanaSwitch());
+  const name = screen.getByLabelText(/Public name/);
+  await userEvent.type(name, "https://kibana.example.org");
+  await userEvent.tab();
+  expect(await screen.findByText(/Use a DNS name such as kibana.example.org, with no https:\/\/ or port/)).toBeInTheDocument();
+  expect(continueButton()).toBeDisabled();
+  await userEvent.clear(name);
+  expect(continueButton()).toBeEnabled();
+  await userEvent.type(screen.getByLabelText(/Cores/), "0");
+  await userEvent.tab();
+  expect(await screen.findByText("Cores must be between 1 and 64.")).toBeInTheDocument();
+  expect(continueButton()).toBeDisabled();
+});
+
+test("switching Kibana off again ignores what was typed, so the request carries none", async () => {
+  const fn = mockFetch(base());
+  await start();
+  await toKibana();
+  await userEvent.click(kibanaSwitch());
+  await userEvent.type(screen.getByLabelText(/Public name/), "kibana.lab.example.org");
+  await userEvent.click(kibanaSwitch());
+  await next();
+  await next();
+  await screen.findByRole("heading", { name: "/ Review" });
+  await waitFor(() => expect(posted(fn, "/api/clusters")).toHaveLength(1));
+  expect(posted(fn, "/api/clusters")[0]).not.toHaveProperty("kibana");
+});
+
+test("the final step says whether Kibana is part of the build", async () => {
+  mockFetch(base({ "POST /api/clusters": [202, { ...PLAN, kibana: [KIBANA_PLANNED] }] }));
+  await start();
+  await toKibana();
+  await userEvent.click(kibanaSwitch());
+  await userEvent.type(screen.getByLabelText(/Public name/), "kibana.lab.example.org");
+  await next();
+  await next();
+  await screen.findByRole("heading", { name: "/ Review" });
+  await waitFor(() => expect(continueButton()).toBeEnabled());
+  await next();
+  await screen.findByRole("button", { name: "Plan the build" });
+  expect(screen.getAllByText("2 cores, 4 GiB, 32 GB disk, kibana.lab.example.org").length).toBeGreaterThan(0);
+});
+
+test("without Kibana the final step says it can be added later", async () => {
+  mockFetch(base());
+  await start();
+  await toReview();
+  await waitFor(() => expect(continueButton()).toBeEnabled());
+  await next();
+  await screen.findByRole("button", { name: "Plan the build" });
+  expect(screen.getAllByText("None (it can be added later)").length).toBeGreaterThan(0);
+});
+
+test("toRequest and validate: Kibana is only in the request when switched on, and only changed values are sent", () => {
+  const form = { ...EMPTY_FORM, name: "lab-c", version: "9.6.0" };
+  expect(toRequest(form, true)).not.toHaveProperty("kibana");
+  expect(toRequest({ ...form, kibana: true }, true).kibana).toEqual({});
+  expect(toRequest({ ...form, kibana: true, kibanaCores: "4", kibanaHost: "pve1" }, true).kibana).toEqual({ cores: 4, pve_node: "pve1" });
+  expect(validate({ ...form, kibana: false, kibanaName: "https://nope" })).toEqual({});               // ignored while off
+  expect(validate({ ...form, kibana: true, kibanaName: "https://nope" }).kibanaName).toMatch(/DNS name/);
+  expect(validate({ ...form, kibana: true, kibanaRamGb: "1" }).kibanaRamGb).toBeDefined();
+  expect(validate({ ...form, kibana: true, kibanaName: "kibana.example.org", kibanaDisk: "64" })).toEqual({});
 });

@@ -259,11 +259,17 @@ def recommend_host(
     node: NodeSpec,
     hosts: list[HostView],
     config: PlacementConfig | None = None,
+    already: list[tuple[str, NodeSpec]] | None = None,
 ) -> tuple[str | None, dict[str, list[str]]]:
     """A host for one machine that is not part of the cluster's quorum (a Kibana machine): the host with the most room after it
     is placed, using the same fit rules and score as the nodes. A node pinned with `pve_node` is only tried there. Returns the host
-    (None when nothing fits) and, for every host that could not take it, why."""
+    (None when nothing fits) and, for every host that could not take it, why. `already` lists (host, node) for machines this plan has put on
+    hosts but that do not exist yet (a cluster's nodes, when Kibana is planned with a new cluster), so their room is not counted twice."""
     ledger = _Ledger(hosts, config or PlacementConfig())
+    by_name = {h.name: h for h in hosts}
+    for host_name, placed in already or []:
+        if host_name in by_name:
+            ledger.claim(by_name[host_name], placed)
     fits: list[tuple[HostView, float]] = []
     rejected: dict[str, list[str]] = {}
     known = {h.name for h in hosts}

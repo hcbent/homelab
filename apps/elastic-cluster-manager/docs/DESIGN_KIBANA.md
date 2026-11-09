@@ -1,6 +1,6 @@
 # Kibana: proposed design (Phase 6)
 
-**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built, tested offline and run live once (2026-11-09, `test-5a`, per the operator's log). Slice 6b (the sign-in, Restart Kibana, Remove Kibana) is built and tested offline and has not run on any real machine. 6c (Kibana at create time) is not built (see "Slice 6a as built" and "Slice 6b as built").** It was written for the operator to review first, because it adds machines and
+**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built, tested offline and run live once (2026-11-09, `test-5a`, per the operator's log). Slice 6b (the sign-in, Restart Kibana, Remove Kibana) is built, tested offline and run live (per the operator, 2026-11-09: everything worked as expected). Slice 6c (Kibana at create time) is built and tested offline and has not run on any real machine (see "Slice 6a as built", "Slice 6b as built" and "Slice 6c as built").** It was written for the operator to review first, because it adds machines and
 credentials to a live cluster and settles how a person signs in to it. Items marked *to confirm* are from knowledge of Kibana and Elasticsearch
 and have not been checked against this project's versions. The acceptance test in `IMPLEMENTATION_PLAN.md` is: the Kibana health check passes
 on the disposable target, and a Caddy snippet is generated while the existing Caddyfile is untouched.
@@ -158,8 +158,8 @@ What exists, and the choices made while building it that the design left open:
 - **Not verified:** the items marked open in "To confirm" below; a retry after a failed configure on a real machine (only tested against fakes); and the Caddy snippet. `ansible-lint --profile production` reports `var-naming` findings on the new
   roles as it does on the existing ones (this machine's lint is stricter than the notes say it was, and lacks the collections); the two long lines the new code
   introduced were fixed.
-- **Left for later slices:** a public name added after the fact, a VM `tags` value for
-  Kibana (the machine carries the cluster's tags for now), and Kibana at create time (6c).
+- **Left for later slices:** a public name added after the fact, and a VM `tags` value for
+  Kibana (the machine carries the cluster's tags for now).
 
 ## Slice 6b as built (2026-11-09)
 
@@ -181,7 +181,29 @@ Built after the first live run of 6a, at the operator's request ("do all of that
 - **Remove Kibana.** `POST /api/clusters/{id}/remove-kibana` with the cluster name typed. A `tf.update` whose plan must destroy exactly the Kibana machine (`check_removal_plan`),
   then `playbooks/remove_kibana.yml` deletes the service token (a token already gone is fine, so a retry passes). The token is forgotten by ECM; **the encryption keys and the sign-in
   are kept**, so a Kibana added later reads the old saved objects and the password still works. The machine stops being ECM's, its inventory row goes at once, and its address is free again.
-- **Not built:** Kibana at create time (6c).
+- **Run live on 2026-11-09, per the operator:** the sign-in, Restart Kibana and Remove Kibana "worked as expected" on `test-5a`. The operator's logs of these were not seen, so
+  this records the report and no detail. The one defect found was in the UI: the copy button of the sign-in details copied the labels and both values; the username and password are now
+  separate blocks and each copy button copies exactly its own value (`3de4a84`). This settles that Elasticsearch accepts ECM's API key for the change-password call.
+
+## Slice 6c as built (2026-11-09)
+
+Kibana at create time, per decision 8 ("planned in the same Terraform plan as the cluster, with one approval"). **Tested offline only; none of it has run on a real machine.**
+
+- **The request.** `POST /api/clusters` takes an optional `kibana` (`public_name`, `cores`, `ram_mb`, `os_disk_gb`, `pve_node`; all optional; the same model as Add Kibana). The wizard has a
+  **Kibana step** after Sizing (a switch, off by default, with the same fields); the review shows where Kibana would run and the final step says whether it is part of the build.
+- **One plan, one approval.** The Kibana machine is placed after the nodes, by the same code Add Kibana uses (`plan_kibana_machine`), **with the nodes' planned capacity already counted against each host**
+  (so a host with room for a node or for Kibana but not both is not promised twice), an address and a VMID from the same pools, and recorded in `params["kibana"]` beside the state. The Terraform
+  render already merges that list, so the create's plan is simply one machine longer and the plan rule for a create (create only) needs no change. What will be configured is part of the approved
+  digest, and now ends "then install Kibana … on `<cluster>-kb-01` … and check it reports itself available", so a create with Kibana cannot be approved as one without.
+- **The order.** The create's configure step builds the cluster exactly as before; once it has bootstrapped, the same operation runs the Add Kibana play on the machine the same plan made
+  (token with ECM's API key, package, certificate, keystore, service, health check). The cluster is recorded as built *before* Kibana is attempted.
+- **If Kibana fails.** The cluster, its credentials and the Kibana machine are kept and on record, the token is stored even though the run failed, and the operation fails at its last step.
+  **Retry skips the cluster build** (it is already bootstrapped), plans nothing new, needs no second approval, and runs the Kibana step again with the same token and keys. A retry after Kibana
+  succeeded does nothing. (`kibana_added` in the operation's result records that it ran.)
+- **Everything else follows from the machine being in `params["kibana"]`:** it is ECM's once the apply is recorded, its address and VMID are reserved while the create is in flight, a teardown
+  destroys it with the cluster and names it in the panel, and the panel's "last added" points at the create when that is how Kibana was added.
+- **No sign-in is made at create time.** The create knows the `elastic` password it generated, but it is still deleted after bootstrap, as before; use Create sign-in afterwards (the plan, the
+  create's result and the panel all say so). Keeping the bootstrap password as the sign-in would avoid a second change of the superuser's password; it was not done because decision 2 says to reset.
 
 ## To confirm
 
@@ -194,8 +216,8 @@ Settled by the live run of 2026-11-09 (the operator's log; the log does not show
 
 Still open:
 
-- **That the `elastic` password can be reset with ECM's API key** (`POST /_security/user/elastic/_password`), that the new password then works for a basic-auth call, and that ECM's own API key keeps working afterwards (an API key does not depend on its owner's password, but this has not been seen). This is the first thing to look at in the sign-in's first live run: if Elasticsearch refuses an API key for this call, the operation fails with the status and changes nothing, and the fallback is to run `elasticsearch-reset-password` on a node over SSH.
-- That `restart_kibana.yml` works on a real machine (it rewrites `kibana.yml`, restarts the service itself and checks health), and that Remove Kibana's Terraform plan destroys exactly the machine.
+- **Settled by the operator's report on 2026-11-09 ("everything worked as expected"):** that the `elastic` password can be reset with ECM's API key and then signed in with, that `restart_kibana.yml` works, and that Remove Kibana works. Their logs were not seen.
+- **Kibana at create time (6c) on a real cluster:** the first run is what shows whether the one plan places the Kibana machine sensibly on a real Proxmox, and whether the Kibana step after bootstrap works on a just-built cluster.
 - Kibana's real memory use at 4 GiB on this cluster's data, and its start time (the health check's wait is a guess until measured).
 - That Caddy's `tls_trust_pool file` is the right name in the Caddy version on infra.
 

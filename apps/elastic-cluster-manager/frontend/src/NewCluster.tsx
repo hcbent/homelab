@@ -1,17 +1,17 @@
 import {
   EuiBasicTable, EuiBasicTableColumn, EuiButton, EuiButtonEmpty, EuiCallOut, EuiDescriptionList, EuiFieldNumber,
-  EuiFieldText, EuiFormRow, EuiLink, EuiLoadingSpinner, EuiPanel, EuiRadioGroup, EuiSelect, EuiStepsHorizontal,
+  EuiFieldText, EuiFormRow, EuiLink, EuiLoadingSpinner, EuiPanel, EuiRadioGroup, EuiSelect, EuiStepsHorizontal, EuiSwitch,
 } from "@elastic/eui";
 import { useEffect, useRef, useState } from "react";
 import {
-  api, ApiError, CreatePlan, CreateRequest, Infrastructure, NetworkProfile, OperationDetail, PlannedNode, Preset,
+  api, ApiError, CreatePlan, CreateRequest, Infrastructure, NetworkProfile, OperationDetail, PlannedKibana, PlannedNode, Preset,
 } from "./api";
 import { terraformText } from "./OperationDetail";
 import { useInterval } from "./useInterval";
 
-export const WIZARD_STEPS = ["Name", "Topology", "Sizing", "Infrastructure", "Review", "Build"] as const;
-const REVIEW = 4;
-const BUILD = 5;
+export const WIZARD_STEPS = ["Name", "Topology", "Sizing", "Kibana", "Infrastructure", "Review", "Build"] as const;
+const REVIEW = 5;
+const BUILD = 6;
 
 /** What a node gets when nothing is changed (data nodes; master-only and coordinating nodes default smaller). */
 export const SIZE_DEFAULTS = { cores: "4", ramGb: "8", osDisk: "32", dataDisk: "100" };
@@ -20,18 +20,27 @@ export interface Form {
   name: string; version: string; preset: Preset; dataNodes: string; coordinating: string;
   cores: string; ramGb: string; osDisk: string; dataDisk: string;
   connection: string; profile: string; template: string; datastore: string; pool: string; cpuType: string;
+  /** Kibana in the same plan as the cluster. Off by default; the rest only count when it is on. Empty means ECM's default. */
+  kibana: boolean; kibanaName: string; kibanaCores: string; kibanaRamGb: string; kibanaDisk: string; kibanaHost: string;
 }
+/** The fields that hold text (every one but the Kibana switch), which the text and number inputs edit. */
+type TextKey = Exclude<keyof Form, "kibana">;
 export const EMPTY_FORM: Form = {
   name: "", version: "", preset: "three_node", dataNodes: "3", coordinating: "0", ...SIZE_DEFAULTS,
   connection: "", profile: "", template: "", datastore: "", pool: "", cpuType: "",
+  kibana: false, kibanaName: "", kibanaCores: "", kibanaRamGb: "", kibanaDisk: "", kibanaHost: "",
 };
+
+/** What a Kibana machine gets when nothing is changed. */
+export const KIBANA_DEFAULTS = { cores: 2, ramGb: 4, disk: 32 };
+const DNS_NAME = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,38}[a-z0-9]$/;
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const PVE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const STEP_FIELDS: (keyof Form)[][] = [
   ["name", "version"], ["dataNodes", "coordinating"], ["cores", "ramGb", "osDisk", "dataDisk"],
-  ["pool", "cpuType"], [], [],
+  ["kibanaName", "kibanaCores", "kibanaRamGb", "kibanaDisk"], ["pool", "cpuType"], [], [],
 ];
 
 const whole = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
@@ -56,13 +65,26 @@ export function validate(f: Form): Partial<Record<keyof Form, string>> {
     if (d) e.dataNodes = d;
     if (c) e.coordinating = c;
   }
-  const sizes: [keyof Form, number, number, string][] = [
+  const sizes: [TextKey, number, number, string][] = [
     ["cores", 1, 64, "Cores"], ["ramGb", 2, 512, "RAM"], ["osDisk", 16, 2048, "The OS disk"],
     ["dataDisk", 10, 65536, "The data disk"],
   ];
   for (const [key, min, max, what] of sizes) {
     const problem = range(f[key], min, max, what);
     if (problem) e[key] = problem;
+  }
+  if (f.kibana) {
+    if (f.kibanaName.trim() && !DNS_NAME.test(f.kibanaName.trim())) {
+      e.kibanaName = "Use a DNS name such as kibana.example.org, with no https:// or port.";
+    }
+    const optional = (key: TextKey, min: number, max: number, what: string) => {
+      if (f[key].trim() === "") return;
+      const problem = range(f[key], min, max, what);
+      if (problem) e[key] = problem;
+    };
+    optional("kibanaCores", 1, 64, "Cores");
+    optional("kibanaRamGb", 2, 512, "RAM");
+    optional("kibanaDisk", 16, 2048, "The disk");
   }
   if (f.pool && !PVE_RE.test(f.pool)) e.pool = "Use letters, digits, dots, underscores and hyphens.";
   if (f.cpuType && !PVE_RE.test(f.cpuType)) e.cpuType = "Use letters, digits, dots, underscores and hyphens.";
@@ -89,6 +111,15 @@ export function toRequest(f: Form, dryRun: boolean): CreateRequest {
   if (f.datastore) body.datastore = f.datastore;
   if (f.pool) body.pool_id = f.pool;
   if (f.cpuType) body.cpu_type = f.cpuType;
+  if (f.kibana) {
+    const kibana: NonNullable<CreateRequest["kibana"]> = {};
+    if (f.kibanaName.trim()) kibana.public_name = f.kibanaName.trim();
+    if (f.kibanaCores.trim()) kibana.cores = Number(f.kibanaCores);
+    if (f.kibanaRamGb.trim()) kibana.ram_mb = Number(f.kibanaRamGb) * 1024;
+    if (f.kibanaDisk.trim()) kibana.os_disk_gb = Number(f.kibanaDisk);
+    if (f.kibanaHost) kibana.pve_node = f.kibanaHost;
+    body.kibana = kibana;
+  }
   return body;
 }
 
@@ -105,11 +136,16 @@ export function topologyText(f: Form): string {
   return `3 masters + ${f.dataNodes || "?"} data${c ? ` + ${c} coordinating` : ""}`;
 }
 const sizingText = (f: Form) => `${f.cores} cores, ${f.ramGb} GiB RAM, ${f.dataDisk} GB data`;
+export function kibanaText(f: Form): string {
+  if (!f.kibana) return "None (it can be added later)";
+  const size = `${f.kibanaCores || KIBANA_DEFAULTS.cores} cores, ${f.kibanaRamGb || KIBANA_DEFAULTS.ramGb} GiB, ${f.kibanaDisk || KIBANA_DEFAULTS.disk} GB disk`;
+  return [size, f.kibanaName.trim() ? f.kibanaName.trim() : "reached by its address", f.kibanaHost && `on ${f.kibanaHost}`].filter(Boolean).join(", ");
+}
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 
 interface Choices {
   connections: Infrastructure["connections"]; templates: Infrastructure["templates"];
-  storages: string[]; profiles: NetworkProfile[];
+  storages: string[]; profiles: NetworkProfile[]; hosts: string[];
 }
 
 /** The dry run's own operation: polls until the plan is made, then reports whether it can be built. */
@@ -141,6 +177,17 @@ function PlanPreview({ plan, onSettled }: { plan: CreatePlan; onSettled: (ok: bo
       <h4 className="ecm-label">Where each node would run</h4>
       <EuiBasicTable<PlannedNode> tableCaption="Where each node would run" items={plan.nodes} columns={columns}
         rowHeader="name" />
+      {plan.kibana.length > 0 && (
+        <>
+          <h4 className="ecm-label">Where Kibana would run</h4>
+          <EuiBasicTable<PlannedKibana> tableCaption="Where Kibana would run" items={plan.kibana} rowHeader="name" columns={[
+            { field: "name", name: "Machine", render: (v: string) => <span className="ecm-mono">{v}</span> },
+            { field: "host", name: "Proxmox host", render: (v: string) => <span className="ecm-mono">{v}</span> },
+            { field: "url", name: "Address", render: (v: string) => <span className="ecm-mono">{v}</span> },
+            { field: "vm_id", name: "VM ID" },
+            { name: "Size", render: (k: PlannedKibana) => `${k.cores} cores, ${k.ram_mb / 1024} GiB, ${k.os_disk_gb} GB disk` },
+          ]} />
+        </>)}
       {plan.warnings.map((w) => (
         <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
       {error && <EuiCallOut color="danger" role="alert" iconType="warning" title="Could not read the plan"><p>{error}</p></EuiCallOut>}
@@ -193,7 +240,7 @@ export function NewCluster() {
       .then(([infra, profiles]) => {
         setChoices({
           connections: infra.connections, templates: infra.templates, profiles,
-          storages: [...new Set(infra.storages.map((s) => s.name))].sort(),
+          storages: [...new Set(infra.storages.map((s) => s.name))].sort(), hosts: infra.nodes.map((n) => n.name).sort(),
         });
         setForm((f) => ({
           ...f,
@@ -241,16 +288,17 @@ export function NewCluster() {
     { title: "Version", description: form.version || "Not set" },
     { title: "Topology", description: topologyText(form) },
     { title: "Sizing", description: sizingText(form) },
+    { title: "Kibana", description: kibanaText(form) },
     { title: "Infrastructure", description: [connection?.name, form.profile && `network ${form.profile}`]
       .filter(Boolean).join(", ") || "ECM defaults" },
   ];
 
-  const field = (label: string, key: keyof Form, props: { help?: string; placeholder?: string } = {}) => (
+  const field = (label: string, key: TextKey, props: { help?: string; placeholder?: string } = {}) => (
     <EuiFormRow label={label} fullWidth helpText={props.help} isInvalid={!!err(key)} error={err(key)}>
       <EuiFieldText fullWidth value={form[key]} placeholder={props.placeholder} isInvalid={!!err(key)}
         onChange={(e) => set({ [key]: e.target.value } as Partial<Form>)} onBlur={() => touch(key)} />
     </EuiFormRow>);
-  const num = (label: string, key: keyof Form, help?: string) => (
+  const num = (label: string, key: TextKey, help?: string) => (
     <EuiFormRow label={label} fullWidth helpText={help} isInvalid={!!err(key)} error={err(key)}>
       <EuiFieldNumber fullWidth value={form[key]} isInvalid={!!err(key)}
         onChange={(e) => set({ [key]: e.target.value } as Partial<Form>)} onBlur={() => touch(key)} />
@@ -327,6 +375,29 @@ export function NewCluster() {
           </>)}
 
         {step === 3 && (
+          <>
+            <EuiSwitch label="Add Kibana to this cluster" checked={form.kibana} onChange={(e) => set({ kibana: e.target.checked })} />
+            <p className="ecm-small ecm-gap">Kibana is built in the same plan as the cluster, on a machine of its own, and installed once the cluster is up.
+              You approve both once. It is the same version as the cluster, over HTTPS from the cluster's own CA. Nobody can sign in until you use
+              Create sign-in on the cluster's Kibana panel. Leave this off to add Kibana later.</p>
+            {form.kibana && (
+              <>
+                {field("Public name (optional)", "kibanaName", { placeholder: "kibana.example.org",
+                  help: "The DNS name people will use. It goes on the certificate and in the Caddy snippet. Leave empty to reach Kibana by its address." })}
+                <div className="ecm-form-row">
+                  {num(`Cores (default ${KIBANA_DEFAULTS.cores})`, "kibanaCores")}
+                  {num(`RAM, GiB (default ${KIBANA_DEFAULTS.ramGb})`, "kibanaRamGb")}
+                  {num(`Disk, GB (default ${KIBANA_DEFAULTS.disk})`, "kibanaDisk")}
+                </div>
+                {(choices?.hosts.length ?? 0) > 0 && (
+                  <EuiFormRow label="Proxmox host" helpText="Leave on automatic to use the host with the most room, after the cluster's nodes are counted.">
+                    <EuiSelect value={form.kibanaHost} options={[{ value: "", text: "Automatic" }, ...(choices?.hosts ?? []).map((h) => ({ value: h, text: h }))]}
+                      onChange={(e) => set({ kibanaHost: e.target.value })} />
+                  </EuiFormRow>)}
+              </>)}
+          </>)}
+
+        {step === 4 && (
           <>
             {choicesError && (
               <EuiCallOut size="s" color="warning" iconType="warning" title="Could not load the choices">

@@ -22,6 +22,18 @@ MAX_KIBANA_PER_CLUSTER = 1          # one in this phase (decision 1); the data m
 _HOSTNAME = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
 
 
+class KibanaRequest(BaseModel):
+    """What a person may ask for when Kibana is added, whether to a built cluster or as part of creating one. Everything is optional: the machine is
+    2 cores, 4 GiB and a 32 GB disk with no data disk, on the online host with the most room, reached by its address until it has a public name."""
+
+    model_config = ConfigDict(extra="forbid")
+    cores: int | None = Field(default=None, ge=1, le=64)
+    ram_mb: int | None = Field(default=None, ge=2048, le=524288)
+    os_disk_gb: int | None = Field(default=None, ge=16, le=2048)
+    pve_node: str | None = Field(default=None, min_length=1, max_length=100)
+    public_name: str | None = Field(default=None, max_length=253)
+
+
 class KibanaSpec(BaseModel):
     """One Kibana machine. `host`, `vm_id` and `address` are what ECM chose when the machine was planned."""
 

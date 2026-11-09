@@ -44,7 +44,11 @@ const KIBANA_STEP: Record<string, string> = {
 /** A step's name in plain words. `configure` is the last step of several operations that do different things, so it is named for the one it
  * belongs to: only a create installs Elasticsearch. */
 function stepText(name: string, op: Detail): string {
-  if (name === "configure") return op.kind === "tf.create" ? STEP_TEXT.configure : CONFIGURE_TEXT[op.change?.kind ?? ""] ?? "Configure the nodes";
+  if (name === "configure") {
+    // A create that asked for Kibana ends by installing it on the machine it made.
+    if (op.kind === "tf.create") return op.kibana?.length ? `${STEP_TEXT.configure}, then Kibana` : STEP_TEXT.configure;
+    return CONFIGURE_TEXT[op.change?.kind ?? ""] ?? "Configure the nodes";
+  }
   if (name === "apply" && op.change?.kind === "forget_nodes") return "Apply the plan (the machines are already gone)";
   if (name === "kibana" && op.kind === "es.kibana") return KIBANA_STEP[op.change?.kind ?? ""] ?? "Change Kibana";
   return STEP_TEXT[name] ?? name;
@@ -362,6 +366,9 @@ export function OperationDetail({ id }: { id: string }) {
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
           {op.change?.kind === "add_kibana" && <KibanaPlan change={op.change} />}
+          {op.kind === "tf.create" && (op.kibana?.length ?? 0) > 0 && (
+            <KibanaPlan title="Kibana, built with the cluster" first="Machine"
+              change={{ kind: "create", warnings: [], kibana: Object.fromEntries((op.kibana ?? []).map((k) => [k.name, k])) }} />)}
           {op.change?.kind === "remove_kibana" && <KibanaPlan change={op.change} title="The Kibana this removes" first="Machine" />}
           {kibanaOp && op.change && <KibanaPlan change={op.change} title="The Kibana this changes" first="Machine" />}
           {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
@@ -501,7 +508,8 @@ export function OperationDetail({ id }: { id: string }) {
 
       {op.state === "succeeded" && done && op.cluster_id && (
         <EuiCallOut color="success" iconType="check" title="The cluster is up">
-          <p>{done.number_of_nodes} nodes, {done.status}.{" "}
+          <p>{done.number_of_nodes} nodes, {done.status}.{(op.kibana?.length ?? 0) > 0
+            && " Kibana is installed and reports itself available; nobody can sign in yet, so use Create sign-in on the cluster's Kibana panel."}{" "}
             <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink></p></EuiCallOut>)}
 
       <div className="ecm-detail__log">

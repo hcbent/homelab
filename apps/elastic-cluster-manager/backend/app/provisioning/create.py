@@ -16,12 +16,14 @@ The version is checked by the caller before this runs, because it needs the netw
 """
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.configmgmt.inventory import kibana_es_hosts
 from app.desired import (
     AllocationError,
     DesiredState,
@@ -31,9 +33,19 @@ from app.desired import (
     allocate_addresses,
     build_desired_state,
     host_views_from_rows,
+    recommend_host,
     recommend_placement,
     warnings,
 )
+from app.desired.kibana import (
+    DEFAULT_CORES,
+    DEFAULT_OS_DISK_GB,
+    DEFAULT_RAM_MB,
+    KibanaRequest,
+    KibanaSpec,
+    kibana_name,
+)
+from app.desired.models import RolesMode
 from app.desired.network import NetworkProfile
 from app.models import (
     ACTIVE_STATES,
@@ -112,6 +124,9 @@ class CreateRequest(BaseModel):
     # host exposes the real CPU features (Elasticsearch machine learning needs SSE4.2). Use x86-64-v2-AES or a named
     # model instead if the Proxmox hosts have different CPUs and VMs must live-migrate between them.
     cpu_type: str = Field(default="host", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    # Kibana, built in the same Terraform plan and installed once the cluster has bootstrapped, under the one approval (docs/DESIGN_KIBANA.md,
+    # decision 8). Left out, the cluster has none; it can be added later.
+    kibana: KibanaRequest | None = None
     # Plan only, and the plan can never be approved. Real creates are opt-in.
     dry_run: bool = True
 
@@ -124,6 +139,7 @@ class Resolved:
     addresses: dict[str, str]
     vm_ids: dict[str, int]
     warnings: list[str] = field(default_factory=list)
+    kibana: list[KibanaSpec] = field(default_factory=list)      # the machine planned with the cluster, when Kibana was asked for
 
 
 # ---- small helpers --------------------------------------------------------------------------------------
@@ -312,6 +328,46 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
     return result
 
 
+def plan_kibana_machine(db: Session, *, conn: ProxmoxConnection, template: Vm, profile: NetworkProfile, datastore: str, state: DesiredState,
+                        node_addresses: dict[str, str], node_vm_ids: dict[str, int], request: KibanaRequest,
+                        claimed: list[tuple[str, NodeSpec]] | None = None, own_cluster: str | None = None,
+                        taken_addresses: set[str] | None = None, taken_vmids: set[int] | None = None) -> KibanaSpec:
+    """One Kibana machine for the cluster `state`: named `<cluster>-kb-01`, on the online host with the most room (or the one asked for), with an
+    address and a VMID from the same pools as the nodes. Used when Kibana is added to a built cluster and when it is planned with a new one.
+    `claimed` is what the plan has already put on hosts, `taken_*` is what the cluster already holds. Raises CreateInvalid with the reason."""
+    settings = get_settings()
+    name = kibana_name(state.name)
+    try:
+        # A coordinating node spec stands for the machine in the placement rules (it holds no data and no vote); it is never recorded.
+        machine = NodeSpec(name=name, roles_mode=RolesMode.coordinating, cores=request.cores or DEFAULT_CORES,
+                           ram_mb=request.ram_mb or DEFAULT_RAM_MB, os_disk_gb=request.os_disk_gb or DEFAULT_OS_DISK_GB,
+                           pve_node=request.pve_node)
+    except ValidationError as exc:
+        raise CreateInvalid(f"the Kibana machine cannot be named or sized: {_message(exc)}") from exc
+    _check_names(db, SimpleNamespace(nodes=[machine]))
+    hosts, store_rows = _host_views(db, conn)
+    host, why = recommend_host(machine, hosts, PlacementConfig(datastore=datastore), already=claimed)
+    if host is None:
+        detail = "; ".join(f"{h}: {', '.join(r)}" for h, r in sorted(why.items()))
+        raise CreateInvalid(f"no host can take the Kibana machine ({detail})")
+    _check_template_readable(store_rows, {name: host}, template)
+    reserved_addresses, reserved_vmids = _reservations(db, own_cluster)
+    try:
+        in_use = ({a["ip"] for a in addresses_in_use(db)} | reserved_addresses | set(node_addresses.values()) | (taken_addresses or set()))
+        address = allocate_addresses(profile, [machine], in_use)[name]
+        used_vmids = ({v for (v,) in db.execute(select(Vm.vmid).where(Vm.connection_id == conn.id))} | reserved_vmids
+                      | {int(v) for v in node_vm_ids.values()} | (taken_vmids or set()))
+        vm_id = int(allocate_vmids([name], used_vmids, settings.vmid_range_start, settings.vmid_range_end)[name])
+    except (AllocationError, VmidError) as exc:
+        raise CreateInvalid(str(exc)) from exc
+    try:
+        return KibanaSpec(name=name, vm_id=vm_id, address=address, host=host, cores=machine.cores, ram_mb=machine.ram_mb,
+                          os_disk_gb=machine.os_disk_gb, public_name=request.public_name,
+                          es_hosts=kibana_es_hosts(state, node_addresses))
+    except ValidationError as exc:
+        raise CreateInvalid(_message(exc)) from exc
+
+
 def _reservations(db: Session, own_cluster: str | None) -> tuple[set[str], set[int]]:
     """Addresses and VMIDs promised to other real creates that discovery may not show yet."""
     now = datetime.now(UTC)
@@ -387,7 +443,18 @@ def resolve(db: Session, req: CreateRequest, own_cluster: str | None = None) -> 
         "proxmox_connection_id": conn.id, "datastore_id": datastore, "pool_id": req.pool_id,
         "cpu_type": req.cpu_type,
     }
-    return Resolved(state, params, placement.hosts, addresses, vm_ids, notes)
+    kibana: list[KibanaSpec] = []
+    if req.kibana is not None:
+        spec = plan_kibana_machine(
+            db, conn=conn, template=template, profile=profile, datastore=datastore, state=state, node_addresses=addresses,
+            node_vm_ids=vm_ids, request=req.kibana, claimed=[(placement.hosts[n.name], n) for n in state.nodes], own_cluster=own_cluster)
+        kibana = [spec]
+        params["kibana"] = [spec.model_dump(mode="json")]
+        notes.append(f"Kibana {state.version} is built in the same plan, as the machine {spec.name}, and installed once the cluster is up; the one "
+                     "approval covers both. Nobody can sign in to it until the sign-in is set up (Create sign-in on the Kibana panel)")
+        if spec.public_name is None:
+            notes.append("no public name was given for Kibana, so it is reached by its address and ECM shows no Caddy snippet; add a name to get one")
+    return Resolved(state, params, placement.hosts, addresses, vm_ids, notes, kibana)
 
 
 def create_cluster_operation(db: Session, req: CreateRequest, actor: str) -> tuple[Cluster, Operation, Resolved]:

@@ -51,6 +51,8 @@ export interface OperationDetail extends Operation {
   result: Record<string, unknown> | null;
   steps: OperationStep[]; logs: OperationLogLine[];
   /** What a change to a built cluster asked for, with a plain description. */
+  /** The Kibana machines in the cluster's parameters. A create that asked for Kibana builds one with the cluster. */
+  kibana?: PlannedKibana[];
   change?: { kind: string; describe?: string; nodes?: Record<string, unknown>; warnings?: string[]; added?: string[];
              kibana?: Record<string, unknown>; kibana_removed?: string[] } | null;
 }
@@ -62,10 +64,19 @@ export interface CreateRequest {
   sizing?: { cores?: number; ram_mb?: number; os_disk_gb?: number; data_disk_gb?: number };
   proxmox_connection_id?: string; network_profile?: string; template_vmid?: number; datastore?: string;
   pool_id?: string; cpu_type?: string;
+  /** Kibana, built in the same plan as the cluster and installed once it is up. Everything in it is optional. */
+  kibana?: { public_name?: string; cores?: number; ram_mb?: number; os_disk_gb?: number; pve_node?: string };
 }
 export interface PlannedNode { name: string; host: string; address: string; vm_id: number }
+/** A Kibana machine as a plan or an operation shows it: where it goes and how it is reached. */
+export interface PlannedKibana {
+  name: string; host: string; address: string; vm_id: number; cores: number; ram_mb: number; os_disk_gb: number;
+  public_name: string | null; url: string; public_url: string | null;
+}
 export interface CreatePlan {
   cluster_id: string; operation_id: string; dry_run: boolean; nodes: PlannedNode[]; warnings: string[];
+  /** The Kibana machine planned with the cluster, when it was asked for (empty otherwise). */
+  kibana: PlannedKibana[];
 }
 
 export interface ClusterSummary {

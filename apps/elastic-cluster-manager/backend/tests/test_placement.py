@@ -8,6 +8,7 @@ from app.desired.placement import (
     HostView,
     PlacementConfig,
     host_views_from_rows,
+    recommend_host,
     recommend_placement,
 )
 
@@ -273,3 +274,42 @@ def test_a_host_that_was_used_is_not_listed_even_if_it_refused_a_later_node():
 def test_an_offline_host_is_reported_as_offline():
     got = recommend_placement(three_node(), [host("pve1"), host("pve2"), host("pve3", online=False)])
     assert got.excluded == {"pve3": ["host is offline"]}
+
+
+# -- one machine that is not part of the quorum (Kibana) --------------------------------------------------------------------------------
+
+def machine(**kw) -> NodeSpec:
+    return NodeSpec(name="lab-b-kb-01", roles_mode=RolesMode.coordinating, cores=2, ram_mb=4096, os_disk_gb=32, **kw)
+
+
+def test_one_machine_goes_to_the_host_with_the_most_room_and_the_reasons_are_given_for_the_rest():
+    hosts = [host("pve1", mem_used_gib=100), host("pve2", mem_used_gib=10), host("pve3", mem_used_gib=186)]
+    chosen, why = recommend_host(machine(), hosts)
+    assert chosen == "pve2" and "not enough free RAM" in " ".join(why["pve3"]) and "pve1" not in why
+
+
+def test_a_machine_can_be_pinned_and_an_unknown_or_full_host_gives_no_placement_with_the_reason():
+    hosts = three_hosts()
+    assert recommend_host(machine(pve_node="pve3"), hosts)[0] == "pve3"
+    assert recommend_host(machine(pve_node="pve9"), hosts) == (None, {"pve9": ["not a known host"]})
+    chosen, why = recommend_host(machine(pve_node="pve1"), [host("pve1", online=False), host("pve2")])
+    assert chosen is None and why == {"pve1": ["host is offline"]}
+
+
+def test_machines_the_plan_has_already_placed_are_counted_so_their_room_is_not_promised_twice():
+    """Each host has 20 GiB free: room for an 8 GiB node or for 4 GiB of Kibana after the reserve, but not for both."""
+    hosts = three_hosts(mem_used_gib=167)
+    assert recommend_host(machine(), hosts)[0] is not None                                  # alone, it fits anywhere
+    placed = [("pve1", NodeSpec(name="lab-b-01", cores=4, ram_mb=8192, os_disk_gb=32, data_disk_gb=100)),
+              ("pve2", NodeSpec(name="lab-b-02", cores=4, ram_mb=8192, os_disk_gb=32, data_disk_gb=100)),
+              ("pve3", NodeSpec(name="lab-b-03", cores=4, ram_mb=8192, os_disk_gb=32, data_disk_gb=100))]
+    chosen, why = recommend_host(machine(), hosts, already=placed)
+    assert chosen is None and set(why) == {"pve1", "pve2", "pve3"}
+    assert recommend_host(machine(), hosts, already=placed[:2])[0] == "pve3"                 # the one host nothing was placed on is still free
+
+
+def test_a_machine_already_placed_on_an_unknown_host_is_ignored_and_the_choice_is_deterministic():
+    hosts = three_hosts()
+    ghost = [("pve9", NodeSpec(name="lab-b-01", cores=4, ram_mb=8192, os_disk_gb=32, data_disk_gb=100))]
+    assert recommend_host(machine(), hosts, already=ghost) == recommend_host(machine(), hosts)
+    assert recommend_host(machine(), hosts)[0] == "pve1"                                    # equal scores: the first name

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import audit, auth, operations
 from app.db import get_db
+from app.desired.kibana import kibana_of
 from app.models import Operation, OperationLog, OperationStep, User
 from app.provisioning import operation as tf
 
@@ -52,6 +53,10 @@ def get_operation(op_id: str, db: Session = Depends(get_db), _: User = Depends(a
             "result": o.result,
             # What a change to a built cluster asked for (kind, nodes, a description); no secrets are in it.
             "change": (o.params or {}).get("change"),
+            # The Kibana machines in the cluster's parameters, with how each is reached (no secret is in them). A create that asked for Kibana
+            # builds one with the cluster, so its plan shows it.
+            "kibana": [{**k.model_dump(mode="json", exclude={"es_hosts"}), "url": k.url, "public_url": k.public_url}
+                       for k in kibana_of(o.params or {})],
             "steps": [{"seq": s.seq, "name": s.name, "status": s.status, "detail": s.detail}
                       for s in steps],
             "logs": [{"ts": line.ts, "stream": line.stream, "line": line.line} for line in logs]}

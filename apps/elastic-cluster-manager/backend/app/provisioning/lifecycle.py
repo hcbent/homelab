@@ -20,21 +20,11 @@ from app.config import get_settings
 from app.configmgmt.inventory import kibana_es_hosts
 from app.desired import (
     AllocationError,
-    PlacementConfig,
     TopologyPreset,
     allocate_addresses,
-    recommend_host,
     warnings,
 )
-from app.desired.kibana import (
-    DEFAULT_CORES,
-    DEFAULT_OS_DISK_GB,
-    DEFAULT_RAM_MB,
-    MAX_KIBANA_PER_CLUSTER,
-    KibanaSpec,
-    kibana_name,
-    kibana_of,
-)
+from app.desired.kibana import MAX_KIBANA_PER_CLUSTER, KibanaRequest, KibanaSpec, kibana_of
 from app.desired.models import DATA_ROLES, VALID_ROLES, DesiredState, NodeSpec, RolesMode
 from app.desired.network import NetworkProfile
 from app.discovery import factory
@@ -44,11 +34,10 @@ from app.network_profiles import addresses_in_use
 from app.provisioning.create import (
     CreateInvalid,
     _check_names,
-    _check_template_readable,
-    _host_views,
     _placement,
     _reservations,
     _template,
+    plan_kibana_machine,
 )
 from app.provisioning.operation import OperationRefused
 from app.provisioning.vmid import VmidError, allocate_vmids
@@ -388,16 +377,8 @@ def plan_add_nodes(db: Session, cluster: Cluster, request: AddNodes) -> dict:
 
 # -- adding Kibana (docs/DESIGN_KIBANA.md) -------------------------------------------------------------------------
 
-class AddKibana(BaseModel):
-    """Add Kibana to a built cluster. Everything is optional: the machine is 2 cores, 4 GiB and a 32 GB disk with no data disk, on the
-    online host with the most room, reached by its address until it is given a public name."""
-
-    model_config = ConfigDict(extra="forbid")
-    cores: int | None = Field(default=None, ge=1, le=64)
-    ram_mb: int | None = Field(default=None, ge=2048, le=524288)
-    os_disk_gb: int | None = Field(default=None, ge=16, le=2048)
-    pve_node: str | None = Field(default=None, min_length=1, max_length=100)
-    public_name: str | None = Field(default=None, max_length=253)
+class AddKibana(KibanaRequest):
+    """Add Kibana to a built cluster. Everything is optional (see KibanaRequest)."""
 
 
 def _kibana_read(db: Session, cluster: Cluster, client=None) -> dict:
@@ -436,42 +417,20 @@ def plan_add_kibana(db: Session, cluster: Cluster, request: AddKibana, client=No
         raise OperationRefused("the cluster is red, so some data is already unavailable; Kibana is added to a cluster that is "
                                "yellow or green")
 
-    name = kibana_name(state.name)
-    sized = SimpleNamespace(name=name, cores=request.cores or DEFAULT_CORES, ram_mb=request.ram_mb or DEFAULT_RAM_MB,
-                            os_disk_gb=request.os_disk_gb or DEFAULT_OS_DISK_GB)
     conn = db.get(ProxmoxConnection, params.get("proxmox_connection_id") or "")
     if conn is None:
         raise OperationRefused("the Proxmox connection this cluster was built on no longer exists")
-    settings = get_settings()
-    datastore = params.get("datastore_id", settings.default_storage)
+    datastore = params.get("datastore_id", get_settings().default_storage)
     try:
-        # A coordinating node spec stands for the machine in the placement rules (it holds no data and no vote); it is never recorded.
-        machine = NodeSpec(name=name, roles_mode=RolesMode.coordinating, cores=sized.cores, ram_mb=sized.ram_mb,
-                           os_disk_gb=sized.os_disk_gb, pve_node=request.pve_node)
-        _check_names(db, SimpleNamespace(nodes=[machine]))
-        template = _template(db, conn, (params.get("template") or {}).get("vm_id"))
-        hosts, store_rows = _host_views(db, conn)
-        host, why = recommend_host(machine, hosts, PlacementConfig(datastore=datastore))
-        if host is None:
-            detail = "; ".join(f"{h}: {', '.join(r)}" for h, r in sorted(why.items()))
-            raise CreateInvalid(f"no host can take the Kibana machine ({detail})")
-        _check_template_readable(store_rows, {name: host}, template)
-        profile = NetworkProfile.model_validate(params["profile"])
-        reserved_addresses, reserved_vmids = _reservations(db, None)
-        in_use = ({a["ip"] for a in addresses_in_use(db)} | reserved_addresses | set(params["addresses"].values())
-                  | {k.address for k in kibana_of(params)})
-        address = allocate_addresses(profile, [machine], in_use)[name]
-        used_vmids = ({v for (v,) in db.execute(select(Vm.vmid).where(Vm.connection_id == conn.id))}
-                      | reserved_vmids | {int(v) for v in params["vm_ids"].values()} | {k.vm_id for k in kibana_of(params)})
-        vm_id = int(allocate_vmids([name], used_vmids, settings.vmid_range_start, settings.vmid_range_end)[name])
-        spec = KibanaSpec(name=name, vm_id=vm_id, address=address, host=host, cores=sized.cores, ram_mb=sized.ram_mb,
-                          os_disk_gb=sized.os_disk_gb, public_name=request.public_name,
-                          es_hosts=kibana_es_hosts(state, params["addresses"]))
-    except (CreateInvalid, AllocationError, VmidError) as exc:
+        spec = plan_kibana_machine(
+            db, conn=conn, template=_template(db, conn, (params.get("template") or {}).get("vm_id")),
+            profile=NetworkProfile.model_validate(params["profile"]), datastore=datastore, state=state,
+            node_addresses=params["addresses"], node_vm_ids=params["vm_ids"], request=request,
+            taken_addresses={k.address for k in kibana_of(params)}, taken_vmids={k.vm_id for k in kibana_of(params)})
+    except CreateInvalid as exc:
         raise OperationRefused(str(exc)) from exc
-    except ValidationError as exc:
-        raise OperationRefused("; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else e["msg"]
-                                         for e in exc.errors())) from exc
+    name = spec.name
+    host = spec.host
 
     notes = [("Nobody can sign in to Kibana until the sign-in is set up: when it is running, use Create sign-in on the Kibana panel, which "
               "sets a new password for the elastic user and keeps it for you")]
