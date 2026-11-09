@@ -15,12 +15,14 @@ from app.desired import (
 )
 from app.models import Cluster, User
 from app.provisioning import create as plan_create
+from app.provisioning.kibana_ops import login_for_reveal
 from app.provisioning.lifecycle import (
     AddKibana,
     AddNodes,
     ExpandDisk,
     ForgetNodes,
     RebuildNodes,
+    RemoveKibana,
     RemoveNodes,
     ResizeNodes,
     RestartNodes,
@@ -28,12 +30,21 @@ from app.provisioning.lifecycle import (
     plan_add_nodes,
     plan_expand_disk,
     plan_forget_nodes,
+    plan_kibana_login,
     plan_rebuild_nodes,
+    plan_remove_kibana,
     plan_remove_nodes,
     plan_resize,
+    plan_restart_kibana,
     plan_restart_nodes,
 )
-from app.provisioning.operation import OperationRefused, remove_cluster, start_restart, start_update
+from app.provisioning.operation import (
+    OperationRefused,
+    remove_cluster,
+    start_kibana_op,
+    start_restart,
+    start_update,
+)
 
 router = APIRouter(prefix="/api/clusters", tags=["provisioning"],
                    dependencies=[Depends(auth.require_csrf_header)])
@@ -166,6 +177,42 @@ async def add_kibana(cluster_id: str, body: AddKibana, db: Session = Depends(get
         if problems:
             raise HTTPException(409, "Kibana cannot be installed: " + "; ".join(problems))
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_add_kibana(d, c, body), reads_cluster=True)
+
+
+@router.post("/{cluster_id}/remove-kibana", status_code=202)
+async def remove_kibana(cluster_id: str, body: RemoveKibana, db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
+    """Plan removing Kibana: Terraform destroys its machine and ECM deletes its service token. Kibana holds no data, so nothing is lost; the
+    encryption keys are kept. This only makes a plan; nothing changes until it is approved. The cluster name must be typed in `confirm_name`."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_remove_kibana(d, c, body))
+
+
+@router.post("/{cluster_id}/restart-kibana", status_code=202)
+async def restart_kibana(cluster_id: str, db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
+    """Plan restarting Kibana with the cluster's current nodes in its configuration. This only makes a plan; nothing restarts until it is
+    approved on its operation page."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_restart_kibana(d, c), start=start_kibana_op)
+
+
+@router.post("/{cluster_id}/kibana-login", status_code=202)
+async def kibana_login(cluster_id: str, db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
+    """Plan setting the sign-in: a new generated password for the elastic user, kept encrypted by ECM. This changes the cluster's superuser
+    password, so it only makes a plan; nothing changes until it is approved on its operation page."""
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_kibana_login(d, c), start=start_kibana_op)
+
+
+@router.post("/{cluster_id}/kibana-login/reveal")
+def reveal_kibana_login(cluster_id: str, response: Response, db: Session = Depends(get_db), user: User = Depends(auth.current_user)):
+    """The elastic user's username and password that ECM set, for signing in to Kibana. Every call is recorded in the audit log, with who asked.
+    A POST so it is never cached or prefetched, and the response says not to be stored."""
+    cluster = db.get(Cluster, cluster_id)
+    if cluster is None:
+        raise HTTPException(404, "cluster not found")
+    login = login_for_reveal(db, cluster)
+    if login is None:
+        raise HTTPException(409, "ECM has not set a sign-in for this cluster's Kibana yet; use Create sign-in first")
+    audit.record(db, user.username, "kibana.login.reveal", "cluster", cluster.id, cluster_name=cluster.name)
+    response.headers["Cache-Control"] = "no-store"
+    return login
 
 
 @router.get("/{cluster_id}/ca.crt")

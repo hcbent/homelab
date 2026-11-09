@@ -77,6 +77,10 @@ class Fake:
         self.kibana_status = 200
         self.kibana_level = "available"
         self.kibana_summary = "All services and plugins are available"
+        self.password: str | None = None        # the elastic user's password, once it has been set
+        self.password_status = 200              # what setting it gets
+        self.authenticate_status: int | None = None   # forces what signing in answers; None means: right only for the password set
+        self.bodies: list[dict] = []            # the JSON bodies of the requests that had one
 
     def count(self, method: str, path: str | None = None) -> int:
         return sum(1 for m, p, _ in self.calls if m == method and (path is None or p == path))
@@ -104,6 +108,13 @@ def server(tmp_path):
 
         def do_POST(self):
             self._note()
+            if self.path == "/_security/user/elastic/_password":
+                body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
+                fake.bodies.append(body)
+                if fake.password_status != 200:
+                    return self._send(fake.password_status, {"error": {"reason": "security_exception"}})
+                fake.password = body.get("password")
+                return self._send(200, {})
             if self.path != TOKEN_PATH:
                 return self._send(404, {"error": "no such path"})
             if self.path.rsplit("/", 1)[-1] in fake.tokens:
@@ -119,11 +130,18 @@ def server(tmp_path):
             self._note()
             if fake.delete_status != 200:
                 return self._send(fake.delete_status, {"error": "refused"})
-            found = fake.tokens.pop(self.path.rsplit("/", 1)[-1], None) is not None
-            return self._send(200, {"found": found})
+            if fake.tokens.pop(self.path.rsplit("/", 1)[-1], None) is None:
+                return self._send(404, {"found": False})                  # as Elasticsearch answers for a token that is not there
+            return self._send(200, {"found": True})
 
         def do_GET(self):
             self._note()
+            if self.path == "/_security/_authenticate":
+                import base64
+                expected = "Basic " + base64.b64encode(f"elastic:{fake.password}".encode()).decode() if fake.password else None
+                ok = self.headers.get("authorization") == expected
+                status = fake.authenticate_status or (200 if ok else 401)
+                return self._send(status, {"username": "elastic"} if status == 200 else {"error": "unauthorized"})
             if self.path != "/api/status":
                 return self._send(404, {})
             if fake.kibana_status != 200:
@@ -268,3 +286,74 @@ def test_a_kibana_that_does_not_answer_is_reported_as_not_answering(server):
 def test_the_run_wont_start_without_the_api_key_or_the_ca(server):
     result = run_playbook(server, "kibana_health.yml", es_api_key="")
     assert result.returncode != 0 and "needs the ECM API key" in result.stdout + result.stderr
+
+
+# -- setting the sign-in -----------------------------------------------------------------------------------------------------------
+
+NEW_PASSWORD = "Zq9fakeNewElasticPasswordForTests01"
+
+
+def test_the_password_is_set_with_ecms_api_key_and_then_proved_by_signing_in_with_it(server):
+    result = run_playbook(server, "kibana_login.yml", kibana_login_pass=NEW_PASSWORD)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [(m, p) for m, p, _ in server.calls] == [("POST", "/_security/user/elastic/_password"), ("GET", "/_security/_authenticate")]
+    assert server.calls[0][2] == f"ApiKey {API_KEY}"                  # set with the API key, which does not depend on the old password
+    assert server.calls[1][2].startswith("Basic ")                    # proved with the new password itself
+    assert server.bodies == [{"password": NEW_PASSWORD}] and server.password == NEW_PASSWORD
+
+
+def test_neither_the_new_password_nor_the_api_key_reaches_the_output(server):
+    result = run_playbook(server, "kibana_login.yml", kibana_login_pass=NEW_PASSWORD)
+    assert result.returncode == 0
+    assert NEW_PASSWORD not in result.stdout + result.stderr and API_KEY not in result.stdout + result.stderr
+    import base64
+    assert base64.b64encode(f"elastic:{NEW_PASSWORD}".encode()).decode() not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("status", [401, 403, 500])
+def test_a_refusal_to_change_the_password_stops_before_anything_is_proved_and_says_it_was_not_changed(server, status):
+    server.password_status = status
+    result = run_playbook(server, "kibana_login.yml", kibana_login_pass=NEW_PASSWORD)
+    out = result.stdout + result.stderr
+    assert result.returncode != 0 and f"HTTP {status}" in out and "the password was not changed" in out
+    assert [m for m, _, _ in server.calls] == ["POST"] and NEW_PASSWORD not in out
+
+
+def test_a_password_that_does_not_work_when_tried_fails_the_run_and_says_so(server):
+    server.authenticate_status = 401
+    result = run_playbook(server, "kibana_login.yml", kibana_login_pass=NEW_PASSWORD)
+    out = result.stdout + result.stderr
+    assert result.returncode != 0 and "signing in with it answered HTTP 401" in out and "keeps it as pending" in out
+    assert NEW_PASSWORD not in out
+
+
+@pytest.mark.parametrize("password", ["", "too-short"])
+def test_a_missing_or_short_password_is_refused_before_the_cluster_is_asked(server, password):
+    result = run_playbook(server, "kibana_login.yml", kibana_login_pass=password)
+    assert result.returncode != 0 and "at least 20 characters" in result.stdout + result.stderr
+    assert server.calls == []
+
+
+# -- removing Kibana ------------------------------------------------------------------------------------------------------------------
+
+def test_removing_kibana_deletes_its_token_with_ecms_api_key(server):
+    server.tokens[TOKEN_NAME] = "the-token-kibana-used"
+    result = run_playbook(server, "remove_kibana.yml")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [(m, p) for m, p, _ in server.calls] == [("DELETE", TOKEN_PATH)] and server.calls[0][2] == f"ApiKey {API_KEY}"
+    assert TOKEN_NAME not in server.tokens
+    assert "the-token-kibana-used" not in result.stdout + result.stderr
+
+
+def test_a_token_that_is_already_gone_is_fine_so_a_retry_passes(server):
+    result = run_playbook(server, "remove_kibana.yml")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert server.count("DELETE") == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 500])
+def test_a_token_that_cannot_be_deleted_fails_the_run_and_says_the_machine_is_gone(server, status):
+    server.delete_status = status
+    result = run_playbook(server, "remove_kibana.yml")
+    assert result.returncode != 0 and f"HTTP {status}" in result.stdout + result.stderr
+    assert "The machine is gone; Retry runs this step again" in result.stdout + result.stderr

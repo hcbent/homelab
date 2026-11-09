@@ -11,8 +11,14 @@ const SNIPPET = "kibana.lab.example.org {\n\treverse_proxy https://192.168.10.11
   + "\t\ttransport http { tls_trust_pool file /etc/caddy/ecm/lab-d-ca.crt }\n\t}\n}\n";
 const MACHINE = { name: "lab-d-kb-01", vm_id: 520, address: "192.168.10.116", host: "pve2", cores: 2, ram_mb: 4096, os_disk_gb: 32,
   public_name: "kibana.lab.example.org", url: "https://192.168.10.116:5601", public_url: "https://kibana.lab.example.org",
-  caddy_snippet: SNIPPET };
-const NONE = { machines: [], can_add: true, ca_available: true, last_add: null };
+  caddy_snippet: SNIPPET, hosts_out_of_date: false };
+const NO_LOGIN = { set: false, reset_at: null, last: null };
+const HAS_LOGIN = { set: true, reset_at: "2026-11-09T18:00:00Z", last: { operation_id: "lg1", state: "succeeded", finished_at: null } };
+const NONE = { machines: [], can_add: true, can_change: false, ca_available: true, last_add: null, login: NO_LOGIN, last_restart: null };
+/** A cluster that has Kibana, with what the panel is told about it. */
+const WITH = (over: Record<string, unknown> = {}, machine: Record<string, unknown> = {}) => ({
+  ...LIFE, kibana: { machines: [{ ...MACHINE, ...machine }], can_add: false, can_change: true, ca_available: true, last_add: null,
+    login: NO_LOGIN, last_restart: null, ...over } });
 const LIFE = { managed: true, busy_operation_id: null, teardown_of: null, nodes: [], bootstrapped: true, can_remove: false,
   data_disks: {}, can_change: true, sizes: { "lab-d-01": { cores: 2, ram_mb: 4096 } }, kibana: NONE };
 const INFRA = { connections: [], nodes: [{ name: "pve1", status: "online", usage: {} }, { name: "pve2", status: "online", usage: {} }],
@@ -103,8 +109,7 @@ test("while an operation runs, adding is not offered and the operation is linked
 });
 
 test("a cluster that has Kibana shows it, its last check, the Caddy snippet that is never applied, and the CA download", async () => {
-  app({ ...LIFE, kibana: { machines: [MACHINE], can_add: false, ca_available: true,
-    last_add: { operation_id: "k1", state: "succeeded", finished_at: "2026-11-09T18:00:00Z" } } });
+  app(WITH({ last_add: { operation_id: "k1", state: "succeeded", finished_at: "2026-11-09T18:00:00Z" } }));
   await panel();
   expect(screen.getByText("https://192.168.10.116:5601")).toBeInTheDocument();
   expect(screen.getByText("https://kibana.lab.example.org")).toBeInTheDocument();
@@ -118,16 +123,18 @@ test("a cluster that has Kibana shows it, its last check, the Caddy snippet that
   expect(screen.queryByRole("button", { name: "Plan adding Kibana" })).not.toBeInTheDocument();   // one per cluster
 });
 
-test("the panel says plainly that nobody can sign in yet, because that part is not built", async () => {
-  app({ ...LIFE, kibana: { machines: [MACHINE], can_add: false, ca_available: true, last_add: null } });
+test("a Kibana with no sign-in says nobody can sign in and offers to create one, and never shows a password", async () => {
+  app(WITH());
   await panel();
   expect(screen.getByText("Nobody can sign in to this Kibana yet")).toBeInTheDocument();
-  expect(screen.getByText(/has not been built/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create sign-in" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Show sign-in details" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Password:/)).not.toBeInTheDocument();
 });
 
 test("a Kibana added without a name has no snippet, and a failed add points at Retry", async () => {
-  app({ ...LIFE, kibana: { machines: [{ ...MACHINE, public_name: null, public_url: null, caddy_snippet: null }], can_add: false,
-    ca_available: false, last_add: { operation_id: "k3", state: "failed", finished_at: null } } });
+  app(WITH({ ca_available: false, last_add: { operation_id: "k3", state: "failed", finished_at: null } },
+    { public_name: null, public_url: null, caddy_snippet: null }));
   await panel();
   expect(screen.getByText(/added without a public name, so there is no snippet/)).toBeInTheDocument();
   expect(screen.getByText("Kibana did not finish being added")).toBeInTheDocument();
@@ -139,4 +146,113 @@ test("a cluster that is not built, or not managed by ECM, has no Kibana panel", 
   app({ ...LIFE, bootstrapped: false });
   await screen.findByRole("heading", { name: "Add nodes" }).catch(() => null);
   await waitFor(() => expect(screen.queryByRole("heading", { name: "Kibana" })).not.toBeInTheDocument());
+});
+
+const alertdialog = async () => within(await screen.findByRole("alertdialog"));
+
+test("creating the sign-in asks first, says the old password stops working, and plans it", async () => {
+  const fn = app(WITH(), { "POST /api/clusters/c1/kibana-login": [202, { operation_id: "lg2", change: {} }] });
+  await panel();
+  await userEvent.click(screen.getByRole("button", { name: "Create sign-in" }));
+  const dialog = await alertdialog();
+  expect(dialog.getByText(/anyone using the old one can no longer sign in/)).toBeInTheDocument();
+  expect(dialog.getByText(/ECM's own API key is not affected/)).toBeInTheDocument();
+  expect(posted(fn, "/api/clusters/c1/kibana-login")).toEqual([]);                      // nothing is planned until it is confirmed
+  await userEvent.click(dialog.getByRole("button", { name: "Plan it" }));
+  await waitFor(() => expect(window.location.hash).toBe("#/operations/lg2"));
+  expect(posted(fn, "/api/clusters/c1/kibana-login")).toEqual([{}]);
+});
+
+test("with a sign-in set, the password stays hidden until it is asked for, and showing it is a POST that says it was recorded", async () => {
+  const fn = app(WITH({ login: HAS_LOGIN }), { "POST /api/clusters/c1/kibana-login/reveal": [200, { username: "elastic", password: "Zq9-s3cret-value", reset_at: null }] });
+  await panel();
+  expect(screen.queryByText(/Zq9-s3cret-value/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Showing it is recorded in the audit log every time/)).toBeInTheDocument();
+  expect(screen.queryByText("Nobody can sign in to this Kibana yet")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Show sign-in details" }));
+  expect(await screen.findByText(/Password: Zq9-s3cret-value/)).toBeInTheDocument();
+  expect(screen.getByText(/Username: elastic/)).toBeInTheDocument();
+  expect(screen.getByText("Sign-in details (this view was recorded)")).toBeInTheDocument();
+  expect(posted(fn, "/api/clusters/c1/kibana-login/reveal")).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "Hide" }));
+  expect(screen.queryByText(/Zq9-s3cret-value/)).not.toBeInTheDocument();
+});
+
+test("a refused reveal shows the reason and no password", async () => {
+  app(WITH({ login: HAS_LOGIN }), { "POST /api/clusters/c1/kibana-login/reveal": [409, { detail: "ECM has not set a sign-in for this cluster's Kibana yet" }] });
+  await panel();
+  await userEvent.click(screen.getByRole("button", { name: "Show sign-in details" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("has not set a sign-in");
+  expect(screen.queryByText(/Password:/)).not.toBeInTheDocument();
+});
+
+test("with a sign-in set, the button resets the password instead of creating one", async () => {
+  const fn = app(WITH({ login: HAS_LOGIN }), { "POST /api/clusters/c1/kibana-login": [202, { operation_id: "lg3", change: {} }] });
+  await panel();
+  expect(screen.queryByRole("button", { name: "Create sign-in" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Reset password" }));
+  await userEvent.click((await alertdialog()).getByRole("button", { name: "Plan it" }));
+  await waitFor(() => expect(window.location.hash).toBe("#/operations/lg3"));
+  expect(posted(fn, "/api/clusters/c1/kibana-login")).toEqual([{}]);
+});
+
+test("a failed attempt at the sign-in is linked from the notice", async () => {
+  app(WITH({ login: { set: false, reset_at: null, last: { operation_id: "lg9", state: "failed", finished_at: null } } }));
+  await panel();
+  expect(screen.getByRole("link", { name: "open it" })).toHaveAttribute("href", "#/operations/lg9");
+});
+
+test("restarting Kibana asks first and then plans it", async () => {
+  const fn = app(WITH(), { "POST /api/clusters/c1/restart-kibana": [202, { operation_id: "rs1", change: {} }] });
+  await panel();
+  await userEvent.click(screen.getByRole("button", { name: "Restart Kibana" }));
+  const dialog = await alertdialog();
+  expect(dialog.getByText(/briefly disconnected; it holds no data/)).toBeInTheDocument();
+  await userEvent.click(dialog.getByRole("button", { name: "Plan the restart" }));
+  await waitFor(() => expect(window.location.hash).toBe("#/operations/rs1"));
+  expect(posted(fn, "/api/clusters/c1/restart-kibana")).toEqual([{}]);
+});
+
+test("removing Kibana needs the cluster name typed and sends it", async () => {
+  const fn = app(WITH(), { "POST /api/clusters/c1/remove-kibana": [202, { operation_id: "rm1", change: {} }] });
+  await panel();
+  await userEvent.click(screen.getByRole("button", { name: "Remove Kibana" }));
+  const dialog = await alertdialog();
+  const go = dialog.getByRole("button", { name: "Plan the removal" });
+  expect(go).toBeDisabled();
+  expect(dialog.getByText(/saved objects stay in Elasticsearch, and ECM keeps the encryption keys/)).toBeInTheDocument();
+  await userEvent.type(dialog.getByLabelText("Type lab-d to confirm"), "lab-d");
+  await userEvent.click(go);
+  await waitFor(() => expect(window.location.hash).toBe("#/operations/rm1"));
+  expect(posted(fn, "/api/clusters/c1/remove-kibana")).toEqual([{ confirm_name: "lab-d" }]);
+});
+
+test("a refusal when planning is shown and nothing navigates", async () => {
+  app(WITH(), { "POST /api/clusters/c1/restart-kibana": [409, { detail: "an operation is already running" }] });
+  await panel();
+  await userEvent.click(screen.getByRole("button", { name: "Restart Kibana" }));
+  await userEvent.click((await alertdialog()).getByRole("button", { name: "Plan the restart" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("already running");
+  expect(window.location.hash).toBe("#/clusters/c1");
+});
+
+test("a Kibana whose list of nodes is out of date says so and points at the restart", async () => {
+  app(WITH({}, { hosts_out_of_date: true }));
+  await panel();
+  expect(screen.getByText("Kibana is using an out-of-date list of Elasticsearch nodes")).toBeInTheDocument();
+  expect(screen.getByText(/restart it to bring the list up to date/)).toBeInTheDocument();
+});
+
+test("a Kibana that is up to date has no such notice", async () => {
+  app(WITH());
+  await panel();
+  expect(screen.queryByText(/out-of-date list/)).not.toBeInTheDocument();
+});
+
+test("while something else runs, Kibana cannot be restarted, signed in to or removed", async () => {
+  app({ ...WITH({ can_change: false }), busy_operation_id: "op9" });
+  await panel();
+  for (const name of ["Create sign-in", "Restart Kibana", "Remove Kibana"]) {
+    expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+  }
 });

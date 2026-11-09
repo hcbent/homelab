@@ -1,0 +1,36 @@
+---
+# Restart Kibana so it reads its current configuration (docs/DESIGN_KIBANA.md, decision 6): kibana.yml is rewritten with the Elasticsearch
+# nodes the cluster has now, then the service is restarted and checked. Kibana holds no data of its own, so the restart is brief.
+# Inventory: kind "restart_kibana". Extra vars: es_api_key, es_ca_file. No Elasticsearch node is touched.
+- name: Rewrite Kibana's configuration and restart it
+  hosts: kibana_hosts
+  become: true
+  gather_facts: false
+  vars:
+    kibana_restart_explicitly: true
+  pre_tasks:
+    - name: Refuse to run with a different kind of inventory
+      ansible.builtin.assert:
+        that: es_operation == 'restart_kibana'
+        fail_msg: This playbook restarts Kibana; the inventory says {{ es_operation }}.
+      run_once: true
+  tasks:
+    - name: Write kibana.yml from the cluster's current nodes
+      ansible.builtin.include_role:
+        name: kibana
+        tasks_from: config.yml
+
+    - name: Restart Kibana
+      ansible.builtin.systemd:
+        name: kibana
+        state: restarted
+        daemon_reload: true
+
+    - name: Wait for Kibana to listen
+      ansible.builtin.wait_for:
+        host: "{{ kibana_ip }}"
+        port: "{{ kibana_port | default(5601) }}"
+        timeout: "{{ kibana_wait | default(300) }}"
+
+- name: Check Kibana is available
+  ansible.builtin.import_playbook: kibana_health.yml

@@ -10,6 +10,7 @@ from app.configmgmt import InventoryInput, KibanaHost, ephemeral_inventory
 from app.desired import TopologyPreset, build_desired_state
 
 ANSIBLE_DIR = Path(__file__).resolve().parents[2] / "infra" / "ansible"
+KIBANA_KINDS = ("add_kibana", "restart_kibana", "kibana_login", "remove_kibana")
 FORBIDDEN_IN_NAMES = ("secret", "token", "password")  # the parent .gitignore silently ignores these
 
 
@@ -22,7 +23,7 @@ def _inventory(kind: str) -> InventoryInput:
         bootstrapped_at=None if kind == "create" else datetime(2026, 11, 5, tzinfo=UTC),
         ssh_user="ubuntu", ssh_key_path="/run/ecm/ssh/github_rsa",
         known_hosts_path="/tmp/ecm-run/known_hosts", artifacts_dir="/tmp/ecm-run/artifacts",
-        kibana=[KibanaHost("lab-b-kb-01", "192.0.2.50")] if kind == "add_kibana" else None,
+        kibana=[KibanaHost("lab-b-kb-01", "192.0.2.50")] if kind in KIBANA_KINDS else None,
     )
 
 
@@ -34,7 +35,7 @@ def test_no_file_in_the_ansible_tree_has_a_name_the_gitignore_would_hide():
 
 
 @pytest.mark.skipif(shutil.which("ansible-playbook") is None, reason="ansible is not installed")
-@pytest.mark.parametrize("kind", ["create", "converge", "add_kibana"])
+@pytest.mark.parametrize("kind", ["create", "converge", *KIBANA_KINDS])
 def test_playbooks_pass_a_syntax_check_with_a_rendered_inventory(kind, tmp_path):
     with ephemeral_inventory(_inventory(kind), parent=str(tmp_path)) as inv:
         result = subprocess.run(

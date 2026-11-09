@@ -1,0 +1,31 @@
+---
+# Run when Kibana is removed, after its machine is gone: delete the service-account token it signed in with, so a token for a Kibana
+# that no longer exists is not left valid in the cluster. A token that is already gone is fine, so a retry passes this step.
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - kibana_es_hosts is defined and kibana_es_hosts | length > 0
+      - kibana_token_name is defined
+    fail_msg: Deleting the token needs the ECM API key, the cluster CA, an Elasticsearch address and the token's name.
+
+- name: Delete the service token
+  ansible.builtin.uri:
+    url: "{{ kibana_es_hosts[0] }}/_security/service/elastic/kibana/credential/token/{{ kibana_token_name }}"
+    method: DELETE
+    headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 404, 400, 401, 403, 500, 502, 503]
+    timeout: "{{ kt_http_timeout }}"
+  register: kt_removed
+  failed_when: false
+  no_log: true
+
+- name: Stop if the token could not be deleted
+  ansible.builtin.fail:
+    msg: >-
+      Elasticsearch answered HTTP {{ kt_removed.status | default('no response') }}{{ (' (' ~ kt_removed.msg ~ ')') if kt_removed.status | default(-1) | int == -1 and kt_removed.msg is defined else '' }}
+      when asked to delete the Kibana token {{ kibana_token_name }}. The machine is gone; Retry runs this step again.
+  when: kt_removed.status | default(-1) not in [200, 404]

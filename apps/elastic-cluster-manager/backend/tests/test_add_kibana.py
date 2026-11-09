@@ -148,9 +148,10 @@ def test_the_machine_gets_the_next_name_an_address_a_vmid_and_a_host_and_the_nod
     assert "No Elasticsearch node is configured or restarted" in change["describe"]
 
 
-def test_the_plan_says_that_nobody_can_sign_in_yet_and_that_a_name_would_give_a_caddy_snippet(session, lab_b):
+def test_the_plan_points_at_create_sign_in_and_says_that_a_name_would_give_a_caddy_snippet(session, lab_b):
     notes = planned(session, lab_b)["change"]["warnings"]
-    assert any("nobody can sign in" in n for n in notes) and any("no public name" in n for n in notes)
+    assert any("Nobody can sign in to Kibana until the sign-in is set up" in n and "Create sign-in" in n for n in notes)
+    assert any("no public name" in n for n in notes)
     named = planned(session, lab_b, public_name="kibana.lab.example.org")
     assert not any("no public name" in n for n in named["change"]["warnings"])
     assert kibana_of(named)[0].public_name == "kibana.lab.example.org"

@@ -14,14 +14,10 @@
       The inventory or the extra vars are missing something Kibana needs (its name and address, the Elasticsearch addresses, the service token,
       and the three encryption keys of at least 32 characters each).
 
+# kibana.yml is its own file of tasks so that restarting Kibana can rewrite it (the list of Elasticsearch nodes changes as nodes come and go)
+# without needing the token and the keys.
 - name: Write kibana.yml
-  ansible.builtin.template:
-    src: kibana.yml.j2
-    dest: "{{ kibana_config_dir }}/kibana.yml"
-    owner: root
-    group: kibana
-    mode: "0660"
-  notify: Kibana configuration changed
+  ansible.builtin.import_tasks: config.yml
 
 # The package makes the keystore on some versions; this only acts if it is missing. The secrets go in by standard input so none is on a command
 # line or in the process list, and only the ones that are not already there are added, so a re-run changes nothing.

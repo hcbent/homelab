@@ -5,4 +5,6 @@
     name: kibana
     state: restarted
     daemon_reload: true
+  # Restarting Kibana restarts it itself, once, after rewriting the configuration; the handler would restart it a second time at the end of the play.
+  when: not (kibana_restart_explicitly | default(false) | bool)
   listen: Kibana configuration changed

@@ -1,0 +1,13 @@
+---
+# After Terraform destroyed the Kibana machine: delete the service token it used (docs/DESIGN_KIBANA.md). Run by the worker, on localhost.
+# The encryption keys are not touched: ECM keeps them so a Kibana added later can read the saved objects the old one made.
+# Extra vars: es_api_key, es_ca_file.
+- name: Delete the Kibana service token
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Delete the token
+      ansible.builtin.include_role:
+        name: kibana_credential
+        tasks_from: remove.yml

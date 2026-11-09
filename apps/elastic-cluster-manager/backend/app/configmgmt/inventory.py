@@ -25,7 +25,11 @@ from typing import Literal
 from app.desired.models import DesiredState
 from app.desired.roles import OMIT, discovery_settings, render_node_roles
 
-OperationKind = Literal["create", "converge", "restart", "add_node", "remove_drain", "remove_check", "add_kibana"]
+OperationKind = Literal["create", "converge", "restart", "add_node", "remove_drain", "remove_check", "add_kibana",
+                        "restart_kibana", "kibana_login", "remove_kibana"]
+# The kinds that are about a Kibana machine, and so are given it. Only adding one connects to it as a new machine; the others reach it (restart)
+# or only name it (the login and the removal talk to Elasticsearch alone).
+KIBANA_KINDS = ("add_kibana", "restart_kibana", "kibana_login", "remove_kibana")
 
 _SSH_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./-]+$")  # absolute, nothing a shell or ssh option could misread
@@ -114,11 +118,11 @@ def _check(inp: InventoryInput) -> None:
             raise InventoryError(f"the nodes being removed must not be in the state that remains: {', '.join(still)}")
         if len(inp.state.nodes) < 2:
             raise InventoryError("a cluster cannot be removed down to a single node")
-    if inp.operation_kind == "add_kibana":
+    if inp.operation_kind in KIBANA_KINDS:
         if inp.bootstrapped_at is None:
             raise InventoryError("Kibana is added to a cluster that has bootstrapped")
         if not inp.kibana:
-            raise InventoryError("add_kibana needs the Kibana machine")
+            raise InventoryError(f"{inp.operation_kind} needs the Kibana machine")
         names = [k.name for k in inp.kibana]
         clash = sorted(set(names) & {n.name for n in inp.state.nodes})
         if clash or len(set(names)) != len(names):

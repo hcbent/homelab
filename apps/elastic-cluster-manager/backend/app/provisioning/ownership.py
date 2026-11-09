@@ -65,12 +65,13 @@ def removed_machines(db: Session) -> set[tuple[str, int, str]]:
     for op in db.scalars(select(Operation).where(Operation.kind == UPDATE, Operation.dry_run.is_(False))).all():
         params = op.params or {}
         change = params.get("change") or {}
-        if change.get("kind") not in ("remove_nodes", "forget_nodes") or not (op.result or {}).get("ok"):
+        if change.get("kind") not in ("remove_nodes", "forget_nodes", "remove_kibana") or not (op.result or {}).get("ok"):
             continue
         gone = {m.group(1) for addr in (op.result or {}).get("resources_in_state") or [] if (m := _NODE.search(addr))}
         conn_id = params.get("proxmox_connection_id")
-        out |= {(conn_id, int(info["vm_id"]), name) for name, info in (change.get("nodes") or {}).items()
-                if conn_id and name not in gone}
+        # A removal names the machines it destroys: nodes under "nodes", a Kibana machine under "kibana".
+        named = {**(change.get("nodes") or {}), **(change.get("kibana") or {})} if change["kind"] == "remove_kibana" else (change.get("nodes") or {})
+        out |= {(conn_id, int(info["vm_id"]), name) for name, info in named.items() if conn_id and name not in gone}
     return out
 
 
@@ -107,6 +108,8 @@ def foreign_machines(db: Session, params: dict) -> list[str]:
     if change.get("kind") in ("remove_nodes", "forget_nodes"):
         # The nodes being removed are no longer in the parameters, but they are the machines this change touches.
         vm_ids.update({name: info["vm_id"] for name, info in (change.get("nodes") or {}).items()})
+    if change.get("kind") == "remove_kibana":
+        vm_ids.update({name: info["vm_id"] for name, info in (change.get("kibana") or {}).items()})
     for name, vmid in vm_ids.items():
         row = db.scalar(select(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(vmid)))
         if row is not None and (row.name != name or not row.tf_managed):

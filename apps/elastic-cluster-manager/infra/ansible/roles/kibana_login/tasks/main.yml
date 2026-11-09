@@ -1,0 +1,57 @@
+---
+# Gives people a way to sign in to Kibana (docs/DESIGN_KIBANA.md, decision 2). ECM does not keep the `elastic` password, so it sets
+# a new one that it made and keeps encrypted. The worker does it with ECM's API key, which stays valid because an API key does not
+# depend on the password of the user that made it. The new password is then used once, to prove it works, before ECM treats it as the
+# one to show. The value never reaches a log.
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - kibana_es_hosts is defined and kibana_es_hosts | length > 0
+      - kibana_login_pass is defined and kibana_login_pass | length >= 20
+    fail_msg: Setting the sign-in needs the ECM API key, the cluster CA, an Elasticsearch address and a new password of at least 20 characters.
+
+- name: Set the elastic user's password
+  ansible.builtin.uri:
+    url: "{{ kibana_es_hosts[0] }}/_security/user/elastic/_password"
+    method: POST
+    headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+    body_format: json
+    body:
+      password: "{{ kibana_login_pass }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 400, 401, 403, 404, 500, 502, 503]
+    timeout: "{{ kl_http_timeout }}"
+  register: kl_set
+  failed_when: false
+  no_log: true
+
+# no_log hides the whole result, so a refusal is reported here from its status alone.
+- name: Stop if the cluster refused to change the password
+  ansible.builtin.fail:
+    msg: >-
+      Elasticsearch answered HTTP {{ kl_set.status | default('no response') }}{{ (' (' ~ kl_set.msg ~ ')') if kl_set.status | default(-1) | int == -1 and kl_set.msg is defined else '' }}
+      when asked to set the elastic user's password. A 401 or 403 means ECM's API key may not change passwords; the password was not changed.
+  when: kl_set.status | default(-1) != 200
+
+- name: Sign in with the new password to prove it works
+  ansible.builtin.uri:
+    url: "{{ kibana_es_hosts[0] }}/_security/_authenticate"
+    url_username: elastic
+    url_password: "{{ kibana_login_pass }}"
+    force_basic_auth: true
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 401, 403, 500, 502, 503]
+    timeout: "{{ kl_http_timeout }}"
+  register: kl_proof
+  failed_when: false
+  no_log: true
+
+- name: Stop if the new password does not work
+  ansible.builtin.fail:
+    msg: >-
+      The password was set but signing in with it answered HTTP {{ kl_proof.status | default('no response') }}{{ (' (' ~ kl_proof.msg ~ ')') if kl_proof.status | default(-1) | int == -1 and kl_proof.msg is defined else '' }}.
+      ECM keeps it as pending and will not show it; Retry sets it and checks again.
+  when: kl_proof.status | default(-1) != 200

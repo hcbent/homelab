@@ -52,7 +52,7 @@ export interface OperationDetail extends Operation {
   steps: OperationStep[]; logs: OperationLogLine[];
   /** What a change to a built cluster asked for, with a plain description. */
   change?: { kind: string; describe?: string; nodes?: Record<string, unknown>; warnings?: string[]; added?: string[];
-             kibana?: Record<string, unknown> } | null;
+             kibana?: Record<string, unknown>; kibana_removed?: string[] } | null;
 }
 
 export type Preset = "single_node" | "three_node" | "dedicated_masters";
@@ -111,11 +111,19 @@ export interface Lifecycle {
 export interface KibanaMachine {
   name: string; vm_id: number; address: string; host: string; cores: number; ram_mb: number; os_disk_gb: number;
   public_name: string | null; url: string; public_url: string | null; caddy_snippet: string | null;
+  /** Kibana reads its list of Elasticsearch nodes when it starts, so this says the cluster's nodes have changed since: restart it. */
+  hosts_out_of_date: boolean;
 }
+export interface KibanaOpEnd { operation_id: string; state: string; finished_at: string | null }
 export interface KibanaPanel {
-  machines: KibanaMachine[]; can_add: boolean; ca_available: boolean;
+  machines: KibanaMachine[]; can_add: boolean;
+  /** Whether Kibana can be restarted, signed in to or removed now (it exists and nothing else is running on the cluster). */
+  can_change: boolean; ca_available: boolean;
   /** How the last Add Kibana ended. It includes the health check, so a succeeded one means Kibana reported itself available. */
-  last_add: { operation_id: string; state: string; finished_at: string | null } | null;
+  last_add: KibanaOpEnd | null;
+  /** Whether ECM holds a working sign-in for the elastic user (never the password itself), when it was set, and how the last attempt ended. */
+  login: { set: boolean; reset_at: string | null; last: KibanaOpEnd | null };
+  last_restart: KibanaOpEnd | null;
 }
 
 export interface ClusterDetail extends ClusterSummary {

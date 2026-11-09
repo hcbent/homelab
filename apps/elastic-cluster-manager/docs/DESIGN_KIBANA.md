@@ -1,6 +1,6 @@
 # Kibana: proposed design (Phase 6)
 
-**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built, tested offline and run live once (2026-11-09, `test-5a`, per the operator's log); 6b and 6c are not built (see "Slice 6a as built").** It was written for the operator to review first, because it adds machines and
+**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built, tested offline and run live once (2026-11-09, `test-5a`, per the operator's log). Slice 6b (the sign-in, Restart Kibana, Remove Kibana) is built and tested offline and has not run on any real machine. 6c (Kibana at create time) is not built (see "Slice 6a as built" and "Slice 6b as built").** It was written for the operator to review first, because it adds machines and
 credentials to a live cluster and settles how a person signs in to it. Items marked *to confirm* are from knowledge of Kibana and Elasticsearch
 and have not been checked against this project's versions. The acceptance test in `IMPLEMENTATION_PLAN.md` is: the Kibana health check passes
 on the disposable target, and a Caddy snippet is generated while the existing Caddyfile is untouched.
@@ -158,8 +158,30 @@ What exists, and the choices made while building it that the design left open:
 - **Not verified:** the items marked open in "To confirm" below; a retry after a failed configure on a real machine (only tested against fakes); and the Caddy snippet. `ansible-lint --profile production` reports `var-naming` findings on the new
   roles as it does on the existing ones (this machine's lint is stricter than the notes say it was, and lacks the collections); the two long lines the new code
   introduced were fixed.
-- **Left for later slices:** the `elastic` password reset and its reveal (6b), remove Kibana, Restart Kibana, a public name added after the fact, a VM `tags` value for
+- **Left for later slices:** a public name added after the fact, a VM `tags` value for
   Kibana (the machine carries the cluster's tags for now), and Kibana at create time (6c).
+
+## Slice 6b as built (2026-11-09)
+
+Built after the first live run of 6a, at the operator's request ("do all of that before we test"). **Tested offline only; none of it has run on a real machine.**
+
+- **The sign-in (decision 2).** `POST /api/clusters/{id}/kibana-login` plans, and after approval a worker-run operation (`es.kibana`, no Terraform, phases `plan, approval, kibana`) sets a
+  new generated password for the `elastic` user through `playbooks/kibana_login.yml` with ECM's API key, then signs in with it to prove it works. ECM keeps
+  `{username, current, pending, reset_at}` encrypted. **The order is what keeps it from being lost:** the new password is stored as *pending* before the cluster is asked, only a
+  proved password becomes *current*, and a reset that fails anywhere leaves the old one current; a retry sets the same pending password again. Only *current* is ever shown.
+  `POST /api/clusters/{id}/kibana-login/reveal` returns it, records `kibana.login.reveal` in the audit log on every call (who, when, never the password) and sends `Cache-Control: no-store`.
+  **How "shown once and again on request" was built:** the password is hidden by default and shown only on an explicit request, and every request is audited; ECM does not limit how
+  many times. A successful reset is audited as `kibana.login.set`. The panel and the lifecycle payload carry only whether a sign-in is set and when, never the password.
+- **The operation runs only what was approved.** Its digest is recomputed from the parameters about to run, not just compared with the stored one (a test found the stored comparison would
+  not notice a plan changed after approval; `es.restart` has the same gap, which is not changed here).
+- **Restart Kibana (decision 6).** `POST /api/clusters/{id}/restart-kibana`; `playbooks/restart_kibana.yml` rewrites `kibana.yml` from the cluster's current nodes (`kibana` role's
+  `config.yml`), restarts the service once (the role's handler stands down so it does not restart it a second time), waits for it and runs the health check. Each Kibana records the
+  Elasticsearch addresses it was last given (`es_hosts`), and the panel says when they differ from the cluster's current ones. A Kibana recorded before this was kept has none and is
+  never reported out of date.
+- **Remove Kibana.** `POST /api/clusters/{id}/remove-kibana` with the cluster name typed. A `tf.update` whose plan must destroy exactly the Kibana machine (`check_removal_plan`),
+  then `playbooks/remove_kibana.yml` deletes the service token (a token already gone is fine, so a retry passes). The token is forgotten by ECM; **the encryption keys and the sign-in
+  are kept**, so a Kibana added later reads the old saved objects and the password still works. The machine stops being ECM's, its inventory row goes at once, and its address is free again.
+- **Not built:** Kibana at create time (6c).
 
 ## To confirm
 
@@ -172,10 +194,8 @@ Settled by the live run of 2026-11-09 (the operator's log; the log does not show
 
 Still open:
 
-- The exact service-token call and the right it needs (`manage_service_account`, which the `elastic` user's API key should carry), and that the token is shown once.
-- `kibana-keystore add` for `elasticsearch.serviceAccountToken` and the three keys, and that the keystore is read at start.
-- That Kibana's `/api/status` answers an `Authorization: ApiKey` request, and the field that says it is available.
-- That the `elastic` password can be reset with an API key's rights (`POST /_security/user/elastic/_password`), and that nothing of ECM's depended on the old one (it does not: ECM uses the API key).
+- **That the `elastic` password can be reset with ECM's API key** (`POST /_security/user/elastic/_password`), that the new password then works for a basic-auth call, and that ECM's own API key keeps working afterwards (an API key does not depend on its owner's password, but this has not been seen). This is the first thing to look at in the sign-in's first live run: if Elasticsearch refuses an API key for this call, the operation fails with the status and changes nothing, and the fallback is to run `elasticsearch-reset-password` on a node over SSH.
+- That `restart_kibana.yml` works on a real machine (it rewrites `kibana.yml`, restarts the service itself and checks health), and that Remove Kibana's Terraform plan destroys exactly the machine.
 - Kibana's real memory use at 4 GiB on this cluster's data, and its start time (the health check's wait is a guess until measured).
 - That Caddy's `tls_trust_pool file` is the right name in the Caddy version on infra.
 

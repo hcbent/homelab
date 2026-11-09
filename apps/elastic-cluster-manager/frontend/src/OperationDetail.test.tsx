@@ -255,6 +255,85 @@ test("a finished Add Kibana says Kibana is running and that nobody can sign in y
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
+const KB_INFO = { name: "lab-d-kb-01", host: "pve2", address: "192.168.10.116", vm_id: 520, cores: 2, ram_mb: 4096, os_disk_gb: 32,
+  url: "https://192.168.10.116:5601", public_url: null };
+const KIBANA_STEPS = ["plan", "approval", "kibana"].map((name, seq) => ({ seq, name, status: seq < 1 ? "done" : seq === 1 ? "waiting" : "pending", detail: null }));
+const kibanaOp = (id: string, change: Record<string, unknown>, over: Record<string, unknown> = {}) => op({
+  id, kind: "es.kibana", cluster_id: "c1", steps: KIBANA_STEPS, progress: { done: 1, total: 3 },
+  plan: { digest: DIGEST, approvable: true, summary: { has_changes: true, configure: change.describe } }, change, ...over });
+
+test("a sign-in plan says nothing on Proxmox changes, warns about the old password, and asks for the right approval", async () => {
+  mockFetch(table({ "GET /api/operations/lg": [200, kibanaOp("lg", { kind: "reset_login", describe: "set a new generated password for the elastic user",
+    warnings: ["This changes the password of the elastic superuser."], kibana: { "lab-d-kb-01": KB_INFO } })] }));
+  render(<OperationDetail id="lg" />);
+  expect(await screen.findByRole("heading", { name: "Kibana" })).toBeInTheDocument();
+  const plan = screen.getByLabelText("The plan");
+  expect(within(plan).getByText("Nothing: no machine is made or changed")).toBeInTheDocument();
+  expect(within(plan).getByText("Set a new generated password for the elastic user")).toBeInTheDocument();
+  expect(within(plan).getByText("The Kibana this changes", { selector: "h4" })).toBeInTheDocument();
+  expect(within(plan).getByText("This changes the password of the elastic superuser.")).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Set the elastic password and prove it works")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve and set the password" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(within(dialog).getByText(/anyone using the old one can no longer sign in/)).toBeInTheDocument();
+});
+
+test("a restart plan shows the Elasticsearch addresses before and after", async () => {
+  mockFetch(table({ "GET /api/operations/rs": [200, kibanaOp("rs", { kind: "restart_kibana", describe: "rewrite Kibana's configuration and restart it",
+    warnings: [], kibana: { "lab-d-kb-01": { ...KB_INFO, es_hosts_before: ["https://192.168.10.110:9200"], es_hosts_after: ["https://192.168.10.111:9200", "https://192.168.10.112:9200"] } } })] }));
+  render(<OperationDetail id="rs" />);
+  expect(await screen.findByText("Elasticsearch addresses now")).toBeInTheDocument();
+  expect(screen.getByText("https://192.168.10.110:9200")).toBeInTheDocument();
+  expect(screen.getByText("https://192.168.10.111:9200, https://192.168.10.112:9200")).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Rewrite Kibana's configuration, restart it and check it")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Approve and restart" })).toBeInTheDocument();
+});
+
+test("finished Kibana operations say what was done, and a failed one says what a retry does", async () => {
+  mockFetch(table({
+    "GET /api/operations/a": [200, kibanaOp("a", { kind: "reset_login" }, { state: "succeeded", plan: null })],
+    "GET /api/operations/b": [200, kibanaOp("b", { kind: "restart_kibana" }, { state: "succeeded", plan: null })],
+    "GET /api/operations/c": [200, kibanaOp("c", { kind: "reset_login" }, { state: "failed", plan: null, error: "Elasticsearch answered HTTP 403" })],
+    "GET /api/operations/d": [200, kibanaOp("d", { kind: "restart_kibana" }, { state: "failed", plan: null, error: "Kibana did not become available" })],
+  }));
+  let r = render(<OperationDetail id="a" />);
+  expect(await screen.findByText("The elastic user has a new password, and it works")).toBeInTheDocument();
+  expect(screen.getByText(/every time it is\s+shown is recorded/)).toBeInTheDocument();
+  r.unmount();
+  r = render(<OperationDetail id="b" />);
+  expect(await screen.findByText("Kibana is restarted")).toBeInTheDocument();
+  r.unmount();
+  r = render(<OperationDetail id="c" />);
+  expect(await screen.findByText(/the new one is kept as pending, never shown/)).toBeInTheDocument();
+  r.unmount();
+  render(<OperationDetail id="d" />);
+  expect(await screen.findByText(/it rewrites it and restarts again, which is safe to repeat/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
+test("a removal of Kibana lists the machine it destroys, asks to approve and remove, and says what stays", async () => {
+  mockFetch(table({
+    "GET /api/operations/rk": [200, op({ id: "rk", kind: "tf.update", cluster_id: "c1",
+      plan: { digest: DIGEST, approvable: true, summary: { adds: 0, updates: 0, deletes: 1, configure: "remove Kibana: Terraform destroys the machine" } },
+      change: { kind: "remove_kibana", warnings: ["its saved objects stay in Elasticsearch"], kibana: { "lab-d-kb-01": KB_INFO } } })],
+    "GET /api/operations/rkok": [200, op({ id: "rkok", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null, change: { kind: "remove_kibana" } })],
+    "GET /api/operations/rkbad": [200, op({ id: "rkbad", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null, error: "HTTP 403", change: { kind: "remove_kibana" } })],
+  }));
+  let r = render(<OperationDetail id="rk" />);
+  expect(await screen.findByText("The Kibana this removes", { selector: "h4" })).toBeInTheDocument();
+  expect(screen.getByText("Destroy 1 virtual machine")).toBeInTheDocument();
+  expect(within(screen.getByRole("list", { name: "Steps" })).getByText("Delete Kibana's service token")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Approve and remove" }));
+  expect(within(await screen.findByRole("alertdialog")).getByText(/Kibana's machine is destroyed for good/)).toBeInTheDocument();
+  r.unmount();
+  r = render(<OperationDetail id="rkok" />);
+  expect(await screen.findByText("Kibana is removed")).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+  r.unmount();
+  render(<OperationDetail id="rkbad" />);
+  expect(await screen.findByText(/so the machine is gone. Retry runs the rest \(deleting the service token\)/)).toBeInTheDocument();
+});
+
 const REMOVAL = { kind: "remove_nodes", warnings: ["lab-d-07 is the elected master, so a new master is elected when it goes (a few seconds)"],
   nodes: {
     "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: "data, ingest", cores: 4, ram_mb: 8192, data_disk_gb: 100,

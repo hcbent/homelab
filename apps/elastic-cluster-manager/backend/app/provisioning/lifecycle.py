@@ -5,6 +5,7 @@ being asked for, or refuses with the reason in plain words. Nothing here touches
 Elasticsearch: the parameters go to `start_update`, which plans them and waits for approval.
 """
 import copy
+import json
 import re
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -14,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import crypto
 from app.config import get_settings
+from app.configmgmt.inventory import kibana_es_hosts
 from app.desired import (
     AllocationError,
     PlacementConfig,
@@ -36,7 +39,7 @@ from app.desired.models import DATA_ROLES, VALID_ROLES, DesiredState, NodeSpec, 
 from app.desired.network import NetworkProfile
 from app.discovery import factory
 from app.discovery.http import DiscoveryError
-from app.models import Cluster, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
+from app.models import Cluster, Credential, EsNode, ProxmoxConnection, PveNode, PveStorage, Vm
 from app.network_profiles import addresses_in_use
 from app.provisioning.create import (
     CreateInvalid,
@@ -462,15 +465,16 @@ def plan_add_kibana(db: Session, cluster: Cluster, request: AddKibana, client=No
                       | reserved_vmids | {int(v) for v in params["vm_ids"].values()} | {k.vm_id for k in kibana_of(params)})
         vm_id = int(allocate_vmids([name], used_vmids, settings.vmid_range_start, settings.vmid_range_end)[name])
         spec = KibanaSpec(name=name, vm_id=vm_id, address=address, host=host, cores=sized.cores, ram_mb=sized.ram_mb,
-                          os_disk_gb=sized.os_disk_gb, public_name=request.public_name)
+                          os_disk_gb=sized.os_disk_gb, public_name=request.public_name,
+                          es_hosts=kibana_es_hosts(state, params["addresses"]))
     except (CreateInvalid, AllocationError, VmidError) as exc:
         raise OperationRefused(str(exc)) from exc
     except ValidationError as exc:
         raise OperationRefused("; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else e["msg"]
                                          for e in exc.errors())) from exc
 
-    notes = [("ECM does not create a Kibana login yet: the machine will run and report itself available, but nobody can sign in until "
-              "the sign-in details are added in the next step of this phase")]
+    notes = [("Nobody can sign in to Kibana until the sign-in is set up: when it is running, use Create sign-in on the Kibana panel, which "
+              "sets a new password for the elastic user and keeps it for you")]
     if spec.public_name is None:
         notes.append("no public name was given, so Kibana is reached by its address and ECM shows no Caddy snippet; add a name to get one")
     params["kibana"] = [*(params.get("kibana") or []), spec.model_dump(mode="json")]
@@ -481,6 +485,86 @@ def plan_add_kibana(db: Session, cluster: Cluster, request: AddKibana, client=No
                      f"on {host}: Terraform makes the machine, then ECM asks the cluster for a service-account token, installs Kibana "
                      "at the cluster's version from the Elastic apt repository, signs its certificate with the cluster's CA, starts it, "
                      "and checks it reports itself available. No Elasticsearch node is configured or restarted"),
+    }
+    return params
+
+
+class RemoveKibana(BaseModel):
+    """Remove the cluster's Kibana. The cluster name is typed as a confirmation, as for a teardown: the machine is destroyed."""
+
+    model_config = ConfigDict(extra="forbid")
+    confirm_name: str = Field(min_length=1, max_length=100)
+
+
+def _the_kibana(params: dict) -> KibanaSpec:
+    found = kibana_of(params)
+    if not found:
+        raise OperationRefused("this cluster has no Kibana")
+    return found[0]
+
+
+def _kibana_info(spec: KibanaSpec, **extra) -> dict:
+    return {**spec.model_dump(mode="json"), "url": spec.url, "public_url": spec.public_url, **extra}
+
+
+def plan_remove_kibana(db: Session, cluster: Cluster, request: RemoveKibana) -> dict:
+    """The parameters with Kibana taken out, so Terraform's plan destroys exactly its machine. Refuses a wrong typed name and a cluster with no
+    Kibana. It reads nothing from the cluster: Kibana holds no data, and the service token is deleted afterwards (and again on a retry)."""
+    params = current_desired(cluster)
+    spec = _the_kibana(params)
+    if request.confirm_name != cluster.name:
+        raise OperationRefused("type the cluster name exactly to confirm removing Kibana")
+    params["kibana"] = []
+    params["change"] = {
+        "kind": "remove_kibana", "kibana_removed": [spec.name], "kibana": {spec.name: _kibana_info(spec)},
+        "warnings": [("Kibana holds no data of its own: its dashboards and saved objects stay in Elasticsearch, and ECM keeps the three "
+                      "encryption keys, so a Kibana added later can read them"),
+                     "The elastic password ECM set stays as it is; it is a password of the cluster, not of this Kibana"],
+        "describe": (f"remove Kibana: Terraform destroys the machine {spec.name}, then ECM deletes the service-account token it signed in "
+                     "with. No Elasticsearch node is touched"),
+    }
+    return params
+
+
+def _login_state(db: Session, cluster: Cluster) -> dict:
+    """What ECM holds for the elastic user's sign-in: {} when it has nothing, else {username, current, pending, reset_at}."""
+    from app.provisioning.operation import kibana_credential_names
+    row = db.scalar(select(Credential).where(Credential.name == kibana_credential_names(cluster.id)[2]))
+    return json.loads(crypto.decrypt(row.ciphertext)) if row is not None else {}
+
+
+def plan_kibana_login(db: Session, cluster: Cluster) -> dict:
+    """The parameters for setting the sign-in: a new, generated password for the `elastic` user, kept encrypted by ECM and shown on request.
+    This changes the cluster's superuser password, so anyone using the old one is locked out; ECM's own API key is not affected."""
+    params = current_desired(cluster)
+    spec = _the_kibana(params)
+    had = bool(_login_state(db, cluster).get("current"))
+    notes = [("This changes the password of the elastic superuser. Anyone who signs in with the old password can no longer do so; "
+              "ECM's own API key, which it uses for everything else, is not affected")]
+    if had:
+        notes.append("ECM already holds a password for the elastic user; this replaces it")
+    params["change"] = {
+        "kind": "reset_login", "kibana": {spec.name: _kibana_info(spec)}, "warnings": notes,
+        "describe": ("set a new generated password for the elastic user, check that signing in with it works, and keep it encrypted so "
+                     "it can be shown on request (each time it is shown is recorded)"),
+    }
+    return params
+
+
+def plan_restart_kibana(db: Session, cluster: Cluster) -> dict:
+    """The parameters for restarting Kibana: its configuration is rewritten from the cluster's current nodes (which Kibana only reads when it
+    starts), then it is restarted and checked. Shows the Elasticsearch addresses before and after."""
+    params = current_desired(cluster)
+    spec = _the_kibana(params)
+    after = kibana_es_hosts(DesiredState.model_validate(params["state"]), params["addresses"])
+    notes = []
+    if spec.es_hosts and spec.es_hosts == after:
+        notes.append("Kibana already uses these nodes, so this only restarts it")
+    params["change"] = {
+        "kind": "restart_kibana", "kibana": {spec.name: _kibana_info(spec, es_hosts_before=spec.es_hosts, es_hosts_after=after)},
+        "warnings": notes,
+        "describe": ("rewrite Kibana's configuration with the Elasticsearch nodes the cluster has now, restart it (people using it are "
+                     "briefly disconnected; it holds no data) and check it reports itself available"),
     }
     return params
 

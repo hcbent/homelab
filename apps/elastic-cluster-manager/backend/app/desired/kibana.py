@@ -35,6 +35,9 @@ class KibanaSpec(BaseModel):
     ram_mb: int = Field(default=DEFAULT_RAM_MB, ge=2048, le=524288)    # Kibana is a Node.js process that wants about 1 GiB of its own
     os_disk_gb: int = Field(default=DEFAULT_OS_DISK_GB, ge=16, le=2048)
     public_name: str | None = None                                   # what a browser calls it, if it has a name (decision 5)
+    # The Elasticsearch addresses its kibana.yml was last written with. Empty when unknown (a Kibana recorded before this was kept), which
+    # is never reported as out of date. Compared with the cluster's current nodes to tell the operator Kibana needs a restart.
+    es_hosts: list[str] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod

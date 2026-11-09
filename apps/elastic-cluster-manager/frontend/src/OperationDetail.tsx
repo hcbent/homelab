@@ -12,6 +12,7 @@ import { useInterval } from "./useInterval";
 const TERMINAL = ["succeeded", "failed", "cancelled"];
 export const KIND: Record<string, string> = {
   "tf.create": "Create cluster", "tf.destroy": "Tear down cluster", "tf.update": "Change cluster", "es.restart": "Restart nodes",
+  "es.kibana": "Kibana",
   "demo.noop": "Demo job",
 };
 const STATE_COLOR: Record<string, string> = {
@@ -34,7 +35,10 @@ const CONFIGURE_TEXT: Record<string, string> = {
   add_node: "Configure and start the new nodes", rebuild_nodes: "Configure and start the rebuilt nodes",
   remove_nodes: "Bring the remaining nodes in line and check the cluster", forget_nodes: "Bring the remaining nodes in line",
   resize: "Write the new settings", expand_disk: "Grow the filesystems",
-  add_kibana: "Install Kibana and check it is available",
+  add_kibana: "Install Kibana and check it is available", remove_kibana: "Delete Kibana's service token",
+};
+const KIBANA_STEP: Record<string, string> = {
+  reset_login: "Set the elastic password and prove it works", restart_kibana: "Rewrite Kibana's configuration, restart it and check it",
 };
 
 /** A step's name in plain words. `configure` is the last step of several operations that do different things, so it is named for the one it
@@ -42,6 +46,7 @@ const CONFIGURE_TEXT: Record<string, string> = {
 function stepText(name: string, op: Detail): string {
   if (name === "configure") return op.kind === "tf.create" ? STEP_TEXT.configure : CONFIGURE_TEXT[op.change?.kind ?? ""] ?? "Configure the nodes";
   if (name === "apply" && op.change?.kind === "forget_nodes") return "Apply the plan (the machines are already gone)";
+  if (name === "kibana" && op.kind === "es.kibana") return KIBANA_STEP[op.change?.kind ?? ""] ?? "Change Kibana";
   return STEP_TEXT[name] ?? name;
 }
 
@@ -138,14 +143,16 @@ function AddedNodes({ change, title = "Where each new node goes", first = "New n
 
 interface PlannedKibana {
   name: string; host: string; address: string; vm_id: number; cores: number; ram_mb: number; os_disk_gb: number;
-  url: string; public_url: string | null;
+  url: string; public_url: string | null; es_hosts_before?: string[]; es_hosts_after?: string[];
 }
 
 /** The machine an Add Kibana change would make: where it goes, how it is reached, and what the plan wants the operator to know. */
-function KibanaPlan({ change }: { change: NonNullable<Detail["change"]> }) {
+function KibanaPlan({ change, title = "Where Kibana goes", first = "New machine" }: {
+  change: NonNullable<Detail["change"]>; title?: string; first?: string;
+}) {
   const machines = Object.values((change.kibana ?? {}) as Record<string, PlannedKibana>);
   const columns: EuiBasicTableColumn<PlannedKibana>[] = [
-    { name: "New machine", render: (k: PlannedKibana) => <span className="ecm-mono">{k.name}</span> },
+    { name: first, render: (k: PlannedKibana) => <span className="ecm-mono">{k.name}</span> },
     { name: "Proxmox host", render: (k: PlannedKibana) => <span className="ecm-mono">{k.host}</span> },
     { name: "Address", render: (k: PlannedKibana) => <span className="ecm-mono">{k.url}</span> },
     { name: "Public name", render: (k: PlannedKibana) => k.public_url ? <span className="ecm-mono">{k.public_url}</span> : "none" },
@@ -154,8 +161,13 @@ function KibanaPlan({ change }: { change: NonNullable<Detail["change"]> }) {
   ];
   return (
     <div className="ecm-stack-lg">
-      <h4 className="ecm-label">Where Kibana goes</h4>
-      <EuiBasicTable<PlannedKibana> tableCaption="Where Kibana goes" items={machines} columns={columns} rowHeader="name" />
+      <h4 className="ecm-label">{title}</h4>
+      <EuiBasicTable<PlannedKibana> tableCaption={title} items={machines} columns={columns} rowHeader="name" />
+      {machines.filter((k) => k.es_hosts_after).map((k) => (
+        <EuiDescriptionList key={k.name} type="column" compressed listItems={[
+          { title: "Elasticsearch addresses now", description: <span className="ecm-mono">{(k.es_hosts_before ?? []).join(", ") || "not recorded"}</span> },
+          { title: "After the restart", description: <span className="ecm-mono">{(k.es_hosts_after ?? []).join(", ")}</span> },
+        ]} />))}
       {(change.warnings ?? []).map((w) => (
         <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
     </div>
@@ -291,6 +303,9 @@ export function OperationDetail({ id }: { id: string }) {
   const removing = op.kind === "tf.update" && op.change?.kind === "remove_nodes";
   const forgetting = op.kind === "tf.update" && op.change?.kind === "forget_nodes";
   const restarting = op.kind === "es.restart";
+  const kibanaOp = op.kind === "es.kibana";                       // setting the sign-in or restarting Kibana: nothing on Proxmox
+  const removingKibana = op.kind === "tf.update" && op.change?.kind === "remove_kibana";
+  const settingLogin = kibanaOp && op.change?.kind === "reset_login";
   const rebuilding = op.kind === "tf.update" && op.change?.kind === "rebuild_nodes";
   const drainFailed = op.steps.some((s) => s.name === "drain" && s.status === "failed");
   const summary = op.plan?.summary ?? null;
@@ -338,7 +353,8 @@ export function OperationDetail({ id }: { id: string }) {
           <h3 className="ecm-h3">The plan</h3>
           <EuiDescriptionList type="column" compressed listItems={[
             { title: restarting ? "What happens" : "On Proxmox",
-              description: restarting ? restartText(summary) : forgetting ? "Nothing: the machines are already gone" : terraformText(op.kind, summary) },
+              description: restarting ? restartText(summary) : forgetting ? "Nothing: the machines are already gone"
+                : kibanaOp ? "Nothing: no machine is made or changed" : terraformText(op.kind, summary) },
             ...(summary?.configure
               ? [{ title: "Then", description: summary.configure.charAt(0).toUpperCase() + summary.configure.slice(1) }]
               : []),
@@ -346,6 +362,8 @@ export function OperationDetail({ id }: { id: string }) {
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
           {op.change?.kind === "add_kibana" && <KibanaPlan change={op.change} />}
+          {op.change?.kind === "remove_kibana" && <KibanaPlan change={op.change} title="The Kibana this removes" first="Machine" />}
+          {kibanaOp && op.change && <KibanaPlan change={op.change} title="The Kibana this changes" first="Machine" />}
           {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
           {op.change?.kind === "restart_nodes" && <RestartOrder change={op.change} />}
           {op.change?.kind === "rebuild_nodes" && <AddedNodes change={op.change} title="The nodes this rebuilds" first="Lost node" />}
@@ -356,9 +374,10 @@ export function OperationDetail({ id }: { id: string }) {
               <p>Go back and plan the build for real to get a plan you can approve.</p></EuiCallOut>)}
           {op.plan.approvable && (
             <div className="ecm-detail__actions">
-              <EuiButton fill color={destroying || removing ? "danger" : "primary"} isDisabled={busy}
+              <EuiButton fill color={destroying || removing || removingKibana || settingLogin ? "danger" : "primary"} isDisabled={busy}
                 onClick={() => setConfirming(true)}>
-                {destroying ? "Approve and destroy" : removing ? "Approve and remove" : forgetting ? "Approve and forget" : restarting ? "Approve and restart"
+                {destroying ? "Approve and destroy" : removing || removingKibana ? "Approve and remove" : settingLogin ? "Approve and set the password"
+                  : kibanaOp ? "Approve and restart" : forgetting ? "Approve and forget" : restarting ? "Approve and restart"
                   : rebuilding ? "Approve and rebuild" : op.kind === "tf.update" ? "Approve the change" : "Approve and build"}</EuiButton>
               <EuiButtonEmpty isDisabled={busy} onClick={() => act("cancel")}>Cancel</EuiButtonEmpty>
               <span className="ecm-small">Nothing changes until you approve.</span>
@@ -372,6 +391,10 @@ export function OperationDetail({ id }: { id: string }) {
       {op.state === "failed" && (
         <EuiCallOut color="danger" role="alert" iconType="warning" title="This operation failed">
           <p>{op.error}</p>
+          {kibanaOp && (
+            <p>{settingLogin
+              ? "The password that was current is unchanged in ECM's record, and the new one is kept as pending, never shown. Retry plans again and needs a new approval; it sets the same password again and checks it, which is safe to repeat."
+              : "Kibana's configuration may already be rewritten. Retry plans again and needs a new approval; it rewrites it and restarts again, which is safe to repeat."}</p>)}
           {restarting && (
             <p>Nodes already restarted stay restarted. Retry plans again and needs a new approval; it skips every node that has been restarted
               since this operation began.</p>)}
@@ -387,6 +410,8 @@ export function OperationDetail({ id }: { id: string }) {
             ) : (
             <p>What Terraform already changed is kept{op.change?.kind === "add_node"
               ? ", so the new machines exist. Retry configures them again, which is safe to repeat"
+              : op.change?.kind === "remove_kibana"
+              ? ", so the machine is gone. Retry runs the rest (deleting the service token), which is safe to repeat"
               : op.change?.kind === "add_kibana"
               ? ", so the Kibana machine exists. Retry configures it again with the same token and encryption keys, which is safe to repeat"
               : op.change?.kind === "resize"
@@ -420,10 +445,27 @@ export function OperationDetail({ id }: { id: string }) {
           <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
+      {op.state === "succeeded" && removingKibana && (
+        <EuiCallOut color="success" iconType="check" title="Kibana is removed">
+          <p>Terraform destroyed its machine and ECM deleted its service token. Its dashboards and saved objects stay in Elasticsearch, and ECM
+            keeps the encryption keys, so a Kibana added later reads them. No Elasticsearch node was touched.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && settingLogin && (
+        <EuiCallOut color="success" iconType="check" title="The elastic user has a new password, and it works">
+          <p>ECM set it, signed in with it to prove it, and keeps it encrypted. Show it from the Kibana panel when you need it; every time it is
+            shown is recorded.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
+      {op.state === "succeeded" && kibanaOp && !settingLogin && (
+        <EuiCallOut color="success" iconType="check" title="Kibana is restarted">
+          <p>Its configuration was rewritten with the Elasticsearch nodes the cluster has now, and it reports itself available.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
       {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "add_kibana" && (
         <EuiCallOut color="success" iconType="check" title="Kibana is running">
           <p>ECM installed Kibana, started it and checked that it reports itself available. No Elasticsearch node was touched. Nobody
-            can sign in yet, because ECM does not create a Kibana login in this step.{" "}
+            can sign in yet: use Create sign-in on the cluster's Kibana panel to set a password for the elastic user.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && restarting && (
@@ -450,7 +492,7 @@ export function OperationDetail({ id }: { id: string }) {
 
       {op.state === "succeeded" && op.kind === "tf.update"
         && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "add_kibana"
-        && op.change?.kind !== "remove_nodes"
+        && op.change?.kind !== "remove_kibana" && op.change?.kind !== "remove_nodes"
         && op.change?.kind !== "rebuild_nodes" && op.change?.kind !== "forget_nodes" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs
@@ -490,6 +532,14 @@ export function OperationDetail({ id }: { id: string }) {
             : restarting
             ? <p>{restartText(summary)}. Each node is briefly out of the cluster, and ECM waits for the cluster to be green before each. This
               approves exactly the plan with this digest.</p>
+            : settingLogin
+            ? <p>This changes the password of the elastic superuser: anyone using the old one can no longer sign in. ECM's own API key is not
+              affected. This approves exactly the plan with this digest.</p>
+            : kibanaOp
+            ? <p>Kibana is restarted, so people using it are briefly disconnected. It holds no data. This approves exactly the plan with this digest.</p>
+            : removingKibana
+            ? <p>{terraformText(op.kind, summary)}: Kibana's machine is destroyed for good. Its saved objects stay in Elasticsearch.
+              This approves exactly the plan with this digest.</p>
             : forgetting
             ? <p>Nothing is destroyed: the machines are already gone. ECM takes the nodes out of its record. This approves exactly
               the plan with this digest.</p>

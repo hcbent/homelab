@@ -1,0 +1,17 @@
+---
+- name: Check what kibana.yml is made from
+  ansible.builtin.assert:
+    that:
+      - kibana_name is defined
+      - kibana_ip is defined
+      - kibana_es_hosts is defined and kibana_es_hosts | length > 0
+    fail_msg: The inventory is missing Kibana's name or address, or the Elasticsearch addresses it is to be given.
+
+- name: Write kibana.yml
+  ansible.builtin.template:
+    src: kibana.yml.j2
+    dest: "{{ kibana_config_dir }}/kibana.yml"
+    owner: root
+    group: kibana
+    mode: "0660"
+  notify: Kibana configuration changed

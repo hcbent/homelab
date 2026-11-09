@@ -43,6 +43,7 @@ from app.configmgmt import (
     NewCa,
     runner_from_settings,
 )
+from app.configmgmt.inventory import kibana_es_hosts
 from app.desired.kibana import caddy_snippet, kibana_of
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
@@ -83,6 +84,10 @@ REMOVE_PHASES = ["render", "init", "plan", "approval", "drain", "apply", "config
 # (docs/DESIGN_RECOVERY.md, slice 5b). It is its own kind so an empty Terraform plan, which skips the approval, can never carry it.
 RESTART = "es.restart"
 RESTART_NODES_PHASES = ["plan", "approval", "restart"]
+# Operations on a Kibana that already exists and need no Terraform: setting the sign-in (a new password for the elastic user) and restarting
+# Kibana. Like a restart, the plan is the description of what will be done and the approval is of a hash of exactly that.
+KIBANA = "es.kibana"
+KIBANA_PHASES = ["plan", "approval", "kibana"]
 PLAN_KIND = {CREATE: "create", DESTROY: "destroy", UPDATE: "update"}
 
 RunnerFactory = Callable[[Callable[[str], None]], TerraformRunner]
@@ -140,9 +145,10 @@ def render_input(params: dict, cluster_id: str, endpoint: str, insecure: bool,
         cpu_type=params.get("cpu_type", "host"), kibana=kibana_of(params))
 
 
-def kibana_credential_names(cluster_id: str) -> tuple[str, str]:
-    """The stored service-account token and the three encryption keys of a cluster's Kibana (both encrypted, both redacted from logs)."""
-    return (f"es-kibana-token-{cluster_id}", f"es-kibana-keys-{cluster_id}")
+def kibana_credential_names(cluster_id: str) -> tuple[str, str, str]:
+    """What ECM stores for a cluster's Kibana, all encrypted and redacted from logs: the service-account token, the three encryption keys, and
+    the sign-in (the password of the elastic user, as JSON: its current and pending values)."""
+    return (f"es-kibana-token-{cluster_id}", f"es-kibana-keys-{cluster_id}", f"es-kibana-login-{cluster_id}")
 
 
 def _connection(db: Session, params: dict) -> ProxmoxConnection:
@@ -223,6 +229,22 @@ def start_restart(db: Session, *, cluster_id: str, params: dict, actor: str) -> 
         raise OperationRefused("a restart only touches machines ECM created, and these are not: " + ", ".join(foreign))
     op = create_operation(db, RESTART, RESTART_NODES_PHASES, cluster_id=cluster.id, params=params, actor=actor)
     audit.record(db, actor, "operation.start", "operation", op.id, kind=RESTART, change=change)
+    return op
+
+
+def start_kibana_op(db: Session, *, cluster_id: str, params: dict, actor: str) -> Operation:
+    """Create the operation for `params["change"]` (lifecycle.plan_kibana_login or plan_restart_kibana). The caller enqueues the job."""
+    cluster = _managed_cluster(db, cluster_id)
+    if cluster.bootstrapped_at is None:
+        raise OperationRefused("this cluster has not finished being built, so it has no Kibana yet")
+    change = params.get("change") or {}
+    mine = {"proxmox_connection_id": params.get("proxmox_connection_id"),
+            "vm_ids": {n: info["vm_id"] for n, info in (change.get("kibana") or {}).items()}}
+    foreign = foreign_machines(db, mine)
+    if foreign:
+        raise OperationRefused("this only touches machines ECM created, and these are not: " + ", ".join(foreign))
+    op = create_operation(db, KIBANA, KIBANA_PHASES, cluster_id=cluster.id, params=params, actor=actor)
+    audit.record(db, actor, "operation.start", "operation", op.id, kind=KIBANA, change={k: v for k, v in change.items() if k != "kibana"})
     return op
 
 
@@ -351,7 +373,7 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "sizes": sizes,
         "node_roles": roles,
         "node_state": node_state,
-        "kibana": _kibana_panel(cluster, ops, busy),
+        "kibana": _kibana_panel(cluster, ops, busy, _login_of(db, cluster)),
         "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered
@@ -359,20 +381,39 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
     }
 
 
-def _kibana_panel(cluster: Cluster, ops: list[Operation], busy: Operation | None) -> dict:
+def _kibana_panel(cluster: Cluster, ops: list[Operation], busy: Operation | None, login: dict | None = None) -> dict:
     """What the Kibana panel shows: the machines on record, the Caddy snippet for each (shown, never applied), and how the last Add Kibana
     ended. That operation includes the health check, so a succeeded one means Kibana reported itself available when it finished."""
     recorded = kibana_of(cluster.desired or {}) if cluster.bootstrapped_at else []
-    last = next((o for o in ops if o.kind == UPDATE and not o.dry_run
-                 and (o.params.get("change") or {}).get("kind") == "add_kibana"), None)
+    ready = bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None
+    current = (kibana_es_hosts(DesiredState.model_validate(cluster.desired["state"]), cluster.desired["addresses"])
+               if recorded and cluster.desired else [])
+    login = login or {}
+
+    def ended(kind: str, change_kind: str) -> dict | None:
+        o = next((o for o in ops if o.kind == kind and not o.dry_run and (o.params.get("change") or {}).get("kind") == change_kind), None)
+        return ({"operation_id": o.id, "state": o.state, "finished_at": o.finished_at.isoformat() if o.finished_at else None}
+                if o else None)
     return {
         "machines": [{**k.model_dump(mode="json"), "url": k.url, "public_url": k.public_url,
-                      "caddy_snippet": caddy_snippet(cluster.name, k)} for k in recorded],
-        "can_add": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None and not recorded,
+                      "caddy_snippet": caddy_snippet(cluster.name, k),
+                      # Kibana reads its list of Elasticsearch nodes when it starts, so a change of nodes waits for Restart Kibana.
+                      "hosts_out_of_date": bool(k.es_hosts) and k.es_hosts != current} for k in recorded],
+        "can_add": ready and not recorded,
+        "can_change": ready and bool(recorded),
         "ca_available": bool(cluster.tls_ca_pem),
-        "last_add": ({"operation_id": last.id, "state": last.state,
-                      "finished_at": last.finished_at.isoformat() if last.finished_at else None} if last else None),
+        "last_add": ended(UPDATE, "add_kibana"),
+        # Whether ECM holds a sign-in that works (never the password itself: that is only ever sent by the reveal endpoint), when it was
+        # set, and how the last attempt ended.
+        "login": {"set": bool(login.get("current")), "reset_at": login.get("reset_at"), "last": ended(KIBANA, "reset_login")},
+        "last_restart": ended(KIBANA, "restart_kibana"),
     }
+
+
+def _login_of(db: Session, cluster: Cluster) -> dict:
+    """What ECM holds for the elastic user's sign-in ({} for none). Only its existence and date leave this module."""
+    row = db.scalar(select(Credential).where(Credential.name == kibana_credential_names(cluster.id)[2]))
+    return json.loads(crypto.decrypt(row.ciphertext)) if row is not None else {}
 
 
 def remove_cluster(db: Session, *, cluster_id: str, confirm_name: str, actor: str) -> dict:
@@ -427,6 +468,12 @@ def run_operation(db: Session, op_id: str, make_runner: RunnerFactory = default_
                   root: Path | None = None, make_ansible: AnsibleFactory = default_ansible) -> None:
     """Run or resume a Terraform operation. This is the body of the `tf.run` job."""
     op = db.get(Operation, op_id)
+    if op.kind == KIBANA:
+        from app.provisioning.kibana_ops import (
+            KibanaHandlers,  # imported here: it needs this module whole
+        )
+        run_phases(db, op_id, KibanaHandlers(db, op, make_ansible).handlers())
+        return
     if op.kind == RESTART:
         from app.provisioning.restart import (
             RestartHandlers,  # imported here: it needs this module whole
@@ -565,6 +612,8 @@ class _Handlers:
             problems = check_forget_plan(outcome.summary, frozenset(self._change_nodes("removed")))
         elif kind == "add_kibana":
             problems = self._kibana_problems(outcome.summary)
+        elif kind == "remove_kibana":
+            problems = self._kibana_removal_problems(outcome.summary)
         else:
             problems = check_plan_safety(outcome.summary, self.plan_kind)
         if self.kind == DESTROY:
@@ -605,6 +654,16 @@ class _Handlers:
         if summary.is_empty and self._already_made("rebuilt"):
             return []
         return check_rebuild_plan(summary, frozenset(self._change_nodes("rebuilt")))
+
+    def _kibana_removal_problems(self, summary) -> list[str]:
+        """Terraform may destroy only the Kibana machine and change anything else. After an earlier apply already destroyed it, a retry's plan
+        is empty, which is right."""
+        names = frozenset(self._change_nodes("kibana_removed"))
+        result = self.op.result or {}
+        left = {node_of(a) for a in result.get("resources_in_state") or []}
+        if summary.is_empty and result.get("ok") and not (names & left):
+            return []
+        return check_removal_plan(summary, names)
 
     def _removing(self) -> list[str]:
         """The nodes this operation removes, or [] when it is not a removal."""
@@ -879,6 +938,13 @@ class _Handlers:
         so the inventory does not show a machine that is gone. A row is matched on connection, VMID and name together, so
         a different VM that reuses a VMID is never touched; if a machine somehow still exists the next sync adds it back."""
         change = (self.op.params.get("change") or {}) if self.kind == UPDATE else {}
+        if change.get("kind") == "remove_kibana":
+            conn_id = self.op.params.get("proxmox_connection_id")
+            gone = sum(self.db.execute(delete(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(info["vm_id"]), Vm.name == name)).rowcount
+                       for name, info in (change.get("kibana") or {}).items())
+            self.db.commit()
+            log(self.db, self.op.id, f"Kibana's machine removed from the inventory ({gone} machine{'s' if gone != 1 else ''})")
+            return
         if change.get("kind") not in ("remove_nodes", "forget_nodes"):
             return
         conn_id = self.op.params.get("proxmox_connection_id")
@@ -975,6 +1041,35 @@ class _Handlers:
             raise ConfigureFailed(f"{outcome.error or 'adding Kibana failed'}. {kept}")
         log(self.db, self.op.id, "Kibana is running and reports itself available")
 
+    def _remove_kibana(self) -> None:
+        """After Terraform destroyed the machine: delete the service token it signed in with (playbooks/remove_kibana.yml), then forget the
+        stored copy. The encryption keys and the sign-in are kept. A token already gone is fine, so a retry passes this step."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        change = params.get("change") or {}
+        api_key = self._credential(self._names()[2])
+        kept = "The machine is gone; retry deletes the token again"
+        if api_key is None or not cluster.tls_ca_pem:
+            raise ConfigureFailed(f"ECM has no API key or CA for this cluster, so it cannot delete Kibana's token. {kept}")
+        profile = NetworkProfile.model_validate(params["profile"])
+        hosts = [KibanaHost(name=n, address=info["address"], public_url=info.get("public_url"))
+                 for n, info in (change.get("kibana") or {}).items()]
+        request = AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind="remove_kibana", bootstrapped_at=cluster.bootstrapped_at,
+            search_domain=profile.search_domain, kibana=hosts, es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=cluster.tls_ca_pem)
+        log(self.db, self.op.id, f"configuring: {self._configure_description()}")
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise ConfigureFailed(f"{e}. {kept}") from e
+        if not outcome.ok:
+            raise ConfigureFailed(f"{outcome.error or 'deleting the token failed'}. {kept}")
+        held = self._credential(kibana_credential_names(self.cluster_id)[0])
+        if held is not None:
+            self.db.delete(held)
+            self.db.commit()
+        log(self.db, self.op.id, "Kibana's service token was deleted from the cluster and from ECM; the encryption keys are kept")
+
     def configure(self) -> None:
         if self.kind == UPDATE:
             kind = (self.op.params.get("change") or {}).get("kind")
@@ -984,6 +1079,8 @@ class _Handlers:
                 self._add_nodes(rebuild=True)
             elif kind == "add_kibana":
                 self._add_kibana()
+            elif kind == "remove_kibana":
+                self._remove_kibana()
             elif kind == "remove_nodes":
                 self._converge_if_a_master_left()
                 self._removal_check()

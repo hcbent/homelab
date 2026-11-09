@@ -42,7 +42,8 @@ MIN_PASSWORD_LENGTH = 20  # the same floor the es_node role enforces
 PLAYBOOKS = {"create": "playbooks/create.yml", "converge": "playbooks/converge.yml",
              "restart": "playbooks/rolling_restart.yml", "add_node": "playbooks/add_node.yml",
              "remove_drain": "playbooks/remove_nodes.yml", "remove_check": "playbooks/remove_nodes.yml",
-             "add_kibana": "playbooks/add_kibana.yml"}
+             "add_kibana": "playbooks/add_kibana.yml", "restart_kibana": "playbooks/restart_kibana.yml",
+             "kibana_login": "playbooks/kibana_login.yml", "remove_kibana": "playbooks/remove_kibana.yml"}
 _RECAP = re.compile(r"^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)")
 _NEEDLES = ("fatal:", "[ERROR]", "FAILED!")
 
@@ -91,6 +92,8 @@ class AnsibleRequest:
     kibana: list[KibanaHost] | None = None
     kibana_token: str | None = field(default=None, repr=False)
     kibana_keys: dict[str, str] | None = field(default=None, repr=False)   # security, saved_objects, reporting
+    # Setting the sign-in: the new password for the `elastic` user. Restarting and removing Kibana need the machine, the API key and the CA only.
+    kibana_login_pass: str | None = field(default=None, repr=False)
     # Removing nodes: the ones going (they are not in `state`, which is what remains). Uses es_api_key and es_ca_pem to
     # drain them and, afterwards, to check the cluster is green without them.
     removing: list[str] | None = None
@@ -190,7 +193,7 @@ class CliAnsibleRunner:
     def run(self, request: AnsibleRequest) -> AnsibleOutcome:
         self._check_request(request)
         for secret in (request.elastic_password, request.ca_key_pem, request.es_api_key, request.pve_token_secret,
-                       request.kibana_token, *(request.kibana_keys or {}).values()):
+                       request.kibana_token, request.kibana_login_pass, *(request.kibana_keys or {}).values()):
             if secret:
                 register_secret(secret)
         _register_pem(request.ca_key_pem)
@@ -280,6 +283,19 @@ class CliAnsibleRunner:
                 raise AnsibleError("adding Kibana needs " + ", ".join(missing))
             if set(request.kibana_keys or {}) != {"security", "saved_objects", "reporting"}:
                 raise AnsibleError("Kibana's encryption keys are security, saved_objects and reporting")
+        if request.kind in ("restart_kibana", "kibana_login", "remove_kibana"):
+            what = {"restart_kibana": "restarting Kibana", "kibana_login": "setting the sign-in",
+                    "remove_kibana": "removing Kibana"}[request.kind]
+            if request.check:
+                raise AnsibleError(f"{what} cannot be checked: check mode cannot simulate it")
+            missing = [name for name, value in (
+                ("the Kibana machine", request.kibana), ("the ECM API key", request.es_api_key),
+                ("the cluster's CA certificate", request.es_ca_pem or request.ca_cert_pem),
+                ("the new password", request.kibana_login_pass if request.kind == "kibana_login" else "n/a")) if not value]
+            if missing:
+                raise AnsibleError(f"{what} needs " + ", ".join(missing))
+            if request.kind == "kibana_login" and len(request.kibana_login_pass or "") < 20:
+                raise AnsibleError("the new password must be at least 20 characters")
         if request.kind in ("remove_drain", "remove_check"):
             if request.check:
                 raise AnsibleError("removing nodes cannot be checked: check mode cannot simulate it")
@@ -353,14 +369,17 @@ class CliAnsibleRunner:
     def _kibana_vars(request: AnsibleRequest, run_dir: Path) -> dict:
         """What adding Kibana needs beyond the inventory: the API key and CA for the worker's calls (the CA is a public file in the private run
         directory), which hosts the first-boot wait covers, and the secrets: the token ECM already holds, if any, and the three keys."""
-        if request.kind != "add_kibana":
+        if request.kind not in ("add_kibana", "restart_kibana", "kibana_login", "remove_kibana"):
             return {}
         ca = run_dir / "es-ca.crt"
         _write_private(ca, request.es_ca_pem or request.ca_cert_pem or "")
-        out: dict = {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "kibana_hosts",
-                     "kibana_encryption_keys": request.kibana_keys or {}}
-        if request.kibana_token:
-            out["kibana_service_token"] = request.kibana_token
+        out: dict = {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca)}
+        if request.kind == "add_kibana":
+            out.update({"first_boot_hosts": "kibana_hosts", "kibana_encryption_keys": request.kibana_keys or {}})
+            if request.kibana_token:
+                out["kibana_service_token"] = request.kibana_token
+        if request.kind == "kibana_login":
+            out["kibana_login_pass"] = request.kibana_login_pass or ""
         return out
 
     @staticmethod

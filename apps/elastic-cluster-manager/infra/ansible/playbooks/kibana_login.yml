@@ -1,0 +1,9 @@
+---
+# Set a new password for the `elastic` user so people can sign in to Kibana (docs/DESIGN_KIBANA.md, decision 2). Run by the worker, on
+# localhost, with ECM's API key. Extra vars (secrets, never in the inventory): es_api_key, kibana_login_pass; es_ca_file.
+- name: Set the elastic user's password and prove it works
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - kibana_login

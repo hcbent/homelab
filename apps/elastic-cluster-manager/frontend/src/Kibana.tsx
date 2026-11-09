@@ -1,21 +1,50 @@
 import {
-  EuiButton, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiFieldNumber, EuiFieldText, EuiFormRow, EuiLink, EuiPanel,
+  EuiButton, EuiButtonEmpty, EuiCallOut, EuiCodeBlock, EuiDescriptionList, EuiFieldNumber, EuiFieldText, EuiFormRow, EuiLink, EuiPanel,
   EuiSelect,
 } from "@elastic/eui";
 import { useEffect, useState } from "react";
-import { api, ApiError, ClusterDetail, Infrastructure, KibanaMachine } from "./api";
+import { api, ApiError, ClusterDetail, Infrastructure, KibanaMachine, KibanaPanel } from "./api";
 import { ConfirmAction } from "./ConfirmAction";
 
 const message = (e: unknown) => (e instanceof ApiError ? e.message : String(e));
 const whole = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
 const DNS_NAME = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
-/** One Kibana machine on record: where it is, how it was last checked, and the Caddy block that would put it behind the proxy. */
-function Machine({ cluster, machine, lastAdd }: {
-  cluster: ClusterDetail; machine: KibanaMachine;
-  lastAdd: NonNullable<NonNullable<ClusterDetail["lifecycle"]>["kibana"]>["last_add"];
+/** What the operator is being asked to confirm before a plan is made. */
+type Asking = "login" | "restart" | "remove" | null;
+
+/** One Kibana machine on record: where it is, how to sign in, what can be done to it, and the Caddy block that would put it behind the proxy. */
+function Machine({ cluster, machine, panel, onError }: {
+  cluster: ClusterDetail; machine: KibanaMachine; panel: KibanaPanel; onError: (m: string | null) => void;
 }) {
-  const ca = cluster.lifecycle?.kibana?.ca_available;
+  const [asking, setAsking] = useState<Asking>(null);
+  const [shown, setShown] = useState<{ username: string; password: string } | null>(null);
+  const lastAdd = panel.last_add;
+  const login = panel.login;
+
+  async function plan(path: string, body?: Record<string, unknown>) {
+    setAsking(null);
+    onError(null);
+    try {
+      const out = await api<{ operation_id: string }>(`/api/clusters/${cluster.id}/${path}`, {
+        method: "POST", body: JSON.stringify(body ?? {}),
+      });
+      window.location.hash = `#/operations/${out.operation_id}`;
+    } catch (e) {
+      onError(message(e));
+    }
+  }
+
+  async function reveal() {
+    onError(null);
+    try {
+      const out = await api<{ username: string; password: string }>(`/api/clusters/${cluster.id}/kibana-login/reveal`, { method: "POST" });
+      setShown({ username: out.username, password: out.password });
+    } catch (e) {
+      onError(message(e));
+    }
+  }
+
   return (
     <>
       <EuiDescriptionList type="column" compressed listItems={[
@@ -37,9 +66,40 @@ function Machine({ cluster, machine, lastAdd }: {
         <EuiCallOut color="danger" iconType="warning" size="s" title="Kibana did not finish being added">
           <p>The machine exists and is kept. Open the operation and press Retry: it configures the machine again with the
             same token and keys, which is safe to repeat.</p></EuiCallOut>)}
-      <EuiCallOut color="primary" iconType="info" size="s" title="Nobody can sign in to this Kibana yet">
-        <p>ECM does not create a Kibana login yet, so the machine runs and reports itself available but has no user to sign in as.
-          Creating one is planned for the next step of this phase, and has not been built.</p></EuiCallOut>
+
+      {machine.hosts_out_of_date && (
+        <EuiCallOut color="warning" iconType="warning" size="s" title="Kibana is using an out-of-date list of Elasticsearch nodes">
+          <p>The cluster's nodes have changed since Kibana was last configured, and it reads the list only when it starts. Kibana keeps working
+            while any node in its list answers; restart it to bring the list up to date.</p></EuiCallOut>)}
+
+      <h4 className="ecm-label">Sign in</h4>
+      {login.set ? (
+        <>
+          <p>ECM set a password for the <span className="ecm-mono">elastic</span> user{login.reset_at ? ` on ${new Date(login.reset_at).toLocaleString()}` : ""} and
+            keeps it encrypted. Showing it is recorded in the audit log every time.</p>
+          {shown ? (
+            <EuiCallOut color="primary" iconType="lock" size="s" title="Sign-in details (this view was recorded)">
+              <EuiCodeBlock language="text" isCopyable paddingSize="m">{`Username: ${shown.username}\nPassword: ${shown.password}`}</EuiCodeBlock>
+              <EuiButtonEmpty size="s" onClick={() => setShown(null)}>Hide</EuiButtonEmpty>
+            </EuiCallOut>
+          ) : (
+            <div><EuiButton iconType="eye" onClick={reveal}>Show sign-in details</EuiButton></div>)}
+        </>
+      ) : (
+        <EuiCallOut color="primary" iconType="info" size="s" title="Nobody can sign in to this Kibana yet">
+          <p>ECM does not keep the elastic user's password. Create a sign-in and ECM sets a new, generated password for that user, checks it
+            works and keeps it encrypted, so you can show it here.
+            {login.last && login.last.state === "failed" && <> The last attempt did not finish:{" "}
+              <EuiLink href={`#/operations/${login.last.operation_id}`}>open it</EuiLink>.</>}</p></EuiCallOut>)}
+
+      {panel.can_change && (
+        <div className="ecm-detail__actions">
+          <EuiButton iconType={login.set ? "refresh" : "plusInCircle"} onClick={() => setAsking("login")}>
+            {login.set ? "Reset password" : "Create sign-in"}</EuiButton>
+          <EuiButton iconType="refresh" onClick={() => setAsking("restart")}>Restart Kibana</EuiButton>
+          <EuiButton color="danger" iconType="trash" onClick={() => setAsking("remove")}>Remove Kibana</EuiButton>
+        </div>)}
+
       <h4 className="ecm-label">Caddy</h4>
       {machine.caddy_snippet ? (
         <>
@@ -50,9 +110,28 @@ function Machine({ cluster, machine, lastAdd }: {
         </>
       ) : (
         <p className="ecm-muted">This Kibana was added without a public name, so there is no snippet to show.</p>)}
-      {ca && (
+      {panel.ca_available && (
         <p><EuiLink href={`/api/clusters/${cluster.id}/ca.crt`} download={`${cluster.name}-ca.crt`}>
           Download the cluster CA certificate</EuiLink></p>)}
+
+      {asking === "login" && (
+        <ConfirmAction action={login.set ? "Reset the elastic password of" : "Create a sign-in for"} confirmText="Plan it" resource={cluster.name}
+          onCancel={() => setAsking(null)} onConfirm={() => plan("kibana-login")}>
+          <p>ECM will plan setting a new, generated password for the elastic user. This step changes nothing. After you approve it, the
+            password changes: anyone using the old one can no longer sign in. ECM's own API key is not affected.</p>
+        </ConfirmAction>)}
+      {asking === "restart" && (
+        <ConfirmAction action="Restart Kibana of" confirmText="Plan the restart" resource={cluster.name}
+          onCancel={() => setAsking(null)} onConfirm={() => plan("restart-kibana")}>
+          <p>ECM will plan rewriting Kibana's configuration with the cluster's current nodes and restarting it. This step changes nothing.
+            After you approve it, people using Kibana are briefly disconnected; it holds no data.</p>
+        </ConfirmAction>)}
+      {asking === "remove" && (
+        <ConfirmAction action="Remove Kibana from" confirmText="Plan the removal" resource={cluster.name} destructive
+          onCancel={() => setAsking(null)} onConfirm={() => plan("remove-kibana", { confirm_name: cluster.name })}>
+          <p>ECM will plan removing Kibana. This step changes nothing. After you approve it, Terraform destroys its machine for good and ECM
+            deletes its service token. Its dashboards and saved objects stay in Elasticsearch, and ECM keeps the encryption keys.</p>
+        </ConfirmAction>)}
     </>
   );
 }
@@ -114,7 +193,7 @@ export function Kibana({ cluster }: { cluster: ClusterDetail }) {
         <EuiCallOut color="danger" role="alert" iconType="warning" title="That did not work" size="s"><p>{error}</p></EuiCallOut>)}
 
       {panel.machines.length > 0 ? (
-        panel.machines.map((m) => <Machine key={m.name} cluster={cluster} machine={m} lastAdd={panel.last_add} />)
+        panel.machines.map((m) => <Machine key={m.name} cluster={cluster} machine={m} panel={panel} onError={setError} />)
       ) : life.busy_operation_id ? (
         <EuiCallOut color="primary" iconType="info" size="s" title="An operation is running on this cluster">
           <p>Wait for it to finish before adding Kibana.{" "}
