@@ -36,7 +36,7 @@ Each slice also needs its UI on the cluster page.
 - **Accept:** removal is refused in tested scenarios (quorum loss, insufficient disk, only copy of a shard). Disk shrink is refused. Destroy refuses any VM with `tf_managed=false` and requires typed confirmation, and writes an audit event.
 
 ## Phase 6 — Kibana
-Optional at create time and as a later operation. Independent sizing and placement, TLS, service token, health check, Caddy example.
+Optional at create time and as a later operation. Independent sizing and placement, TLS, service token, health check, Caddy example. *Design proposed on 2026-11-09 in `docs/DESIGN_KIBANA.md`, waiting for the operator's eight decisions; nothing built.*
 - **Accept:** Kibana health check passes on the disposable target. Caddy snippet is generated and the existing Caddyfile is untouched.
 
 ## Phase 7 — Adoption
