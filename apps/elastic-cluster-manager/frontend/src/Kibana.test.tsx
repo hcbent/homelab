@@ -129,7 +129,7 @@ test("a Kibana with no sign-in says nobody can sign in and offers to create one,
   expect(screen.getByText("Nobody can sign in to this Kibana yet")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create sign-in" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Show sign-in details" })).not.toBeInTheDocument();
-  expect(screen.queryByText(/Password:/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Password")).not.toBeInTheDocument();
 });
 
 test("a Kibana added without a name has no snippet, and a failed add points at Retry", async () => {
@@ -170,8 +170,14 @@ test("with a sign-in set, the password stays hidden until it is asked for, and s
   expect(screen.getByText(/Showing it is recorded in the audit log every time/)).toBeInTheDocument();
   expect(screen.queryByText("Nobody can sign in to this Kibana yet")).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Show sign-in details" }));
-  expect(await screen.findByText(/Password: Zq9-s3cret-value/)).toBeInTheDocument();
-  expect(screen.getByText(/Username: elastic/)).toBeInTheDocument();
+  // The username and the password are separate blocks, so each copy button copies exactly its own value: no label and no other line.
+  // What each copy button copies: its code block's text without the screen-reader prefix EUI brackets with these markers and strips on copy.
+  const copied = Array.from(document.querySelectorAll(".euiCodeBlock"))
+    .map((el) => (el.textContent ?? "").replace(/✄𐘗.*?✄𐘗/g, ""));
+  expect(copied).toContain("Zq9-s3cret-value");                                          // the password, on its own
+  expect(copied).toContain("elastic");                                                   // the username, on its own
+  expect(copied.filter((t) => t.includes("Zq9-s3cret-value") && t !== "Zq9-s3cret-value")).toEqual([]);   // never with anything else
+  expect(document.body.textContent).not.toMatch(/Password: |Username: /);
   expect(screen.getByText("Sign-in details (this view was recorded)")).toBeInTheDocument();
   expect(posted(fn, "/api/clusters/c1/kibana-login/reveal")).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: "Hide" }));
@@ -183,7 +189,7 @@ test("a refused reveal shows the reason and no password", async () => {
   await panel();
   await userEvent.click(screen.getByRole("button", { name: "Show sign-in details" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("has not set a sign-in");
-  expect(screen.queryByText(/Password:/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Password")).not.toBeInTheDocument();
 });
 
 test("with a sign-in set, the button resets the password instead of creating one", async () => {

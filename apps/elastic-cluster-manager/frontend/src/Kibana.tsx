@@ -79,7 +79,9 @@ function Machine({ cluster, machine, panel, onError }: {
             keeps it encrypted. Showing it is recorded in the audit log every time.</p>
           {shown ? (
             <EuiCallOut color="primary" iconType="lock" size="s" title="Sign-in details (this view was recorded)">
-              <EuiCodeBlock language="text" isCopyable paddingSize="m">{`Username: ${shown.username}\nPassword: ${shown.password}`}</EuiCodeBlock>
+              {/* One block each, so a copy button copies the value and nothing else. */}
+              <EuiFormRow label="Username"><EuiCodeBlock language="text" isCopyable paddingSize="s">{shown.username}</EuiCodeBlock></EuiFormRow>
+              <EuiFormRow label="Password"><EuiCodeBlock language="text" isCopyable paddingSize="s">{shown.password}</EuiCodeBlock></EuiFormRow>
               <EuiButtonEmpty size="s" onClick={() => setShown(null)}>Hide</EuiButtonEmpty>
             </EuiCallOut>
           ) : (
