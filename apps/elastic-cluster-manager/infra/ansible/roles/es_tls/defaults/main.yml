@@ -1,4 +1,5 @@
 ---
+es_tls_group: elasticsearch  # the group that reads the key: kibana, for a Kibana machine
 es_tls_workdir: /var/tmp/ecm-es-tls  # on the CA host only; removed when the role finishes, success or not
 es_tls_ca_days: 1825
 es_tls_node_days: 1095

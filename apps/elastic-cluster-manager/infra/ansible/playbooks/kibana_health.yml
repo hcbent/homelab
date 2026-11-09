@@ -1,0 +1,8 @@
+---
+# The worker-side half of adding Kibana, run last: ask Kibana whether it is available. Extra vars: es_api_key, es_ca_file.
+- name: Check Kibana is available
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - kibana_health

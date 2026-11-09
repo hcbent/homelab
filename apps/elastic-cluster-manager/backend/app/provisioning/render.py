@@ -11,10 +11,11 @@ import hashlib
 import ipaddress
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 from urllib.parse import urlparse
 
+from app.desired.kibana import KibanaSpec
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile, cloud_init_ipv4
 from app.provisioning import hcl
@@ -53,6 +54,9 @@ class RenderInput:
     agent_enabled: bool = False
     cpu_type: str = "host"
     state_backend: Literal["pg", "local"] = "pg"
+    # Kibana machines (docs/DESIGN_KIBANA.md). They are not Elasticsearch nodes, so they have their own list and are only merged into
+    # the module's map here; every check above on placement, address and VMID covers the nodes alone.
+    kibana: list[KibanaSpec] = field(default_factory=list)
 
 
 def _check(inp: RenderInput) -> None:
@@ -100,6 +104,31 @@ def _check(inp: RenderInput) -> None:
             raise RenderError(f"{node}: {ip} is outside the profile network {net}")
     if len(set(inp.addresses.values())) != len(inp.addresses):
         raise RenderError("node addresses must be unique")
+    _check_kibana(inp, net)
+
+
+def _check_kibana(inp: RenderInput, net) -> None:
+    """A Kibana machine shares the module's map with the nodes, so its name, VMID and address must not clash with theirs."""
+    taken_names = {n.name for n in inp.state.nodes}
+    taken_ids = set(inp.vm_ids.values())
+    taken_addresses = set(inp.addresses.values())
+    seen: set[str] = set()
+    for k in inp.kibana:
+        if k.name in taken_names or k.name in seen:
+            raise RenderError(f"the Kibana machine {k.name} has the name of another machine in this cluster")
+        seen.add(k.name)
+        if not _PVE_NAME.match(k.host):
+            raise RenderError(f"{k.name}: {k.host!r} is not a valid Proxmox host name")
+        if k.vm_id < MIN_VMID:
+            raise RenderError(f"the VMID of {k.name} must be {MIN_VMID} or higher")
+        if k.vm_id in taken_ids:
+            raise RenderError(f"the VMID of {k.name} ({k.vm_id}) is used by another machine in this cluster")
+        taken_ids.add(k.vm_id)
+        if ipaddress.IPv4Address(k.address) not in net:
+            raise RenderError(f"{k.name}: {k.address} is outside the profile network {net}")
+        if k.address in taken_addresses:
+            raise RenderError(f"the address of {k.name} ({k.address}) is used by another machine in this cluster")
+        taken_addresses.add(k.address)
 
 
 def _tfvars(inp: RenderInput) -> dict:
@@ -115,6 +144,12 @@ def _tfvars(inp: RenderInput) -> dict:
             "data_disk_gb": node.data_disk_gb,
             "address": net["address"],
             "gateway": net["gateway"],
+        }
+    for k in inp.kibana:
+        net = cloud_init_ipv4(inp.profile, k.address)
+        nodes[k.name] = {
+            "node_name": k.host, "vm_id": k.vm_id, "cores": k.cores, "memory_mb": k.ram_mb, "os_disk_gb": k.os_disk_gb,
+            "data_disk_gb": None, "address": net["address"], "gateway": net["gateway"],
         }
     return {
         "proxmox_endpoint": inp.proxmox_endpoint,

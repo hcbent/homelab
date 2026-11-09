@@ -1,0 +1,6 @@
+---
+kibana_config_dir: /etc/kibana
+kibana_tls_dir: /etc/kibana/certs
+kibana_bin_dir: /usr/share/kibana/bin
+kibana_default_port: 5601
+kibana_wait: 300   # seconds for the service to listen after it is started

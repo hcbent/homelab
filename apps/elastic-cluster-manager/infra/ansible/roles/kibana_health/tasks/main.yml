@@ -1,0 +1,60 @@
+---
+# Asked from the worker, with ECM's API key (Kibana accepts an API key for its own API, to confirm on a live run) and the cluster CA, which signed
+# Kibana's certificate for its address. Kibana is healthy when its status API says its overall level is available.
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - groups['kibana_hosts'] | default([]) | length > 0
+    fail_msg: A Kibana health check needs the ECM API key, the cluster CA and a Kibana machine in the inventory.
+
+- name: Describe each Kibana machine
+  ansible.builtin.set_fact:
+    kh_targets: "{{ groups['kibana_hosts'] | map('extract', hostvars) | list }}"
+    kh_headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+  no_log: true
+
+- name: Wait for Kibana to report itself available
+  ansible.builtin.uri:
+    url: "{{ kh_scheme }}://{{ item.kibana_ip }}:{{ item.kibana_port | default(5601) }}/api/status"
+    headers: "{{ kh_headers }}"
+    ca_path: "{{ es_ca_file }}"
+    status_code: [200, 401, 403, 503]
+    return_content: true
+  register: kh_status
+  until: >-
+    kh_status.status == 200 and ((kh_status.json | default({})).status | default({})).overall | default({}) is mapping
+    and (kh_status.json.status.overall.level | default('')) == 'available'
+  retries: "{{ (kh_wait | int / kh_poll | int) | round(0, 'ceil') | int }}"
+  delay: "{{ kh_poll }}"
+  loop: "{{ kh_targets }}"
+  loop_control:
+    label: "{{ item.kibana_name }}"
+  ignore_errors: true
+
+- name: Work out what each Kibana last said
+  ansible.builtin.set_fact:
+    kh_report: >-
+      {%- set out = [] -%}
+      {%- for r in kh_status.results -%}
+        {%- if r.status | default(0) == 401 or r.status | default(0) == 403 -%}
+          {%- set _ = out.append(r.item.kibana_name ~ ' refused the API key (HTTP ' ~ r.status ~ ')') -%}
+        {%- elif r.status | default(0) == 200 and (r.json.status.overall.level | default('')) == 'available' -%}
+        {%- elif r.status | default(0) == 200 -%}
+          {%- set level = r.json.status.overall.level | default('not reporting a level') -%}
+          {%- set summary = r.json.status.overall.summary | default('') -%}
+          {%- set _ = out.append(r.item.kibana_name ~ ' is ' ~ level ~ ': ' ~ summary) -%}
+        {%- else -%}
+          {%- set _ = out.append(r.item.kibana_name ~ ' did not answer (' ~ (r.msg | default('no response')) ~ ')') -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Stop if Kibana is not available
+  ansible.builtin.fail:
+    msg: >-
+      Kibana did not become available: {{ kh_report | join('; ') }}. The machine is kept; Retry runs the configuration and the check again,
+      which is safe to repeat.
+  when: kh_report | length > 0

@@ -1138,6 +1138,7 @@ def test_a_built_cluster_offers_a_teardown_of_its_create_and_names_the_machines_
                    "node_roles": {n: {"roles": got["node_roles"][n]["roles"], "master_eligible": True, "holds_data": True,
                                       "host": f"pve{i % 3 + 1}"} for i, n in enumerate(NODES)},
                    "node_state": {n: {"machine": False, "in_cluster": False, "vm_status": None} for n in NODES},   # nothing synced in this test
+                   "kibana": {"machines": [], "can_add": True, "ca_available": True, "last_add": None},      # none yet; one can be added
                    "remove_blocker": "this cluster has bootstrapped: tear its machines down first (cleanup), then remove it"}
 
 

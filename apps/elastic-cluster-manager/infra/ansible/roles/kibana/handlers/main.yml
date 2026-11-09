@@ -1,0 +1,8 @@
+---
+# Only a Kibana ECM is setting up reaches this role, so it is restarted when its configuration or keystore changed.
+- name: Restart kibana
+  ansible.builtin.systemd:
+    name: kibana
+    state: restarted
+    daemon_reload: true
+  listen: Kibana configuration changed

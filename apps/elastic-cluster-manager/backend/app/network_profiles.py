@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.desired.network import NetworkProfile
-from app.models import EsNode, NetworkProfileRow, Vm
+from app.models import Cluster, EsNode, NetworkProfileRow, Vm
 
 # Seeded on first start so the allocator always has a profile. Everything here is editable in the UI.
 DEFAULT_PROFILE = {
@@ -39,7 +39,9 @@ def to_domain(row: NetworkProfileRow) -> NetworkProfile:
 
 
 def addresses_in_use(db: Session) -> list[dict]:
-    """Every address ECM has seen on a Proxmox VM or reported by an Elasticsearch node."""
+    """Every address ECM has seen on a Proxmox VM or reported by an Elasticsearch node, and the address of every Kibana machine ECM recorded.
+    That last source is needed because a Kibana machine is not an Elasticsearch node and its VM has no guest agent, so neither of the others
+    ever reports it."""
     found: dict[str, dict] = {}
     for vm in db.scalars(select(Vm).where(Vm.is_template.is_(False))):
         for rec in vm.ips or []:
@@ -48,6 +50,9 @@ def addresses_in_use(db: Session) -> list[dict]:
     for node in db.scalars(select(EsNode)):
         if node.ip:
             found.setdefault(node.ip, {"ip": node.ip, "source": "elasticsearch", "name": node.name})
+    for desired in db.scalars(select(Cluster.desired).where(Cluster.desired.is_not(None))):
+        for k in (desired or {}).get("kibana") or []:
+            found.setdefault(k["address"], {"ip": k["address"], "source": "ecm", "name": k["name"]})
     return list(found.values())
 
 

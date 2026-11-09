@@ -109,30 +109,46 @@ def check_removal_plan(summary: PlanSummary, removing: frozenset[str]) -> list[s
     return problems
 
 
-def check_rebuild_plan(summary: PlanSummary, rebuilding: frozenset[str]) -> list[str]:
-    """Why a plan to rebuild these nodes must not be applied. Empty means it creates exactly the machines asked for.
-
-    It may create the named nodes' resources and change (never delete or replace) anything else, and it must create every
-    named node. A plan that leaves one out means its machine still exists in Terraform's state, and the steps that follow
-    (they start the node and restart it on a configuration change) must never run against a live node."""
+def _check_creates_exactly(summary: PlanSummary, wanted: frozenset[str], doing: str, missing: str) -> list[str]:
+    """Why a plan that must create exactly these machines must not be applied. Empty means it creates every machine named, changes
+    (never deletes or replaces) anything else, and creates nothing else. `doing` completes "<doing> must only create the machines
+    asked for"; `missing` completes the sentence about a machine the plan leaves out."""
     problems: list[str] = []
     created: set[str] = set()
     for c in summary.changes:
         if c.action in (NOOP, READ):
             continue
         node = node_of(c.address)
-        if c.action == CREATE and node in rebuilding:
+        if c.action == CREATE and node in wanted:
             created.add(node)
         elif c.action == UPDATE:
             continue
         else:
             verb = {"replace": "would replace (destroy and recreate)", "delete": "would delete",
                     "create": "would create"}.get(c.action, f"would {c.action}")
-            problems.append(f"rebuilding nodes must only create the machines asked for, but the plan {verb} {c.address}")
-    for name in sorted(rebuilding - created):
-        problems.append(f"the plan does not create a machine for {name}, so Terraform believes it exists; a node whose "
-                        "machine exists is restarted, not rebuilt")
+            problems.append(f"{doing} must only create the machines asked for, but the plan {verb} {c.address}")
+    for name in sorted(wanted - created):
+        problems.append(f"the plan does not create a machine for {name}, {missing}")
     return problems
+
+
+def check_rebuild_plan(summary: PlanSummary, rebuilding: frozenset[str]) -> list[str]:
+    """Why a plan to rebuild these nodes must not be applied. Empty means it creates exactly the machines asked for.
+
+    It may create the named nodes' resources and change (never delete or replace) anything else, and it must create every
+    named node. A plan that leaves one out means its machine still exists in Terraform's state, and the steps that follow
+    (they start the node and restart it on a configuration change) must never run against a live node."""
+    return _check_creates_exactly(
+        summary, rebuilding, "rebuilding nodes",
+        "so Terraform believes it exists; a node whose machine exists is restarted, not rebuilt")
+
+
+def check_add_kibana_plan(summary: PlanSummary, adding: frozenset[str]) -> list[str]:
+    """Why a plan to add these Kibana machines must not be applied. Empty means it creates exactly them and touches no Elasticsearch
+    node: the steps that follow install a package and start a service on the machine, and must never run on one that already exists."""
+    return _check_creates_exactly(
+        summary, adding, "adding Kibana",
+        "so Terraform believes it exists; Kibana is only added on a machine that is new")
 
 
 def check_forget_plan(summary: PlanSummary, forgetting: frozenset[str]) -> list[str]:

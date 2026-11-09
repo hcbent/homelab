@@ -255,6 +255,34 @@ def recommend_placement(
     return result
 
 
+def recommend_host(
+    node: NodeSpec,
+    hosts: list[HostView],
+    config: PlacementConfig | None = None,
+) -> tuple[str | None, dict[str, list[str]]]:
+    """A host for one machine that is not part of the cluster's quorum (a Kibana machine): the host with the most room after it
+    is placed, using the same fit rules and score as the nodes. A node pinned with `pve_node` is only tried there. Returns the host
+    (None when nothing fits) and, for every host that could not take it, why."""
+    ledger = _Ledger(hosts, config or PlacementConfig())
+    fits: list[tuple[HostView, float]] = []
+    rejected: dict[str, list[str]] = {}
+    known = {h.name for h in hosts}
+    if node.pve_node is not None and node.pve_node not in known:
+        return None, {node.pve_node: ["not a known host"]}
+    for h in hosts:
+        if node.pve_node not in (None, h.name):
+            continue
+        reasons, score = ledger.evaluate(h, node)
+        if reasons:
+            rejected[h.name] = reasons
+        else:
+            fits.append((h, score))
+    if not fits:
+        return None, rejected
+    host, _ = min(fits, key=lambda item: (-item[1], item[0].name))
+    return host.name, rejected
+
+
 def _quorum_findings(result: PlacementResult, masters: Counter, master_names: set[str], severity: str = "error") -> None:
     total = sum(masters.values())
     # Fewer than three master-eligible nodes cannot survive losing any host, so there is no placement to demand.

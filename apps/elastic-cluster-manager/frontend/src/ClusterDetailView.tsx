@@ -7,6 +7,7 @@ import { api, ApiError, ClusterDetail, NodeRow } from "./api";
 import { HealthBadge, LinkBadge, OwnershipBadge } from "./Badges";
 import { ClusterLifecycle, ClusterOperations } from "./ClusterLifecycle";
 import { AddNodes } from "./AddNodes";
+import { Kibana } from "./Kibana";
 import { GrowDisks } from "./GrowDisks";
 import { Recovery } from "./Recovery";
 import { rolesText } from "./roles";
@@ -219,6 +220,7 @@ export function ClusterDetailView({ id }: { id: string }) {
       <Resize cluster={c} />
       <RestartNodes cluster={c} />
       <GrowDisks cluster={c} />
+      <Kibana cluster={c} />
       <ClusterLifecycle cluster={c} />
     </section>
   );

@@ -15,7 +15,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.desired import AllocationError, TopologyPreset, allocate_addresses, warnings
+from app.desired import (
+    AllocationError,
+    PlacementConfig,
+    TopologyPreset,
+    allocate_addresses,
+    recommend_host,
+    warnings,
+)
+from app.desired.kibana import (
+    DEFAULT_CORES,
+    DEFAULT_OS_DISK_GB,
+    DEFAULT_RAM_MB,
+    MAX_KIBANA_PER_CLUSTER,
+    KibanaSpec,
+    kibana_name,
+    kibana_of,
+)
 from app.desired.models import DATA_ROLES, VALID_ROLES, DesiredState, NodeSpec, RolesMode
 from app.desired.network import NetworkProfile
 from app.discovery import factory
@@ -25,6 +41,8 @@ from app.network_profiles import addresses_in_use
 from app.provisioning.create import (
     CreateInvalid,
     _check_names,
+    _check_template_readable,
+    _host_views,
     _placement,
     _reservations,
     _template,
@@ -361,6 +379,108 @@ def plan_add_nodes(db: Session, cluster: Cluster, request: AddNodes) -> dict:
         "describe": (f"add {request.count} node{'s' if request.count != 1 else ''} ({', '.join(names)}) with "
                      f"{_role_text(request)}: Terraform makes the machine{'s' if request.count != 1 else ''}, then ECM "
                      "configures and starts only the new nodes and checks they joined and the cluster is green"),
+    }
+    return params
+
+
+# -- adding Kibana (docs/DESIGN_KIBANA.md) -------------------------------------------------------------------------
+
+class AddKibana(BaseModel):
+    """Add Kibana to a built cluster. Everything is optional: the machine is 2 cores, 4 GiB and a 32 GB disk with no data disk, on the
+    online host with the most room, reached by its address until it is given a public name."""
+
+    model_config = ConfigDict(extra="forbid")
+    cores: int | None = Field(default=None, ge=1, le=64)
+    ram_mb: int | None = Field(default=None, ge=2048, le=524288)
+    os_disk_gb: int | None = Field(default=None, ge=16, le=2048)
+    pve_node: str | None = Field(default=None, min_length=1, max_length=100)
+    public_name: str | None = Field(default=None, max_length=253)
+
+
+def _kibana_read(db: Session, cluster: Cluster, client=None) -> dict:
+    """What the cluster says right now about whether it can make a service token: its health and its elected master. GET requests only."""
+    def read(c) -> dict:
+        return {"health": c.health(), "master": c.master()}
+    if client is not None:
+        return read(client)
+    if not cluster.credential_id or not cluster.endpoint_urls:
+        raise OperationRefused("ECM has no way to reach this cluster, so it cannot make Kibana's service token")
+    last: Exception | None = None
+    for url in cluster.endpoint_urls:
+        try:
+            return read(factory.es_client(db, cluster, url))
+        except DiscoveryError as exc:
+            last = exc
+    raise OperationRefused(f"ECM could not read the cluster before adding Kibana ({last}); try again when it answers")
+
+
+def plan_add_kibana(db: Session, cluster: Cluster, request: AddKibana, client=None) -> dict:
+    """The parameters with one Kibana machine added: named `<cluster>-kb-01`, placed on the online host with the most room (or the one
+    asked for), with an address and a VMID from the same pools as the nodes. The cluster's nodes are not touched.
+
+    Refuses a cluster that is not built or has no record, one that has no elected master or is red (it could not make the token), one
+    that already has Kibana, a name that is taken, no host with room, a template the host cannot read, and anything the create path
+    would refuse. Nothing is changed here."""
+    params = current_desired(cluster)
+    state = DesiredState.model_validate(params["state"])
+    if len(kibana_of(params)) >= MAX_KIBANA_PER_CLUSTER:
+        raise OperationRefused("this cluster already has Kibana; ECM manages one Kibana per cluster for now")
+    view = _kibana_read(db, cluster, client)
+    if not ((view["master"] or [{}])[0] or {}).get("node"):
+        raise OperationRefused("the cluster has no elected master, so ECM cannot ask it for Kibana's service token. That is quorum "
+                               "loss, which is recovered by hand, not by ECM")
+    if (view["health"] or {}).get("status") == "red":
+        raise OperationRefused("the cluster is red, so some data is already unavailable; Kibana is added to a cluster that is "
+                               "yellow or green")
+
+    name = kibana_name(state.name)
+    sized = SimpleNamespace(name=name, cores=request.cores or DEFAULT_CORES, ram_mb=request.ram_mb or DEFAULT_RAM_MB,
+                            os_disk_gb=request.os_disk_gb or DEFAULT_OS_DISK_GB)
+    conn = db.get(ProxmoxConnection, params.get("proxmox_connection_id") or "")
+    if conn is None:
+        raise OperationRefused("the Proxmox connection this cluster was built on no longer exists")
+    settings = get_settings()
+    datastore = params.get("datastore_id", settings.default_storage)
+    try:
+        # A coordinating node spec stands for the machine in the placement rules (it holds no data and no vote); it is never recorded.
+        machine = NodeSpec(name=name, roles_mode=RolesMode.coordinating, cores=sized.cores, ram_mb=sized.ram_mb,
+                           os_disk_gb=sized.os_disk_gb, pve_node=request.pve_node)
+        _check_names(db, SimpleNamespace(nodes=[machine]))
+        template = _template(db, conn, (params.get("template") or {}).get("vm_id"))
+        hosts, store_rows = _host_views(db, conn)
+        host, why = recommend_host(machine, hosts, PlacementConfig(datastore=datastore))
+        if host is None:
+            detail = "; ".join(f"{h}: {', '.join(r)}" for h, r in sorted(why.items()))
+            raise CreateInvalid(f"no host can take the Kibana machine ({detail})")
+        _check_template_readable(store_rows, {name: host}, template)
+        profile = NetworkProfile.model_validate(params["profile"])
+        reserved_addresses, reserved_vmids = _reservations(db, None)
+        in_use = ({a["ip"] for a in addresses_in_use(db)} | reserved_addresses | set(params["addresses"].values())
+                  | {k.address for k in kibana_of(params)})
+        address = allocate_addresses(profile, [machine], in_use)[name]
+        used_vmids = ({v for (v,) in db.execute(select(Vm.vmid).where(Vm.connection_id == conn.id))}
+                      | reserved_vmids | {int(v) for v in params["vm_ids"].values()} | {k.vm_id for k in kibana_of(params)})
+        vm_id = int(allocate_vmids([name], used_vmids, settings.vmid_range_start, settings.vmid_range_end)[name])
+        spec = KibanaSpec(name=name, vm_id=vm_id, address=address, host=host, cores=sized.cores, ram_mb=sized.ram_mb,
+                          os_disk_gb=sized.os_disk_gb, public_name=request.public_name)
+    except (CreateInvalid, AllocationError, VmidError) as exc:
+        raise OperationRefused(str(exc)) from exc
+    except ValidationError as exc:
+        raise OperationRefused("; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else e["msg"]
+                                         for e in exc.errors())) from exc
+
+    notes = [("ECM does not create a Kibana login yet: the machine will run and report itself available, but nobody can sign in until "
+              "the sign-in details are added in the next step of this phase")]
+    if spec.public_name is None:
+        notes.append("no public name was given, so Kibana is reached by its address and ECM shows no Caddy snippet; add a name to get one")
+    params["kibana"] = [*(params.get("kibana") or []), spec.model_dump(mode="json")]
+    params["change"] = {
+        "kind": "add_kibana", "kibana_added": [name], "warnings": notes,
+        "kibana": {name: {**spec.model_dump(mode="json"), "url": spec.url, "public_url": spec.public_url}},
+        "describe": (f"add Kibana {state.version} on a new machine {name} ({spec.cores} cores, {spec.ram_mb} MiB, a {spec.os_disk_gb} GB disk) "
+                     f"on {host}: Terraform makes the machine, then ECM asks the cluster for a service-account token, installs Kibana "
+                     "at the cluster's version from the Elastic apt repository, signs its certificate with the cluster's CA, starts it, "
+                     "and checks it reports itself available. No Elasticsearch node is configured or restarted"),
     }
     return params
 

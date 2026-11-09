@@ -1,6 +1,6 @@
 # Kibana: proposed design (Phase 6)
 
-**Status: PROPOSED on 2026-11-09. Nothing here is built.** It is written for the operator to review first, because it adds machines and
+**Status: APPROVED on 2026-11-09 with all eight proposals accepted as written. Slice 6a is built and tested offline, and has not run on any real machine; 6b and 6c are not built (see "Slice 6a as built").** It was written for the operator to review first, because it adds machines and
 credentials to a live cluster and settles how a person signs in to it. Items marked *to confirm* are from knowledge of Kibana and Elasticsearch
 and have not been checked against this project's versions. The acceptance test in `IMPLEMENTATION_PLAN.md` is: the Kibana health check passes
 on the disposable target, and a Caddy snippet is generated while the existing Caddyfile is untouched.
@@ -105,6 +105,8 @@ module.
 
 ## Decisions for the operator
 
+**The operator's answers (2026-11-09): all eight as proposed.**
+
 1. **How many Kibana instances.** *Proposed:* one per cluster in this phase, with the data model a list so more can come later. The alternative is several
    from the start (a list in the request, several machines, each its own token), which multiplies the plan page and the health checks.
 2. **How a person signs in.** ECM does not keep the `elastic` password. *Proposed:* when Kibana is added, ECM **resets the `elastic` password** to a generated one
@@ -123,6 +125,38 @@ module.
    Restart Kibana; 6c the option at create time.
 8. **Create-time Kibana.** *Proposed:* the wizard gets an optional Kibana step, and the create plans the Kibana machine **in the same Terraform plan** (one approval) and runs the Kibana play
    after the cluster bootstraps. The alternative is simpler and slower for the operator: the create finishes, then the wizard starts an Add Kibana operation with its own approval.
+
+## Slice 6a as built (2026-11-09)
+
+What exists, and the choices made while building it that the design left open:
+
+- **Where Kibana is recorded.** `params["kibana"]`, a list beside `state` (`app/desired/kibana.py`: `KibanaSpec`), not inside `DesiredState`, and not in the
+  node-keyed `placement`, `addresses` and `vm_ids`. Every walk of the Elasticsearch nodes is unchanged. The places that must know about the machine
+  say so explicitly: the Terraform render (`RenderInput.kibana`, merged into the module's one map, no data disk), ownership (`machine_vm_ids`, so the
+  machine is ECM's once its apply is recorded and the foreign-machine check covers it), address and VMID reservations while the operation is in flight,
+  teardown (the credentials and the inventory row go with the cluster), and the plan rule (`check_add_kibana_plan`: create exactly that machine, delete
+  and replace nothing).
+- **The operation.** `tf.update` with `change.kind = "add_kibana"`, phases `render, init, plan, approval, apply, configure`. `POST /api/clusters/{id}/add-kibana`
+  (also refuses a version the apt repository cannot supply) and `GET /api/clusters/{id}/ca.crt`.
+- **Planning** (`plan_add_kibana`): a live read of the cluster (an elected master, not red; yellow is accepted because only the token needs the cluster),
+  `<cluster>-kb-01`, the online host with the most room by the same fit rules and score as the nodes (`recommend_host`) or the host asked for, the template
+  readable from it, an address and VMID from the same pools. No new quorum rule applies.
+- **Credentials.** Two encrypted `Credential` rows per cluster: the service token (`es-kibana-token-<id>`, stored even when the run then fails, since the cluster
+  never shows it again) and the three encryption keys as JSON (`es-kibana-keys-<id>`, made once, reused by every later run). Both are registered for log redaction.
+- **Name of the token role.** `kibana_credential`, not `kibana_token`: the parent `.gitignore` hides `*token*`, and the first draft's files were silently
+  untracked. A test already forbids such names in the Ansible tree.
+- **The panel** shows the machine, how the last Add Kibana ended (read from that operation, which includes the health check; there is no separate periodic check),
+  the Caddy snippet when there is a public name, and the CA download. **No sign-in exists yet**, and the panel, the plan and the finished operation all say so.
+- **Verified offline:** 59 backend tests of the rules, the render, the plan rule, ownership, the operation with fake Terraform and Ansible (including a failed
+  configure whose retry reuses the same token and keys, and a teardown), the panel data and the endpoints; 31 of the inventory and the runner; 15 that run
+  `kibana_credential.yml` and `kibana_health.yml` with real `ansible-playbook` against a local HTTPS server (they found and fixed a bug where the new token was not
+  handed back, because a block's `when` was re-evaluated after the block set the variable it tested); 12 frontend tests; a syntax check of `add_kibana.yml`.
+- **Not verified:** everything in "To confirm" below, and that `es_package`, `es_tls` and the `kibana` role work on a real Kibana machine (the keystore commands, file
+  ownership, Kibana's start time and memory, whether `/api/status` accepts an API key). `ansible-lint --profile production` reports `var-naming` findings on the new
+  roles as it does on the existing ones (this machine's lint is stricter than the notes say it was, and lacks the collections); the two long lines the new code
+  introduced were fixed.
+- **Left for later slices:** the `elastic` password reset and its reveal (6b), remove Kibana, Restart Kibana, a public name added after the fact, a VM `tags` value for
+  Kibana (the machine carries the cluster's tags for now), and Kibana at create time (6c).
 
 ## To confirm
 

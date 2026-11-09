@@ -35,16 +35,25 @@ from sqlalchemy.orm import Session
 
 from app import audit, crypto
 from app.config import get_settings, tf_state_conninfo
-from app.configmgmt import AnsibleError, AnsibleRequest, AnsibleRunner, NewCa, runner_from_settings
+from app.configmgmt import (
+    AnsibleError,
+    AnsibleRequest,
+    AnsibleRunner,
+    KibanaHost,
+    NewCa,
+    runner_from_settings,
+)
+from app.desired.kibana import caddy_snippet, kibana_of
 from app.desired.models import DesiredState
 from app.desired.network import NetworkProfile
 from app.discovery import factory, proxmox
 from app.discovery.http import DiscoveryError
 from app.models import ACTIVE_STATES, Cluster, Credential, EsNode, Operation, ProxmoxConnection, Vm
 from app.operations import AwaitingApproval, create_operation, log, run_phases
-from app.provisioning.ownership import foreign_machines
+from app.provisioning.ownership import foreign_machines, machine_vm_ids
 from app.provisioning.ownership import torn_down as _torn_down
 from app.provisioning.plan import (
+    check_add_kibana_plan,
     check_forget_plan,
     check_plan_safety,
     check_rebuild_plan,
@@ -128,7 +137,12 @@ def render_input(params: dict, cluster_id: str, endpoint: str, insecure: bool,
         template=TemplateRef(params["template"]["node_name"], params["template"]["vm_id"]),
         proxmox_endpoint=endpoint, proxmox_insecure=insecure,
         datastore_id=params.get("datastore_id", "tank"), pool_id=params.get("pool_id", "ecm"),
-        cpu_type=params.get("cpu_type", "host"))
+        cpu_type=params.get("cpu_type", "host"), kibana=kibana_of(params))
+
+
+def kibana_credential_names(cluster_id: str) -> tuple[str, str]:
+    """The stored service-account token and the three encryption keys of a cluster's Kibana (both encrypted, both redacted from logs)."""
+    return (f"es-kibana-token-{cluster_id}", f"es-kibana-keys-{cluster_id}")
 
 
 def _connection(db: Session, params: dict) -> ProxmoxConnection:
@@ -337,10 +351,27 @@ def cluster_lifecycle(db: Session, cluster: Cluster) -> dict:
         "sizes": sizes,
         "node_roles": roles,
         "node_state": node_state,
+        "kibana": _kibana_panel(cluster, ops, busy),
         "can_change": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None,
         "can_remove": blocker is None,
         # why the record cannot go yet, for when nothing else is offered
         "remove_blocker": blocker,
+    }
+
+
+def _kibana_panel(cluster: Cluster, ops: list[Operation], busy: Operation | None) -> dict:
+    """What the Kibana panel shows: the machines on record, the Caddy snippet for each (shown, never applied), and how the last Add Kibana
+    ended. That operation includes the health check, so a succeeded one means Kibana reported itself available when it finished."""
+    recorded = kibana_of(cluster.desired or {}) if cluster.bootstrapped_at else []
+    last = next((o for o in ops if o.kind == UPDATE and not o.dry_run
+                 and (o.params.get("change") or {}).get("kind") == "add_kibana"), None)
+    return {
+        "machines": [{**k.model_dump(mode="json"), "url": k.url, "public_url": k.public_url,
+                      "caddy_snippet": caddy_snippet(cluster.name, k)} for k in recorded],
+        "can_add": bool(cluster.desired) and cluster.bootstrapped_at is not None and busy is None and not recorded,
+        "ca_available": bool(cluster.tls_ca_pem),
+        "last_add": ({"operation_id": last.id, "state": last.state,
+                      "finished_at": last.finished_at.isoformat() if last.finished_at else None} if last else None),
     }
 
 
@@ -372,7 +403,7 @@ def _delete_record(db: Session, cluster: Cluster, actor: str, **why: object) -> 
     cluster.credential_id = None
     db.flush()
     db.execute(delete(Credential).where(Credential.name.in_(
-        [f"es-elastic-{suffix}", f"es-ca-key-{suffix}", f"es-api-key-{suffix}"])))
+        [f"es-elastic-{suffix}", f"es-ca-key-{suffix}", f"es-api-key-{suffix}", *kibana_credential_names(suffix)])))
     name = cluster.name
     db.delete(cluster)
     audit.record(db, actor, "cluster.remove", "cluster", suffix, name=name, operations_kept=detached, **why)
@@ -488,9 +519,9 @@ class _Handlers:
         problems = proxmox.preflight_problems(
             perms, pool_id=params.get("pool_id", "ecm"), datastore=params.get("datastore_id", "tank"),
             template_vmid=(params.get("template") or {}).get("vm_id"),
-            # Adding a node clones a VM, so it needs what a create needs.
+            # Adding a node or Kibana clones a VM, so it needs what a create needs.
             creating=self.kind == CREATE or (self.kind == UPDATE and (params.get("change") or {}).get("kind")
-                                             in ("add_node", "rebuild_nodes")),
+                                             in ("add_node", "rebuild_nodes", "add_kibana")),
             resizing=self.kind == UPDATE and (params.get("change") or {}).get("kind") == "resize")
         if problems:
             raise PreflightFailed(f"the token Terraform uses is missing rights this operation needs: "
@@ -532,6 +563,8 @@ class _Handlers:
             problems = self._rebuild_problems(outcome.summary)
         elif kind == "forget_nodes":
             problems = check_forget_plan(outcome.summary, frozenset(self._change_nodes("removed")))
+        elif kind == "add_kibana":
+            problems = self._kibana_problems(outcome.summary)
         else:
             problems = check_plan_safety(outcome.summary, self.plan_kind)
         if self.kind == DESTROY:
@@ -556,15 +589,20 @@ class _Handlers:
         """The node names a change lists under `key` (removed, rebuilt or added), or [] when it is another kind of change."""
         return list((self.op.params.get("change") or {}).get(key) or []) if self.kind == UPDATE else []
 
-    def _already_rebuilt(self) -> bool:
-        """True when an earlier apply of this operation made every machine it names: the result is kept across a retry and
-        lists them in the state it recorded. Then the plan has nothing to create, which is right."""
+    def _already_made(self, key: str) -> bool:
+        """True when an earlier apply of this operation made every machine it names under `key` (rebuilt, kibana_added): the result is
+        kept across a retry and lists them in the state it recorded. Then the plan has nothing to create, which is right."""
         result = self.op.result or {}
         have = {node_of(a) for a in result.get("resources_in_state") or []}
-        return bool(result.get("ok")) and set(self._change_nodes("rebuilt")) <= have
+        return bool(result.get("ok")) and set(self._change_nodes(key)) <= have
+
+    def _kibana_problems(self, summary) -> list[str]:
+        if summary.is_empty and self._already_made("kibana_added"):
+            return []
+        return check_add_kibana_plan(summary, frozenset(self._change_nodes("kibana_added")))
 
     def _rebuild_problems(self, summary) -> list[str]:
-        if summary.is_empty and self._already_rebuilt():
+        if summary.is_empty and self._already_made("rebuilt"):
             return []
         return check_rebuild_plan(summary, frozenset(self._change_nodes("rebuilt")))
 
@@ -884,6 +922,59 @@ class _Handlers:
         log(self.db, self.op.id, "the rebuilt nodes joined and the cluster is not red" if rebuild
             else "the new nodes joined and the cluster is green")
 
+    def _kibana_keys(self) -> dict[str, str]:
+        """The three encryption keys that protect Kibana's saved objects (alerting connectors, API keys). Made once per cluster and kept
+        encrypted, so a replacement Kibana is given the same ones and can still read what the old one saved; losing them loses those
+        objects, so a backup of ECM's database is their backup."""
+        name = kibana_credential_names(self.cluster_id)[1]
+        cred = self._credential(name)
+        if cred is not None:
+            keys = json.loads(crypto.decrypt(cred.ciphertext))
+        else:
+            keys = {part: secrets.token_urlsafe(48) for part in ("security", "saved_objects", "reporting")}
+            self._store("es_kibana_keys", name, json.dumps(keys))
+            self.db.commit()
+        for value in keys.values():
+            crypto.register_secret(value)
+        return keys
+
+    def _add_kibana(self) -> None:
+        """Install and start Kibana on the machine this change made, and check it reports itself available (playbooks/add_kibana.yml).
+        No Elasticsearch node is configured or restarted. It needs ECM's API key (to ask for the service token and to ask Kibana its
+        status) and the cluster's CA (to sign Kibana's certificate)."""
+        cluster = self.db.get(Cluster, self.cluster_id)
+        params = self.op.params
+        api_key = self._credential(self._names()[2])
+        ca_cert, ca_key = self._stored_ca(cluster)
+        if api_key is None or ca_cert is None or ca_key is None:
+            raise ConfigureFailed("ECM has no API key or CA for this cluster, so it cannot make Kibana's token, sign its certificate "
+                                  "or check it. The new machine is kept")
+        profile = NetworkProfile.model_validate(params["profile"])
+        wanted = set(self._change_nodes("kibana_added"))
+        hosts = [KibanaHost(name=k.name, address=k.address, public_url=k.public_url)
+                 for k in kibana_of(params) if k.name in wanted]
+        token_name = kibana_credential_names(self.cluster_id)[0]
+        held = self._credential(token_name)
+        request = AnsibleRequest(
+            state=self._state(), addresses=params["addresses"], kind="add_kibana",
+            bootstrapped_at=cluster.bootstrapped_at, search_domain=profile.search_domain, kibana=hosts,
+            kibana_token=crypto.decrypt(held.ciphertext) if held is not None else None, kibana_keys=self._kibana_keys(),
+            es_api_key=crypto.decrypt(api_key.ciphertext), es_ca_pem=ca_cert, ca_cert_pem=ca_cert, ca_key_pem=ca_key)
+        log(self.db, self.op.id, f"configuring: {self._configure_description()}")
+        kept = "The new machine is kept; retry runs the configuration again with the same token and keys, which is safe to repeat"
+        try:
+            outcome = self.ansible.run(request)
+        except AnsibleError as e:
+            raise ConfigureFailed(f"{e}. {kept}") from e
+        if outcome.kibana_token:
+            # Even when the run then failed: the cluster will not show this token again, and a retry must not make a second one.
+            self._store("es_kibana_token", token_name, outcome.kibana_token)
+            self.db.commit()
+            log(self.db, self.op.id, "Kibana's service-account token was stored (encrypted)")
+        if not outcome.ok:
+            raise ConfigureFailed(f"{outcome.error or 'adding Kibana failed'}. {kept}")
+        log(self.db, self.op.id, "Kibana is running and reports itself available")
+
     def configure(self) -> None:
         if self.kind == UPDATE:
             kind = (self.op.params.get("change") or {}).get("kind")
@@ -891,6 +982,8 @@ class _Handlers:
                 self._add_nodes()
             elif kind == "rebuild_nodes":
                 self._add_nodes(rebuild=True)
+            elif kind == "add_kibana":
+                self._add_kibana()
             elif kind == "remove_nodes":
                 self._converge_if_a_master_left()
                 self._removal_check()
@@ -953,7 +1046,7 @@ class _Handlers:
         self.db.execute(delete(EsNode).where(EsNode.cluster_id == self.cluster_id))
         gone = self._forget_machines()
         self.db.flush()
-        for name in self._names():
+        for name in (*self._names(), *kibana_credential_names(self.cluster_id)):
             cred = self._credential(name)
             if cred is not None:
                 self.db.delete(cred)
@@ -986,7 +1079,7 @@ class _Handlers:
         params = self.op.params or {}
         conn_id = params.get("proxmox_connection_id")
         gone = 0
-        for name, vmid in (params.get("vm_ids") or {}).items():
+        for name, vmid in machine_vm_ids(params).items():
             gone += self.db.execute(delete(Vm).where(Vm.connection_id == conn_id, Vm.vmid == int(vmid),
                                                      Vm.name == name)).rowcount
         return gone

@@ -5,6 +5,7 @@ Named configmgmt, not config, because app/config.py already holds the settings m
 from .inventory import (
     InventoryError,
     InventoryInput,
+    KibanaHost,
     ephemeral_inventory,
     inventory_json,
     render_inventory,
@@ -21,6 +22,20 @@ from .runner import (
     runner_from_settings,
 )
 
-__all__ = ["AnsibleError", "AnsibleOutcome", "AnsibleRequest", "AnsibleRunner", "BootstrapResult",
-           "CliAnsibleRunner", "HostRecap", "InventoryError", "InventoryInput", "NewCa",
-           "ephemeral_inventory", "inventory_json", "render_inventory", "runner_from_settings"]
+__all__ = [
+    "AnsibleError",
+    "AnsibleOutcome",
+    "AnsibleRequest",
+    "AnsibleRunner",
+    "BootstrapResult",
+    "CliAnsibleRunner",
+    "HostRecap",
+    "InventoryError",
+    "InventoryInput",
+    "KibanaHost",
+    "NewCa",
+    "ephemeral_inventory",
+    "inventory_json",
+    "render_inventory",
+    "runner_from_settings",
+]

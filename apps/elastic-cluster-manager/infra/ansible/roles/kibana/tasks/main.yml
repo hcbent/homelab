@@ -1,0 +1,79 @@
+---
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - kibana_name is defined
+      - kibana_ip is defined
+      - kibana_es_hosts is defined and kibana_es_hosts | length > 0
+      - kibana_service_token is defined or kibana_token_value is defined
+      - kibana_encryption_keys is defined
+      - kibana_encryption_keys.security | length >= 32
+      - kibana_encryption_keys.saved_objects | length >= 32
+      - kibana_encryption_keys.reporting | length >= 32
+    fail_msg: >-
+      The inventory or the extra vars are missing something Kibana needs (its name and address, the Elasticsearch addresses, the service token,
+      and the three encryption keys of at least 32 characters each).
+
+- name: Write kibana.yml
+  ansible.builtin.template:
+    src: kibana.yml.j2
+    dest: "{{ kibana_config_dir }}/kibana.yml"
+    owner: root
+    group: kibana
+    mode: "0660"
+  notify: Kibana configuration changed
+
+# The package makes the keystore on some versions; this only acts if it is missing. The secrets go in by standard input so none is on a command
+# line or in the process list, and only the ones that are not already there are added, so a re-run changes nothing.
+- name: Make sure the keystore exists
+  ansible.builtin.command:
+    cmd: "{{ kibana_bin_dir }}/kibana-keystore create"
+    creates: "{{ kibana_config_dir }}/kibana.keystore"
+  notify: Kibana configuration changed
+
+- name: List what is in the keystore
+  ansible.builtin.command:
+    cmd: "{{ kibana_bin_dir }}/kibana-keystore list"
+  register: kibana_keystore_list
+  changed_when: false
+  check_mode: false
+
+- name: Add the secrets that are not in the keystore yet
+  ansible.builtin.command:
+    cmd: "{{ kibana_bin_dir }}/kibana-keystore add {{ item.key }} --stdin --force"
+    stdin: "{{ item.value }}"
+  loop: "{{ kibana_secrets | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    kibana_secrets:
+      elasticsearch.serviceAccountToken: "{{ kibana_service_token | default(kibana_token_value) }}"
+      xpack.security.encryptionKey: "{{ kibana_encryption_keys.security }}"
+      xpack.encryptedSavedObjects.encryptionKey: "{{ kibana_encryption_keys.saved_objects }}"
+      xpack.reporting.encryptionKey: "{{ kibana_encryption_keys.reporting }}"
+  when: item.key not in kibana_keystore_list.stdout_lines
+  no_log: true
+  notify: Kibana configuration changed
+
+- name: Let the kibana group read the keystore
+  ansible.builtin.file:
+    path: "{{ kibana_config_dir }}/kibana.keystore"
+    owner: root
+    group: kibana
+    mode: "0660"
+
+- name: Enable the service at boot and make sure it is running
+  ansible.builtin.systemd:
+    name: kibana
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Flush the handlers, so a configuration change is applied before the wait
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Kibana to listen
+  ansible.builtin.wait_for:
+    host: "{{ kibana_ip }}"
+    port: "{{ kibana_port | default(kibana_default_port) }}"
+    timeout: "{{ kibana_wait }}"

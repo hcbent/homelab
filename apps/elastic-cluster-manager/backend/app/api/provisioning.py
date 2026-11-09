@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.desired import (
 from app.models import Cluster, User
 from app.provisioning import create as plan_create
 from app.provisioning.lifecycle import (
+    AddKibana,
     AddNodes,
     ExpandDisk,
     ForgetNodes,
@@ -23,6 +24,7 @@ from app.provisioning.lifecycle import (
     RemoveNodes,
     ResizeNodes,
     RestartNodes,
+    plan_add_kibana,
     plan_add_nodes,
     plan_expand_disk,
     plan_forget_nodes,
@@ -146,6 +148,34 @@ async def add_nodes(cluster_id: str, body: AddNodes, db: Session = Depends(get_d
     """Plan adding `count` nodes of one kind: names, hosts, addresses and VMIDs are chosen and shown on the plan. This
     only makes a plan; nothing changes until it is approved on its operation page."""
     return await _plan_change(db, cluster_id, user, lambda d, c: plan_add_nodes(d, c, body))
+
+
+@router.post("/{cluster_id}/add-kibana", status_code=202)
+async def add_kibana(cluster_id: str, body: AddKibana, db: Session = Depends(get_db),
+                     user: User = Depends(auth.current_user), catalog: VersionCatalog = Depends(get_catalog)):
+    """Plan adding Kibana to a built cluster: one machine, named, placed and given an address and VMID that the plan shows. Kibana is
+    installed at the cluster's exact version, so a version the Elastic apt repository cannot supply is refused. This only makes a plan;
+    nothing changes until it is approved on its operation page."""
+    cluster = db.get(Cluster, cluster_id)
+    version = ((cluster.desired or {}).get("state") or {}).get("version") if cluster is not None else None
+    if version:
+        try:
+            problems = await run_in_threadpool(check_target_version, version, catalog)
+        except CatalogError as e:
+            raise HTTPException(503, f"{e}; the version cannot be verified right now") from e
+        if problems:
+            raise HTTPException(409, "Kibana cannot be installed: " + "; ".join(problems))
+    return await _plan_change(db, cluster_id, user, lambda d, c: plan_add_kibana(d, c, body), reads_cluster=True)
+
+
+@router.get("/{cluster_id}/ca.crt")
+def cluster_ca(cluster_id: str, db: Session = Depends(get_db), _: User = Depends(auth.current_user)):
+    """The cluster's CA certificate (public), for a proxy or a browser to trust Kibana's certificate with."""
+    cluster = db.get(Cluster, cluster_id)
+    if cluster is None or not cluster.tls_ca_pem:
+        raise HTTPException(404, "this cluster has no CA certificate on record")
+    return Response(cluster.tls_ca_pem, media_type="application/x-pem-file",
+                    headers={"Content-Disposition": f'attachment; filename="{cluster.name}-ca.crt"'})
 
 
 @router.post("/{cluster_id}/remove-nodes", status_code=202)

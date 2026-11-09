@@ -1,0 +1,15 @@
+# Managed by ECM. Edits here are overwritten the next time the role runs.
+# The service-account token and the three encryption keys are in Kibana's keystore, not in this file.
+server.name: {{ kibana_name | to_json }}
+server.host: {{ kibana_ip | to_json }}
+server.port: {{ kibana_port | default(kibana_default_port) }}
+server.publicBaseUrl: {{ (kibana_public_url | default('https://' ~ kibana_ip ~ ':' ~ (kibana_port | default(kibana_default_port)))) | to_json }}
+server.ssl.enabled: true
+server.ssl.certificate: {{ (kibana_tls_dir ~ '/' ~ kibana_name ~ '.crt') | to_json }}
+server.ssl.key: {{ (kibana_tls_dir ~ '/' ~ kibana_name ~ '.key') | to_json }}
+
+# Explicit addresses and no sniffing: the nodes ECM chose (the ones that are not master-only). A node that has since left the list is
+# tolerated while any other listed node answers; the next converge rewrites it.
+elasticsearch.hosts: {{ kibana_es_hosts | to_json }}
+elasticsearch.ssl.certificateAuthorities: {{ [kibana_tls_dir ~ '/ca.crt'] | to_json }}
+elasticsearch.ssl.verificationMode: full

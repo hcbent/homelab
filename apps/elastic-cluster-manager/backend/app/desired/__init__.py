@@ -13,6 +13,7 @@ from .placement import (
     PlacementConfig,
     PlacementResult,
     host_views_from_rows,
+    recommend_host,
     recommend_placement,
 )
 from .presets import build_desired_state, expand_preset
@@ -56,6 +57,7 @@ __all__ = [
     "expand_preset",
     "host_views_from_rows",
     "node_settings",
+    "recommend_host",
     "recommend_placement",
     "render_node_roles",
     "warnings",

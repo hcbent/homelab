@@ -51,7 +51,8 @@ export interface OperationDetail extends Operation {
   result: Record<string, unknown> | null;
   steps: OperationStep[]; logs: OperationLogLine[];
   /** What a change to a built cluster asked for, with a plain description. */
-  change?: { kind: string; describe?: string; nodes?: Record<string, unknown>; warnings?: string[]; added?: string[] } | null;
+  change?: { kind: string; describe?: string; nodes?: Record<string, unknown>; warnings?: string[]; added?: string[];
+             kibana?: Record<string, unknown> } | null;
 }
 
 export type Preset = "single_node" | "three_node" | "dedicated_masters";
@@ -102,6 +103,19 @@ export interface Lifecycle {
   node_roles?: Record<string, { roles: string[]; master_eligible: boolean; holds_data: boolean; host: string | null }>;
   /** What the last syncs saw of each node: whether its machine is in Proxmox (null if unknown) and whether Elasticsearch reports it. */
   node_state?: Record<string, { machine: boolean | null; in_cluster: boolean; vm_status?: string | null }>;
+  /** The cluster's Kibana: the machines on record, and whether one can be added now. */
+  kibana?: KibanaPanel;
+}
+
+/** A Kibana machine on record. `caddy_snippet` is null until it has a public name; ECM only shows it, never applies it. */
+export interface KibanaMachine {
+  name: string; vm_id: number; address: string; host: string; cores: number; ram_mb: number; os_disk_gb: number;
+  public_name: string | null; url: string; public_url: string | null; caddy_snippet: string | null;
+}
+export interface KibanaPanel {
+  machines: KibanaMachine[]; can_add: boolean; ca_available: boolean;
+  /** How the last Add Kibana ended. It includes the health check, so a succeeded one means Kibana reported itself available. */
+  last_add: { operation_id: string; state: string; finished_at: string | null } | null;
 }
 
 export interface ClusterDetail extends ClusterSummary {
@@ -131,7 +145,7 @@ export interface Infrastructure {
   templates: Vm[]; vms: Vm[];
 }
 
-export interface InUseAddress { ip: string; source: "proxmox" | "elasticsearch"; name: string }
+export interface InUseAddress { ip: string; source: "proxmox" | "elasticsearch" | "ecm"; name: string }
 export interface NetworkProfile {
   id: string; name: string; bridge: string; vlan: number | null; cidr: string; gateway: string;
   dns: string[]; search_domain: string | null; range_start: string; range_end: string;

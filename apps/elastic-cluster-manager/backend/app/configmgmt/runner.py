@@ -28,14 +28,21 @@ from pathlib import Path
 from typing import Protocol
 
 from app.config import Settings
-from app.configmgmt.inventory import InventoryError, InventoryInput, OperationKind, inventory_json
+from app.configmgmt.inventory import (
+    InventoryError,
+    InventoryInput,
+    KibanaHost,
+    OperationKind,
+    inventory_json,
+)
 from app.crypto import redact, register_secret
 from app.desired.models import DesiredState
 
 MIN_PASSWORD_LENGTH = 20  # the same floor the es_node role enforces
 PLAYBOOKS = {"create": "playbooks/create.yml", "converge": "playbooks/converge.yml",
              "restart": "playbooks/rolling_restart.yml", "add_node": "playbooks/add_node.yml",
-             "remove_drain": "playbooks/remove_nodes.yml", "remove_check": "playbooks/remove_nodes.yml"}
+             "remove_drain": "playbooks/remove_nodes.yml", "remove_check": "playbooks/remove_nodes.yml",
+             "add_kibana": "playbooks/add_kibana.yml"}
 _RECAP = re.compile(r"^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)")
 _NEEDLES = ("fatal:", "[ERROR]", "FAILED!")
 
@@ -79,6 +86,11 @@ class AnsibleRequest:
     restart_plan: list[dict] | None = None
     restart_present: list[str] | None = None
     restart_since: int | None = None
+    # Adding Kibana: the machine, the service token ECM already holds for it (none on a first run: the run makes one and hands it back), and the three
+    # encryption keys. It uses es_api_key and es_ca_pem for the worker's calls and the CA certificate and key (ca_cert_pem, ca_key_pem) for its certificate.
+    kibana: list[KibanaHost] | None = None
+    kibana_token: str | None = field(default=None, repr=False)
+    kibana_keys: dict[str, str] | None = field(default=None, repr=False)   # security, saved_objects, reporting
     # Removing nodes: the ones going (they are not in `state`, which is what remains). Uses es_api_key and es_ca_pem to
     # drain them and, afterwards, to check the cluster is green without them.
     removing: list[str] | None = None
@@ -118,6 +130,8 @@ class AnsibleOutcome:
     new_ca: NewCa | None = None  # whenever this run made a CA, even if it then failed
     # Nodes whose configuration this run changed without restarting them (so the change waits for a restart), even if the run then failed.
     pending_restart: list[str] = field(default_factory=list)
+    # A Kibana service token this run made, even if the run then failed: it cannot be read from the cluster again, so ECM must keep it.
+    kibana_token: str | None = field(default=None, repr=False)
 
 
 class AnsibleRunner(Protocol):
@@ -175,7 +189,8 @@ class CliAnsibleRunner:
 
     def run(self, request: AnsibleRequest) -> AnsibleOutcome:
         self._check_request(request)
-        for secret in (request.elastic_password, request.ca_key_pem, request.es_api_key, request.pve_token_secret):
+        for secret in (request.elastic_password, request.ca_key_pem, request.es_api_key, request.pve_token_secret,
+                       request.kibana_token, *(request.kibana_keys or {}).values()):
             if secret:
                 register_secret(secret)
         _register_pem(request.ca_key_pem)
@@ -196,7 +211,7 @@ class CliAnsibleRunner:
                     ssh_key_path=self.ssh_key_path, known_hosts_path=str(run_dir / "known_hosts"),
                     search_domain=request.search_domain, artifacts_dir=str(artifacts),
                     vm_ids=request.vm_ids, placement=request.placement, new_nodes=request.new_nodes,
-                    removing=request.removing)))
+                    removing=request.removing, kibana=request.kibana)))
             except InventoryError as exc:
                 raise AnsibleError(str(exc)) from exc
 
@@ -205,6 +220,7 @@ class CliAnsibleRunner:
             secrets.update(self._restart_vars(request, run_dir))
             secrets.update(self._join_vars(request, run_dir))
             secrets.update(self._removal_vars(request, run_dir))
+            secrets.update(self._kibana_vars(request, run_dir))
             if secrets:
                 extra = run_dir / "extra-vars.json"
                 _write_private(extra, json.dumps(secrets))
@@ -217,15 +233,16 @@ class CliAnsibleRunner:
             recap = parse_recap(recap_lines)
             new_ca = self._read_new_ca(artifacts)
             pending = self._read_pending(artifacts)
+            token = self._read_kibana_token(artifacts)
             if code != 0:
-                return AnsibleOutcome(False, self._failure(tail), recap, None, new_ca, pending)
+                return AnsibleOutcome(False, self._failure(tail), recap, None, new_ca, pending, token)
             result = None
             if request.kind == "create":
                 try:
                     result = self._read_result(artifacts / "result.json")
                 except AnsibleError as exc:
-                    return AnsibleOutcome(False, str(exc), recap, None, new_ca, pending)
-            return AnsibleOutcome(True, None, recap, result, new_ca, pending)
+                    return AnsibleOutcome(False, str(exc), recap, None, new_ca, pending, token)
+            return AnsibleOutcome(True, None, recap, result, new_ca, pending, token)
         finally:
             shutil.rmtree(run_dir, ignore_errors=True)
 
@@ -251,6 +268,18 @@ class CliAnsibleRunner:
                 ("the cluster's CA key, to sign the new nodes' certificates", request.ca_key_pem)) if not value]
             if missing:
                 raise AnsibleError("adding nodes needs " + ", ".join(missing))
+        if request.kind == "add_kibana":
+            if request.check:
+                raise AnsibleError("adding Kibana cannot be checked: check mode cannot simulate it")
+            missing = [name for name, value in (
+                ("the Kibana machine", request.kibana), ("the ECM API key", request.es_api_key),
+                ("the cluster's CA certificate", request.es_ca_pem or request.ca_cert_pem),
+                ("the cluster's CA key, to sign Kibana's certificate", request.ca_key_pem),
+                ("Kibana's three encryption keys", request.kibana_keys)) if not value]
+            if missing:
+                raise AnsibleError("adding Kibana needs " + ", ".join(missing))
+            if set(request.kibana_keys or {}) != {"security", "saved_objects", "reporting"}:
+                raise AnsibleError("Kibana's encryption keys are security, saved_objects and reporting")
         if request.kind in ("remove_drain", "remove_check"):
             if request.check:
                 raise AnsibleError("removing nodes cannot be checked: check mode cannot simulate it")
@@ -319,6 +348,31 @@ class CliAnsibleRunner:
         _write_private(ca, request.es_ca_pem or request.ca_cert_pem or "")
         return {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "es_new_nodes",
                 "es_jc_min_status": "yellow" if request.rebuild else "green"}
+
+    @staticmethod
+    def _kibana_vars(request: AnsibleRequest, run_dir: Path) -> dict:
+        """What adding Kibana needs beyond the inventory: the API key and CA for the worker's calls (the CA is a public file in the private run
+        directory), which hosts the first-boot wait covers, and the secrets: the token ECM already holds, if any, and the three keys."""
+        if request.kind != "add_kibana":
+            return {}
+        ca = run_dir / "es-ca.crt"
+        _write_private(ca, request.es_ca_pem or request.ca_cert_pem or "")
+        out: dict = {"es_api_key": request.es_api_key or "", "es_ca_file": str(ca), "first_boot_hosts": "kibana_hosts",
+                     "kibana_encryption_keys": request.kibana_keys or {}}
+        if request.kibana_token:
+            out["kibana_service_token"] = request.kibana_token
+        return out
+
+    @staticmethod
+    def _read_kibana_token(artifacts: Path) -> str | None:
+        """A service token the run made, handed back in `kibana-token`. It is registered for redaction as soon as it is read."""
+        path = artifacts / "kibana-token"
+        if not path.is_file():
+            return None
+        token = path.read_text().strip()
+        if token:
+            register_secret(token)
+        return token or None
 
     @staticmethod
     def _removal_vars(request: AnsibleRequest, run_dir: Path) -> dict[str, str]:

@@ -2,7 +2,7 @@ import { EuiButton, EuiCallOut, EuiFieldNumber, EuiFieldText, EuiFormRow, EuiLoa
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ApiError, NetworkProfile } from "./api";
 
-const SOURCE = { proxmox: "Proxmox", elasticsearch: "Elasticsearch" } as const;
+const SOURCE = { proxmox: "Proxmox", elasticsearch: "Elasticsearch", ecm: "ECM (a Kibana machine it made)" } as const;
 
 /** A profile row is only trusted if it has the fields the form edits; anything else is ignored. */
 const isProfile = (p: unknown): p is NetworkProfile =>

@@ -25,7 +25,7 @@ from typing import Literal
 from app.desired.models import DesiredState
 from app.desired.roles import OMIT, discovery_settings, render_node_roles
 
-OperationKind = Literal["create", "converge", "restart", "add_node", "remove_drain", "remove_check"]
+OperationKind = Literal["create", "converge", "restart", "add_node", "remove_drain", "remove_check", "add_kibana"]
 
 _SSH_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9_./-]+$")  # absolute, nothing a shell or ssh option could misread
@@ -34,6 +34,15 @@ _DOMAIN = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$")
 
 class InventoryError(ValueError):
     """The inputs cannot produce a safe inventory. The message says what to fix."""
+
+
+@dataclass
+class KibanaHost:
+    """A Kibana machine: not an Elasticsearch node, so it is not in the desired state's nodes or its address table."""
+    name: str
+    address: str
+    public_url: str | None = None      # what the browser uses, when there is a name for it (https://kibana.example.org)
+    port: int = 5601
 
 
 @dataclass
@@ -55,6 +64,16 @@ class InventoryInput:
     # Removing nodes: the ones going. They are not in `state`, which is what remains; the playbooks run on the worker and
     # ask the cluster about them by name.
     removing: list[str] | None = None
+    # Adding Kibana: the machines. The nodes are the cluster's, unchanged; one of them signs Kibana's certificate.
+    kibana: list[KibanaHost] | None = None
+
+
+def kibana_es_hosts(state: DesiredState, addresses: dict[str, str], port: int = 9200) -> list[str]:
+    """The Elasticsearch addresses Kibana is given: the nodes that are not master-only, up to three, as explicit HTTPS addresses. When every node
+    is master-eligible and holds roles (an all-in-one cluster) they are all candidates, which is the same rule applied to the nodes that remain."""
+    serving = [n for n in state.nodes if n.effective_roles - {"master", "voting_only"} or not n.effective_roles]
+    chosen = (serving or state.nodes)[:3]
+    return [f"https://{addresses[n.name]}:{port}" for n in chosen]
 
 
 def _check(inp: InventoryInput) -> None:
@@ -95,6 +114,22 @@ def _check(inp: InventoryInput) -> None:
             raise InventoryError(f"the nodes being removed must not be in the state that remains: {', '.join(still)}")
         if len(inp.state.nodes) < 2:
             raise InventoryError("a cluster cannot be removed down to a single node")
+    if inp.operation_kind == "add_kibana":
+        if inp.bootstrapped_at is None:
+            raise InventoryError("Kibana is added to a cluster that has bootstrapped")
+        if not inp.kibana:
+            raise InventoryError("add_kibana needs the Kibana machine")
+        names = [k.name for k in inp.kibana]
+        clash = sorted(set(names) & {n.name for n in inp.state.nodes})
+        if clash or len(set(names)) != len(names):
+            raise InventoryError("a Kibana machine needs a name of its own: " + ", ".join(clash or names))
+        for k in inp.kibana:
+            try:
+                ipaddress.IPv4Address(k.address)
+            except ValueError as e:
+                raise InventoryError(f"the address of {k.name} is not an IPv4 address: {k.address!r}") from e
+            if k.address in inp.addresses.values():
+                raise InventoryError(f"{k.name} has the address of a node: {k.address}")
     if inp.operation_kind == "create" and inp.bootstrapped_at is not None:
         raise InventoryError("this cluster has already bootstrapped; a create would re-render "
                              "cluster.initial_master_nodes and could split it. Use converge.")
@@ -151,6 +186,9 @@ def render_inventory(inp: InventoryInput) -> dict:
         cluster_vars["es_initial_master_nodes"] = discovery["cluster.initial_master_nodes"]
     if inp.removing:
         cluster_vars["es_removing"] = sorted(inp.removing)
+    if inp.kibana:
+        cluster_vars["kibana_es_hosts"] = kibana_es_hosts(state, inp.addresses)
+        cluster_vars["kibana_token_name"] = f"ecm-{inp.kibana[0].name}"   # one Kibana per cluster in this phase
     if inp.artifacts_dir is not None:
         cluster_vars["es_artifacts_dir"] = inp.artifacts_dir
 
@@ -188,6 +226,16 @@ def render_inventory(inp: InventoryInput) -> dict:
     }
     if new:
         children["es_new_nodes"] = {"hosts": {name: {} for name in sorted(new)}}
+    if inp.kibana:
+        # The names es_tls reads (es_node_name and the rest) are given too, so the same role issues Kibana's certificate.
+        children["kibana_hosts"] = {"hosts": {k.name: {
+            "ansible_host": k.address, "kibana_name": k.name, "kibana_ip": k.address, "kibana_port": k.port,
+            "kibana_dns_names": [k.name, *([f"{k.name}.{inp.search_domain}"] if inp.search_domain else [])],
+            "es_node_name": k.name, "es_node_ip": k.address,
+            "es_dns_names": [k.name, *([f"{k.name}.{inp.search_domain}"] if inp.search_domain else []),
+                             *([k.public_url.split("://", 1)[-1].split("/")[0].split(":")[0]] if k.public_url else [])],
+            **({"kibana_public_url": k.public_url} if k.public_url else {}),
+        } for k in inp.kibana}}
     return {"all": {"vars": cluster_vars, "children": children}}
 
 

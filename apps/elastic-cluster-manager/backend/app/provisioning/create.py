@@ -264,11 +264,9 @@ def _template(db: Session, conn: ProxmoxConnection, vmid: int | None) -> Vm:
     return found[0]
 
 
-def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datastore: str, template: Vm,
-               exclude_vms: frozenset[str] = frozenset(), spread_is_required: bool = True):
-    """Place the nodes of `state`. `exclude_vms` names machines left out of what the hosts are seen to carry: when a
-    cluster's existing nodes are in `state` (pinned where they are), their machines would otherwise be charged twice.
-    `spread_is_required` is False when recovering a cluster, so a master that has to share a host is a warning, not an error."""
+def _host_views(db: Session, conn: ProxmoxConnection, exclude_vms: frozenset[str] = frozenset()):
+    """What each Proxmox host carries, from the last sync: the host views placement chooses between, and the storage rows (the
+    template check reads them too). `exclude_vms` names machines left out of what the hosts are seen to carry."""
     nodes = [{"name": n.name, "status": n.status, "usage": n.usage}
              for n in db.scalars(select(PveNode).where(PveNode.connection_id == conn.id))]
     if not nodes:
@@ -279,16 +277,14 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
     vms = [{"pve_node": v.pve_node, "status": v.status, "is_template": v.is_template, "cpu_cores": v.cpu_cores,
             "memory_mb": v.memory_mb}
            for v in db.scalars(select(Vm).where(Vm.connection_id == conn.id)) if v.name not in exclude_vms]
-    result = recommend_placement(state, host_views_from_rows(nodes, storages, vms),
-                                 PlacementConfig(datastore=datastore, spread_is_required=spread_is_required))
-    errors = [(f"{i.node}: " if i.node else "") + i.message for i in result.issues if i.severity == "error"]
-    if errors:
-        raise CreateInvalid("the nodes cannot be placed: " + "; ".join(errors))
+    return host_views_from_rows(nodes, storages, vms), store_rows
 
-    # A clone to another host reads the template's disks from that host, so they must be on shared storage.
+
+def _check_template_readable(store_rows, hosts: dict[str, str], template: Vm) -> None:
+    """A clone to another host reads the template's disks from that host, so they must be on shared storage."""
     readable = {(s.node, s.name) for s in store_rows if s.shared and s.active}
     unreadable = []
-    for node, host in sorted(result.hosts.items()):
+    for node, host in sorted(hosts.items()):
         if host == template.pve_node:
             continue
         for disk in template.disks or []:
@@ -299,6 +295,20 @@ def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datast
             f"the template is on {template.pve_node}, and its disk is not on shared storage that these hosts "
             f"can read: {'; '.join(unreadable)}. Put those nodes on {template.pve_node} with pve_node, or "
             "use a template whose disk is on shared storage")
+
+
+def _placement(db: Session, conn: ProxmoxConnection, state: DesiredState, datastore: str, template: Vm,
+               exclude_vms: frozenset[str] = frozenset(), spread_is_required: bool = True):
+    """Place the nodes of `state`. `exclude_vms` names machines left out of what the hosts are seen to carry: when a
+    cluster's existing nodes are in `state` (pinned where they are), their machines would otherwise be charged twice.
+    `spread_is_required` is False when recovering a cluster, so a master that has to share a host is a warning, not an error."""
+    views, store_rows = _host_views(db, conn, exclude_vms)
+    result = recommend_placement(state, views,
+                                 PlacementConfig(datastore=datastore, spread_is_required=spread_is_required))
+    errors = [(f"{i.node}: " if i.node else "") + i.message for i in result.issues if i.severity == "error"]
+    if errors:
+        raise CreateInvalid("the nodes cannot be placed: " + "; ".join(errors))
+    _check_template_readable(store_rows, result.hosts, template)
     return result
 
 
@@ -311,7 +321,7 @@ def _reservations(db: Session, own_cluster: str | None) -> tuple[set[str], set[i
     vmids: set[int] = set()
     for op in ops:
         # A node being added to a cluster holds its address and VMID the way a create does, until discovery shows it.
-        adds_node = op.kind == UPDATE and (op.params.get("change") or {}).get("kind") == "add_node"
+        adds_node = op.kind == UPDATE and (op.params.get("change") or {}).get("kind") in ("add_node", "add_kibana")
         if adds_node and op.cluster_id is None:
             continue                                            # its cluster was removed, so it holds nothing
         if not (op.kind == CREATE or adds_node) or op.dry_run or op.cluster_id == own_cluster:
@@ -324,6 +334,8 @@ def _reservations(db: Session, own_cluster: str | None) -> tuple[set[str], set[i
         if holds:
             addresses.update((op.params.get("addresses") or {}).values())
             vmids.update(int(v) for v in (op.params.get("vm_ids") or {}).values())
+            addresses.update(k["address"] for k in op.params.get("kibana") or [])
+            vmids.update(int(k["vm_id"]) for k in op.params.get("kibana") or [])
     return addresses, vmids
 
 

@@ -1,5 +1,6 @@
 ---
-# Installs the exact Elasticsearch version and never starts it. The package does not restart a running node on a
+# Installs the exact Elasticsearch version and never starts it. With es_package_name: kibana it installs the same version of Kibana
+# instead, from the same repository and under the same checks. The package does not restart a running node on a
 # version change (RESTART_ON_UPGRADE defaults to false), but this role also refuses to change the version of an
 # installed package at all: upgrades are ECM's rolling-upgrade procedure, not a side effect of converging.
 - name: Check the version looks like major.minor.patch
@@ -46,7 +47,7 @@
     state: present
 
 - name: Read the installed Elasticsearch version
-  ansible.builtin.command: dpkg-query --show --showformat=${Version} elasticsearch
+  ansible.builtin.command: dpkg-query --show --showformat=${Version} {{ es_package_name }}
   register: es_package_installed
   changed_when: false
   failed_when: false
@@ -55,20 +56,20 @@
 - name: Refuse to change the version of an installed package
   ansible.builtin.fail:
     msg: >-
-      Elasticsearch {{ es_package_installed.stdout }} is installed but the cluster wants {{ es_version }}.
+      {{ es_package_name }} {{ es_package_installed.stdout }} is installed but the cluster wants {{ es_version }}.
       This role does not upgrade or downgrade; use the rolling-upgrade operation.
   when: es_package_installed.rc == 0 and es_package_installed.stdout != es_version
 
 # No cache_valid_time here on purpose: os_base has just refreshed the lists, so a cache-age check would call
 # them fresh and never fetch the Elastic repository added above ("No package matching 'elasticsearch'").
-- name: Install Elasticsearch
+- name: Install {{ es_package_name }}
   ansible.builtin.apt:
-    name: "elasticsearch={{ es_version }}"
+    name: "{{ es_package_name }}={{ es_version }}"
     state: present
     update_cache: true
 
 # Held so an unattended-upgrades run or a stray apt upgrade cannot move a node to a different version.
 - name: Hold the package at this version
   ansible.builtin.dpkg_selections:
-    name: elasticsearch
+    name: "{{ es_package_name }}"
     selection: hold

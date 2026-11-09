@@ -223,6 +223,38 @@ test("a finished add says only the new nodes were touched, and a failed one says
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 });
 
+test("an add-Kibana plan shows the one machine, where it goes and how it is reached, and says what the plan wants known", async () => {
+  mockFetch(table({ "GET /api/operations/kb": [200, op({ id: "kb", kind: "tf.update", cluster_id: "c1",
+    plan: { digest: DIGEST, approvable: true, summary: { adds: 1, updates: 0, deletes: 0, configure: "add Kibana 9.5.6 on a new machine lab-d-kb-01" } },
+    change: { kind: "add_kibana", warnings: ["ECM does not create a Kibana login yet"], kibana: {
+      "lab-d-kb-01": { name: "lab-d-kb-01", host: "pve2", address: "192.168.10.116", vm_id: 520, cores: 2, ram_mb: 4096, os_disk_gb: 32,
+        url: "https://192.168.10.116:5601", public_url: "https://kibana.lab.example.org" } } } })] }));
+  render(<OperationDetail id="kb" />);
+  expect(await screen.findByText("Where Kibana goes", { selector: "h4" })).toBeInTheDocument();
+  const row = screen.getByText("lab-d-kb-01").closest("tr")!;
+  expect(within(row).getByText("pve2")).toBeInTheDocument();
+  expect(within(row).getByText("https://192.168.10.116:5601")).toBeInTheDocument();
+  expect(within(row).getByText("https://kibana.lab.example.org")).toBeInTheDocument();
+  expect(within(row).getByText("2 cores, 4 GiB, 32 GB disk")).toBeInTheDocument();
+  expect(screen.getByText("ECM does not create a Kibana login yet")).toBeInTheDocument();
+});
+
+test("a finished Add Kibana says Kibana is running and that nobody can sign in yet, and a failed one says the machine exists", async () => {
+  mockFetch(table({
+    "GET /api/operations/kok": [200, op({ id: "kok", kind: "tf.update", state: "succeeded", cluster_id: "c1", plan: null,
+      change: { kind: "add_kibana" } })],
+    "GET /api/operations/kbad": [200, op({ id: "kbad", kind: "tf.update", state: "failed", cluster_id: "c1", plan: null,
+      error: "Kibana did not become available: lab-d-kb-01 is degraded", change: { kind: "add_kibana" } })] }));
+  const { unmount } = render(<OperationDetail id="kok" />);
+  expect(await screen.findByText("Kibana is running")).toBeInTheDocument();
+  expect(screen.getByText(/Nobody\s+can sign in yet|Nobody can sign in yet/)).toBeInTheDocument();
+  expect(screen.queryByText("The change is applied")).not.toBeInTheDocument();
+  unmount();
+  render(<OperationDetail id="kbad" />);
+  expect(await screen.findByText(/so the Kibana machine exists. Retry configures it again with the same token and encryption keys/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
 const REMOVAL = { kind: "remove_nodes", warnings: ["lab-d-07 is the elected master, so a new master is elected when it goes (a few seconds)"],
   nodes: {
     "lab-d-07": { host: "pve1", address: "192.168.10.120", vm_id: 510, roles: "data, ingest", cores: 4, ram_mb: 8192, data_disk_gb: 100,
@@ -424,6 +456,7 @@ test("the configure step is named for what the operation does, and only a create
     ["remove", { kind: "tf.update", change: { kind: "remove_nodes" } }, "Bring the remaining nodes in line and check the cluster"],
     ["resize", { kind: "tf.update", change: { kind: "resize" } }, "Write the new settings"],
     ["grow", { kind: "tf.update", change: { kind: "expand_disk" } }, "Grow the filesystems"],
+    ["kibana", { kind: "tf.update", change: { kind: "add_kibana" } }, "Install Kibana and check it is available"],
   ];
   for (const [name, over, label] of cases) {
     mockFetch(table({ [`GET /api/operations/${name}`]: [200, op({ id: name, plan: null, ...over })] }));

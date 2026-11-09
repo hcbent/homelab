@@ -1,4 +1,5 @@
 ---
+es_package_name: elasticsearch  # kibana, for a Kibana machine (same repository, same signing key, same version)
 es_package_major: "{{ es_version.split('.')[0] }}"
 es_package_key_url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
 es_package_key_path: "/etc/apt/keyrings/elastic-{{ es_package_major }}.x.asc"

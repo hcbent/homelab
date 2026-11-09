@@ -174,7 +174,7 @@
         path: "{{ es_tls_dir }}"
         state: directory
         owner: root
-        group: elasticsearch
+        group: "{{ es_tls_group }}"
         mode: "0750"
       when: inventory_hostname in es_tls_missing
 
@@ -195,7 +195,7 @@
         content: "{{ es_tls_files.results[item.index].content | b64decode }}"
         dest: "{{ es_tls_dir }}/{{ item.dest }}"
         owner: root
-        group: elasticsearch
+        group: "{{ es_tls_group }}"
         mode: "{{ item.mode }}"
       loop:
         - { index: 0, dest: "{{ es_node_name }}.crt", mode: "0644" }

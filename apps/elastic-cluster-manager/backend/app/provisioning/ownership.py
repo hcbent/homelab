@@ -19,6 +19,14 @@ CREATE = "tf.create"
 DESTROY = "tf.destroy"
 UPDATE = "tf.update"
 _NODE = re.compile(r'module\.node\["([^"]+)"\]')
+MACHINE_CHANGES = ("add_node", "add_kibana")      # the changes whose apply makes machines
+
+
+def machine_vm_ids(params: dict) -> dict[str, int]:
+    """Name to VMID of every machine in a cluster's parameters: its nodes, and its Kibana machines, which are kept in their own list
+    so no walk of the Elasticsearch nodes sees them."""
+    return {**{n: int(v) for n, v in (params.get("vm_ids") or {}).items()},
+            **{k["name"]: int(k["vm_id"]) for k in params.get("kibana") or []}}
 
 
 def torn_down(db: Session, create_op_id: str) -> bool:
@@ -36,11 +44,11 @@ def created_machines(db: Session) -> set[tuple[str, int, str]]:
                                                  Operation.dry_run.is_(False))).all()
     for op in creates:
         params = op.params or {}
-        # Only a change that added nodes makes machines, and once its cluster is gone (a teardown detaches the
+        # Only a change that added nodes or Kibana makes machines, and once its cluster is gone (a teardown detaches the
         # operation) it makes none; a resize or a disk change names the same machines the create already did.
-        if op.kind == UPDATE and ((params.get("change") or {}).get("kind") != "add_node" or op.cluster_id is None):
+        if op.kind == UPDATE and ((params.get("change") or {}).get("kind") not in MACHINE_CHANGES or op.cluster_id is None):
             continue
-        conn_id, vm_ids = params.get("proxmox_connection_id"), params.get("vm_ids") or {}
+        conn_id, vm_ids = params.get("proxmox_connection_id"), machine_vm_ids(params)
         built = {m.group(1) for addr in (op.result or {}).get("resources_in_state") or []
                  if (m := _NODE.search(addr))}
         if not conn_id or not built or (op.kind == CREATE and torn_down(db, op.id)):
@@ -94,7 +102,7 @@ def foreign_machines(db: Session, params: dict) -> list[str]:
         mark_tf_managed(db, conn_id)
         db.flush()
     out: list[str] = []
-    vm_ids = dict(params.get("vm_ids") or {})
+    vm_ids = machine_vm_ids(params)
     change = params.get("change") or {}
     if change.get("kind") in ("remove_nodes", "forget_nodes"):
         # The nodes being removed are no longer in the parameters, but they are the machines this change touches.

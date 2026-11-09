@@ -34,6 +34,7 @@ const CONFIGURE_TEXT: Record<string, string> = {
   add_node: "Configure and start the new nodes", rebuild_nodes: "Configure and start the rebuilt nodes",
   remove_nodes: "Bring the remaining nodes in line and check the cluster", forget_nodes: "Bring the remaining nodes in line",
   resize: "Write the new settings", expand_disk: "Grow the filesystems",
+  add_kibana: "Install Kibana and check it is available",
 };
 
 /** A step's name in plain words. `configure` is the last step of several operations that do different things, so it is named for the one it
@@ -129,6 +130,32 @@ function AddedNodes({ change, title = "Where each new node goes", first = "New n
     <div className="ecm-stack-lg">
       <h4 className="ecm-label">{title}</h4>
       <EuiBasicTable<AddedNode> tableCaption={title} items={nodes} columns={columns} rowHeader="name" />
+      {(change.warnings ?? []).map((w) => (
+        <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
+    </div>
+  );
+}
+
+interface PlannedKibana {
+  name: string; host: string; address: string; vm_id: number; cores: number; ram_mb: number; os_disk_gb: number;
+  url: string; public_url: string | null;
+}
+
+/** The machine an Add Kibana change would make: where it goes, how it is reached, and what the plan wants the operator to know. */
+function KibanaPlan({ change }: { change: NonNullable<Detail["change"]> }) {
+  const machines = Object.values((change.kibana ?? {}) as Record<string, PlannedKibana>);
+  const columns: EuiBasicTableColumn<PlannedKibana>[] = [
+    { name: "New machine", render: (k: PlannedKibana) => <span className="ecm-mono">{k.name}</span> },
+    { name: "Proxmox host", render: (k: PlannedKibana) => <span className="ecm-mono">{k.host}</span> },
+    { name: "Address", render: (k: PlannedKibana) => <span className="ecm-mono">{k.url}</span> },
+    { name: "Public name", render: (k: PlannedKibana) => k.public_url ? <span className="ecm-mono">{k.public_url}</span> : "none" },
+    { field: "vm_id", name: "VM ID" },
+    { name: "Size", render: (k: PlannedKibana) => `${k.cores} cores, ${k.ram_mb / 1024} GiB, ${k.os_disk_gb} GB disk` },
+  ];
+  return (
+    <div className="ecm-stack-lg">
+      <h4 className="ecm-label">Where Kibana goes</h4>
+      <EuiBasicTable<PlannedKibana> tableCaption="Where Kibana goes" items={machines} columns={columns} rowHeader="name" />
       {(change.warnings ?? []).map((w) => (
         <EuiCallOut key={w} size="s" color="warning" iconType="warning" title={w} />))}
     </div>
@@ -318,6 +345,7 @@ export function OperationDetail({ id }: { id: string }) {
             { title: "Plan digest", description: <span className="ecm-mono ecm-small ecm-clip">{op.plan.digest}</span> },
           ]} />
           {op.change?.kind === "add_node" && <AddedNodes change={op.change} />}
+          {op.change?.kind === "add_kibana" && <KibanaPlan change={op.change} />}
           {op.change?.kind === "remove_nodes" && <RemovedNodes change={op.change} />}
           {op.change?.kind === "restart_nodes" && <RestartOrder change={op.change} />}
           {op.change?.kind === "rebuild_nodes" && <AddedNodes change={op.change} title="The nodes this rebuilds" first="Lost node" />}
@@ -359,6 +387,8 @@ export function OperationDetail({ id }: { id: string }) {
             ) : (
             <p>What Terraform already changed is kept{op.change?.kind === "add_node"
               ? ", so the new machines exist. Retry configures them again, which is safe to repeat"
+              : op.change?.kind === "add_kibana"
+              ? ", so the Kibana machine exists. Retry configures it again with the same token and encryption keys, which is safe to repeat"
               : op.change?.kind === "resize"
               ? ", and so is every node already restarted. Retry plans again and carries on with the nodes not yet at their new size"
               : ". Retry plans again and runs the rest"}.</p>))}
@@ -390,6 +420,12 @@ export function OperationDetail({ id }: { id: string }) {
           <p>ECM configured and started only the new nodes, and the cluster is green. The existing nodes were not touched.{" "}
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
+      {op.state === "succeeded" && op.kind === "tf.update" && op.change?.kind === "add_kibana" && (
+        <EuiCallOut color="success" iconType="check" title="Kibana is running">
+          <p>ECM installed Kibana, started it and checked that it reports itself available. No Elasticsearch node was touched. Nobody
+            can sign in yet, because ECM does not create a Kibana login in this step.{" "}
+            {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
+
       {op.state === "succeeded" && restarting && (
         <EuiCallOut color="success" iconType="check" title="The nodes are restarted">
           <p>Each node in the plan was restarted (or started) in turn, with the cluster green between them.{" "}
@@ -413,7 +449,8 @@ export function OperationDetail({ id }: { id: string }) {
             {op.cluster_id && <EuiLink href={`#/clusters/${op.cluster_id}`}>Open the cluster</EuiLink>}</p></EuiCallOut>)}
 
       {op.state === "succeeded" && op.kind === "tf.update"
-        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "remove_nodes"
+        && op.change?.kind !== "resize" && op.change?.kind !== "add_node" && op.change?.kind !== "add_kibana"
+        && op.change?.kind !== "remove_nodes"
         && op.change?.kind !== "rebuild_nodes" && op.change?.kind !== "forget_nodes" && (
         <EuiCallOut color="success" iconType="check" title="The change is applied">
           <p>It is applied on every node. Sizes and free space on the cluster page come from the last sync, which runs

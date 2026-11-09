@@ -1,0 +1,4 @@
+---
+kh_scheme: https
+kh_wait: 600     # seconds to wait for Kibana to report itself available
+kh_poll: 10      # seconds between looks

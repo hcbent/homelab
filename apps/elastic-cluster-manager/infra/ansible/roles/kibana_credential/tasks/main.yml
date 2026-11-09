@@ -1,0 +1,118 @@
+---
+# Kibana signs in to Elasticsearch with a service-account token for `elastic/kibana`, not a username and password (docs/DESIGN_KIBANA.md). The
+# worker asks the cluster for it with ECM's API key. ECM keeps it encrypted and hands it back as kibana_service_token on a retry, so a run that
+# stopped after the token was made does not make a second one. A token ECM never received (a run that died between the call and the hand-back)
+# cannot be read again, so a token of the same name is deleted and made again. The value never reaches a log.
+- name: Check the inputs this role needs
+  ansible.builtin.assert:
+    that:
+      - es_api_key is defined and es_api_key | length > 0
+      - es_ca_file is defined
+      - kibana_es_hosts is defined and kibana_es_hosts | length > 0
+      - kibana_token_name is defined
+      - es_artifacts_dir is defined
+    fail_msg: >-
+      Getting a token needs the ECM API key, the cluster CA, an Elasticsearch address, the token's name and a directory to hand it back in.
+
+- name: Say how to reach the cluster
+  ansible.builtin.set_fact:
+    kt_url: "{{ kibana_es_hosts[0] }}/_security/service/elastic/kibana/credential/token/{{ kibana_token_name }}"
+    kt_headers:
+      Authorization: "ApiKey {{ es_api_key }}"
+  no_log: true
+
+# Decided once, here. A `when` on a block is checked again for every task inside it, so it must not depend on kibana_token_value, which the
+# block itself sets: the tasks after that would skip themselves, and the new token would never be handed back to ECM.
+- name: Note whether ECM already holds a token
+  ansible.builtin.set_fact:
+    kt_held: "{{ kibana_service_token is defined and kibana_service_token | length > 0 }}"
+
+- name: Use the token ECM already holds
+  ansible.builtin.set_fact:
+    kibana_token_value: "{{ kibana_service_token }}"
+  no_log: true
+  when: kt_held | bool
+
+- name: Make a token
+  when: not kt_held | bool
+  block:
+    - name: Ask the cluster for a token
+      ansible.builtin.uri:
+        url: "{{ kt_url }}"
+        method: POST
+        headers: "{{ kt_headers }}"
+        ca_path: "{{ es_ca_file }}"
+        status_code: [200, 201, 409, 400, 401, 403, 404, 500, 502, 503]
+        return_content: true
+        timeout: "{{ kt_http_timeout }}"
+      register: kt_made
+      failed_when: false
+      no_log: true
+
+    # no_log hides the whole result, a token included, so a refusal is reported here from its status alone.
+    - name: Stop if the cluster refused to make a token
+      ansible.builtin.fail:
+        msg: >-
+          Elasticsearch answered HTTP {{ kt_made.status | default('no response') }}{{ (' (' ~ kt_made.msg ~ ')') if kt_made.status | default(-1) | int == -1 and kt_made.msg is defined else '' }} when asked for a
+          Kibana service token ({{ kibana_token_name }}). A 401 or 403 means ECM's API key may not make service tokens; check it on a live cluster.
+      when: kt_made.status | default(-1) not in [200, 201, 409]
+
+    - name: Delete a token of that name that ECM never received, and make it again
+      when: kt_made.status == 409
+      block:
+        - name: Delete the old token
+          ansible.builtin.uri:
+            url: "{{ kt_url }}"
+            method: DELETE
+            headers: "{{ kt_headers }}"
+            ca_path: "{{ es_ca_file }}"
+            status_code: [200, 404, 400, 401, 403, 500, 502, 503]
+            timeout: "{{ kt_http_timeout }}"
+          register: kt_deleted
+          failed_when: false
+          no_log: true
+
+        - name: Stop if the old token could not be deleted
+          ansible.builtin.fail:
+            msg: >-
+              Elasticsearch answered HTTP {{ kt_deleted.status | default('no response') }}{{ (' (' ~ kt_deleted.msg ~ ')') if kt_deleted.status | default(-1) | int == -1 and kt_deleted.msg is defined else '' }}
+              when asked to delete the old Kibana token {{ kibana_token_name }}.
+          when: kt_deleted.status | default(-1) not in [200, 404]
+
+        - name: Ask again
+          ansible.builtin.uri:
+            url: "{{ kt_url }}"
+            method: POST
+            headers: "{{ kt_headers }}"
+            ca_path: "{{ es_ca_file }}"
+            status_code: [200, 201, 400, 401, 403, 404, 409, 500, 502, 503]
+            return_content: true
+            timeout: "{{ kt_http_timeout }}"
+          register: kt_remade
+          failed_when: false
+          no_log: true
+
+        - name: Stop if the new token could not be made
+          ansible.builtin.fail:
+            msg: >-
+              Elasticsearch answered HTTP {{ kt_remade.status | default('no response') }}{{ (' (' ~ kt_remade.msg ~ ')') if kt_remade.status | default(-1) | int == -1 and kt_remade.msg is defined else '' }}
+              when asked again for the Kibana token {{ kibana_token_name }}.
+          when: kt_remade.status | default(-1) not in [200, 201]
+
+    - name: Take the token from whichever answer made one
+      ansible.builtin.set_fact:
+        kibana_token_value: "{{ (kt_remade if kt_made.status == 409 else kt_made).json.token.value }}"
+      no_log: true
+
+    - name: Make the hand-back directory
+      ansible.builtin.file:
+        path: "{{ es_artifacts_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Hand the new token back to ECM before anything else can fail
+      ansible.builtin.copy:
+        content: "{{ kibana_token_value }}"
+        dest: "{{ es_artifacts_dir }}/kibana-token"
+        mode: "0600"
+      no_log: true
